@@ -3378,6 +3378,39 @@ const CARTRIDGE_FLAVORS={
   'Bodega Boyz 2G AIO':[],
   '1G Pusha Pods':[],
 };
+// Pre-Rolls SKU dropdown (Batch Tracker \u2014 New Batch)
+const PRE_ROLL_SKUS=[
+  'Muha Meds - Mates - THCA Infused 5 x 0.6g',
+  'Muha Meds - Mates Reserve - 5 x 0.6g',
+  'Bodega Boyz - Shorties',
+];
+// Flavors cascade off the SKU chosen above. SKUs with no flavor list yet fall
+// back to a free-text flavor field so new batches aren't blocked.
+const PRE_ROLL_FLAVORS={
+  'Muha Meds - Mates - THCA Infused 5 x 0.6g':['Berry Blast','Honey Melon','Agave Sunrise','Mango Peach Fusion','Frosty Mint Blueberry','Strawberry Ice Cream','Caramel Apple Gelato','Winter Cookie Crumble','Purple Punch','Biscotti Bomb'],
+  'Muha Meds - Mates Reserve - 5 x 0.6g':['Presidential OG','Muha OG','STL Gas','Kush Widow','Super Lemon'],
+  'Bodega Boyz - Shorties':[],
+};
+// Generalized SKU\u2192Flavor cascading dropdown config, keyed by batch log type.
+// Any batch type listed here gets the SKU/Flavor special-case rendering in
+// LogEntryForm below (SKU select \u2192 Flavor select scoped to that SKU, or a
+// free-text fallback if that SKU has no flavor list yet).
+const SKU_FLAVOR_CONFIG={
+  cartridges:{skus:CARTRIDGE_SKUS,flavors:CARTRIDGE_FLAVORS},
+  pre_rolls:{skus:PRE_ROLL_SKUS,flavors:PRE_ROLL_FLAVORS},
+};
+// Which ingredient fields (in the Pre-Rolls "Infused Flower" section) apply
+// to each SKU. THCA Infused uses Flower+Terp+THCA; Mates Reserve uses those
+// same three PLUS Live Resin, Decarbed Cured Resin, and Distillate; Shorties
+// isn't an infused product so none of these apply. Flower/Terp/the infused-
+// flower totals stay visible for every SKU (not listed here \u2014 only the
+// SKU-specific ingredient fields need gating).
+const PRE_ROLL_SKU_INGREDIENTS={
+  'Muha Meds - Mates - THCA Infused 5 x 0.6g':['thca_metrc','thca_qty'],
+  'Muha Meds - Mates Reserve - 5 x 0.6g':['thca_metrc','thca_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'],
+  'Bodega Boyz - Shorties':[],
+};
+const PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS=['thca_metrc','thca_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'];
 function slug(s){return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
 // Turns a plain list of names into an array of checkbox field definitions
 // (used for the Sanitation Log's Daily/Weekly/Monthly area & equipment checklists).
@@ -3547,12 +3580,42 @@ const LOG_TYPES={
     {key:'batch_number',label:'Batch / Lot Number',type:'text',placeholder:'e.g. PR-2026-014'},
     {key:'date',label:'Date',type:'date'},
     {key:'operator',label:'Operator / Personnel',type:'text',placeholder:'Who ran this batch'},
-    {key:'strain_input',label:'Strain',type:'text',placeholder:'Strain used'},
-    {key:'input_weight',label:'Input Flower Weight',type:'text',placeholder:'e.g. 2,000g'},
-    {key:'units_produced',label:'Units Produced',type:'text',placeholder:'e.g. 1,500 pre-rolls'},
-    {key:'target_unit_weight',label:'Target Weight per Unit',type:'text',placeholder:'e.g. 1.0g'},
-    {key:'actual_avg_weight',label:'Actual Avg Weight per Unit',type:'text',placeholder:'e.g. 1.02g'},
-    {key:'metrc_tag',label:'METRC Tag #(s)',type:'text',placeholder:'Source and/or output tags'},
+    {key:'sku',label:'SKU',type:'select',options:PRE_ROLL_SKUS},
+    {key:'flavor',label:'Flavor',type:'select',options:[]},
+    {key:'_s_infused_flower',label:'--- INFUSED FLOWER ---',type:'section'},
+    {key:'flower_metrc',label:'Flower METRC #',type:'text',placeholder:'METRC tag for the source flower'},
+    {key:'flower_qty',label:'Flower QTY',type:'text',placeholder:'e.g. 1,000g'},
+    {key:'thca_metrc',label:'THCA #',type:'text',placeholder:'METRC tag for the THCA used'},
+    {key:'thca_qty',label:'THCA QTY',type:'text',placeholder:'e.g. 200g'},
+    {key:'terp_qty',label:'Terp QTY',type:'text',placeholder:'e.g. 40g'},
+    {key:'live_resin_metrc',label:'Live Resin METRC #',type:'text',placeholder:'METRC tag for the live resin used'},
+    {key:'live_resin_qty',label:'Live Resin QTY',type:'text',placeholder:'e.g. 150g'},
+    {key:'decarbed_resin_metrc',label:'Decarbed Cured Resin METRC #',type:'text',placeholder:'METRC tag for the decarbed cured resin'},
+    {key:'decarbed_resin_qty',label:'Decarbed Cured Resin QTY',type:'text',placeholder:'e.g. 100g'},
+    {key:'distillate_metrc',label:'Distillate METRC #',type:'text',placeholder:'METRC tag for the distillate used'},
+    {key:'distillate_qty',label:'Distillate QTY',type:'text',placeholder:'e.g. 80g'},
+    {key:'infused_flower_number',label:'Infused Flower #',type:'text',placeholder:'Infused flower batch/lot #'},
+    {key:'infused_flower_total_wt',label:'Infused Flower Total WT',type:'text',placeholder:'e.g. 1,240g'},
+    {key:'_s_infused_joints',label:'--- INFUSED JOINTS ---',type:'section'},
+    {key:'infused_flower_used',label:'Infused Flower Used',type:'text',placeholder:'Amount used for this run'},
+    {key:'infused_flower_waste',label:'Infused Flower Waste',type:'text',placeholder:'Amount wasted'},
+    {key:'total_joint_filled',label:'Total Joint Filled',type:'text',placeholder:'e.g. 1,500 joints'},
+    {key:'infused_preroll_metrc',label:'Infused Pre Roll METRC Tag',type:'text',placeholder:'METRC tag for the infused joints'},
+    {key:'_s_kiefed',label:'--- INFUSED KIEFED PREROLL ---',type:'section'},
+    {key:'total_infused_preroll_used',label:'Total Infused Pre Roll Used',type:'text',placeholder:'Joints used for kiefing'},
+    {key:'total_infused_preroll_waste',label:'Total Infused Pre Roll Waste',type:'text',placeholder:'Joints wasted'},
+    {key:'kief_metrc',label:'Kief METRC #',type:'text',placeholder:'METRC tag for the kief used'},
+    {key:'kief_qty_used',label:'Kief QTY Used',type:'text',placeholder:'e.g. 60g'},
+    {key:'total_kiefed_infused_joints',label:'Total Kiefed Infused Joints',type:'text',placeholder:'e.g. 1,480 joints'},
+    {key:'kiefed_infused_preroll_metrc',label:'Kiefed Infused Preroll METRC #',type:'text',placeholder:'METRC tag for the kiefed joints'},
+    {key:'_s_final_packaging',label:'--- FINAL PACKAGING ---',type:'section'},
+    {key:'kiefed_infused_joints_used',label:'Kiefed Infused Joints Used',type:'text',placeholder:'Joints used for packaging'},
+    {key:'kief_infused_joints_waste',label:'Kief Infused Joints Waste',type:'text',placeholder:'Joints wasted during packaging'},
+    {key:'total_jar_packaged',label:'Total Jar Packaged',type:'text',placeholder:'Final packaged jar count'},
+    {key:'final_packaged_tag',label:'Final Packaged Tag #',type:'text',placeholder:'METRC tag for packaged units'},
+    {key:'rd1_result',label:'R&D 1',type:'text'},
+    {key:'rd2_result',label:'R&D 2',type:'text'},
+    {key:'mandatory_testing',label:'Mandatory Testing',type:'select',options:['Not Submitted','Submitted','Passed','Failed']},
     {key:'status',label:'Status',type:'select',options:['In Progress','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
@@ -3585,9 +3648,25 @@ const LOG_TYPES={
     {key:'status',label:'Status',type:'select',options:['In Progress','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
+  gummies:{id:'gummies',category:'batch',label:'Gummies',icon:'\uD83C\uDF6C',color:'#d97706',bg:'#fffbeb',table:'pf_batch_tracker',dcr:'Missouri DCR / METRC \u2014 Batch Production Record',freq:'Per batch',fields:[
+    {key:'batch_number',label:'Batch / Lot Number',type:'text',placeholder:'e.g. GUM-2026-014'},
+    {key:'date',label:'Date',type:'date'},
+    {key:'operator',label:'Operator / Personnel',type:'text',placeholder:'Who ran this batch'},
+    {key:'flavor',label:'Flavor / SKU',type:'text',placeholder:'e.g. Watermelon 10mg'},
+    {key:'oil_source_batch',label:'Distillate Source Batch #',type:'text',placeholder:'Which extraction batch this distillate came from'},
+    {key:'input_weight',label:'Input Distillate Weight',type:'text',placeholder:'e.g. 500g distillate'},
+    {key:'units_produced',label:'Units Produced',type:'text',placeholder:'e.g. 5,000 gummies'},
+    {key:'target_unit_weight',label:'Target Weight per Unit',type:'text',placeholder:'e.g. 4g / 10mg THC'},
+    {key:'actual_avg_weight',label:'Actual Avg Weight per Unit',type:'text',placeholder:'e.g. 4.05g'},
+    {key:'cart_waste',label:'Waste',type:'text',placeholder:'Units or product wasted/rejected'},
+    {key:'cart_packaged',label:'Total Packaged',type:'text',placeholder:'Final packaged unit count'},
+    {key:'metrc_tag',label:'METRC Tag #(s)',type:'text',placeholder:'Source and/or output tags'},
+    {key:'status',label:'Status',type:'select',options:['In Progress','QC Hold','Passed','Failed','Completed']},
+    {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
+  ]},
 };
 
-const BATCH_TYPE_IDS=['ethanol_extraction','butane_extraction','pre_rolls','cartridges'];
+const BATCH_TYPE_IDS=['ethanol_extraction','butane_extraction','pre_rolls','cartridges','gummies'];
 
 function exportLogPdf(logType,entries,dateFrom,dateTo){
   const{jsPDF}=window.jspdf;
@@ -3734,8 +3813,8 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
       else if(fl.type==='date')f[fl.key]=new Date().toISOString().slice(0,10);
       else if(fl.type==='time')f[fl.key]=new Date().toTimeString().slice(0,5);
       else if(fl.type==='checkbox')f[fl.key]=false;
-      else if(logType==='cartridges'&&fl.key==='sku')f[fl.key]=CARTRIDGE_SKUS[0];
-      else if(logType==='cartridges'&&fl.key==='flavor')f[fl.key]=(CARTRIDGE_FLAVORS[CARTRIDGE_SKUS[0]]||[])[0]||'';
+      else if(SKU_FLAVOR_CONFIG[logType]&&fl.key==='sku')f[fl.key]=SKU_FLAVOR_CONFIG[logType].skus[0];
+      else if(SKU_FLAVOR_CONFIG[logType]&&fl.key==='flavor')f[fl.key]=(SKU_FLAVOR_CONFIG[logType].flavors[SKU_FLAVOR_CONFIG[logType].skus[0]]||[])[0]||'';
       else if(fl.type==='select')f[fl.key]=fl.options[0];
       else f[fl.key]='';
     });
@@ -3804,20 +3883,22 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
       el('input',{type:'checkbox',id:'chk_'+f.key,checked:!!form[f.key],onChange:ev=>setF(f.key,ev.target.checked),style:{width:18,height:18,accentColor:'var(--green)',cursor:'pointer',flexShrink:0}}),
       el('label',{htmlFor:'chk_'+f.key,style:{fontSize:13,fontWeight:700,color:'var(--green)',cursor:'pointer',margin:0}},f.label),
     );
-    if(logType==='cartridges'&&f.key==='sku'){
+    if(SKU_FLAVOR_CONFIG[logType]&&f.key==='sku'){
+      const cfg=SKU_FLAVOR_CONFIG[logType];
       return el('div',{key:f.key,className:'fg'},
         el('label',null,f.label),
-        el('select',{value:form.sku||CARTRIDGE_SKUS[0],onChange:ev=>{
+        el('select',{value:form.sku||cfg.skus[0],onChange:ev=>{
           const newSku=ev.target.value;
-          const flavors=CARTRIDGE_FLAVORS[newSku]||[];
+          const flavors=cfg.flavors[newSku]||[];
           setForm(p=>({...p,sku:newSku,flavor:flavors[0]||''}));
         },style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13}},
-          CARTRIDGE_SKUS.map(o=>el('option',{key:o,value:o},o))
+          cfg.skus.map(o=>el('option',{key:o,value:o},o))
         ),
       );
     }
-    if(logType==='cartridges'&&f.key==='flavor'){
-      const flavors=CARTRIDGE_FLAVORS[form.sku]||[];
+    if(SKU_FLAVOR_CONFIG[logType]&&f.key==='flavor'){
+      const cfg=SKU_FLAVOR_CONFIG[logType];
+      const flavors=cfg.flavors[form.sku]||[];
       if(flavors.length>0) return el('div',{key:f.key,className:'fg'},
         el('label',null,f.label),
         el('select',{value:form.flavor||flavors[0],onChange:ev=>setF('flavor',ev.target.value),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13}},
@@ -3828,6 +3909,31 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
         el('label',null,f.label),
         el('input',{type:'text',value:form.flavor||'',onChange:ev=>setF('flavor',ev.target.value),placeholder:'No flavor list yet for this SKU \u2014 type it in',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
       );
+    }
+    if(logType==='pre_rolls'&&PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS.includes(f.key)){
+      const allowed=PRE_ROLL_SKU_INGREDIENTS[form.sku]||[];
+      if(!allowed.includes(f.key)) return null;
+      // else fall through to the generic text-field renderer below
+    }
+    if(logType==='pre_rolls'&&(f.key==='rd1_result'||f.key==='rd2_result')){
+      if(f.key==='rd2_result'&&form.rd1_result!=='Failed') return null;
+      const color=opt=>opt==='Passed'?'#16a34a':'#dc2626';
+      return el('div',{key:f.key,className:'fg'},
+        el('label',null,f.label),
+        el('div',{style:{display:'flex',gap:8}},
+          ['Passed','Failed'].map(opt=>el('button',{key:opt,type:'button',onClick:()=>setF(f.key,form[f.key]===opt?'':opt),
+            style:{padding:'8px 20px',borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',
+              background:form[f.key]===opt?color(opt):'var(--bg)',
+              color:form[f.key]===opt?'#fff':'var(--text2)',
+              border:'1px solid '+(form[f.key]===opt?color(opt):'var(--border)'),
+            }},(form[f.key]===opt?'\u2713 ':'')+opt))
+        ),
+      );
+    }
+    if(logType==='pre_rolls'&&f.key==='mandatory_testing'){
+      const rdPassed=form.rd1_result==='Passed'||form.rd2_result==='Passed';
+      if(!rdPassed) return null;
+      // fall through to generic select renderer below
     }
     return el('div',{key:f.key,className:'fg'},
     el('label',null,f.label),
