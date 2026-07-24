@@ -3391,6 +3391,11 @@ const PRE_ROLL_FLAVORS={
   'Muha Meds - Mates Reserve - 5 x 0.6g':['Presidential OG','Muha OG','STL Gas','Kush Widow','Super Lemon'],
   'Bodega Boyz - Shorties':[],
 };
+// Gummies SKU/Flavor dropdown (Batch Tracker \u2014 New Batch)
+const GUMMY_SKUS=['Muha Meds Distillate Gummies'];
+const GUMMY_FLAVORS={
+  'Muha Meds Distillate Gummies':['Mango Mirage','Strawberry Lemon','Green Apple','Very Berry','Watermelon'],
+};
 // Generalized SKU\u2192Flavor cascading dropdown config, keyed by batch log type.
 // Any batch type listed here gets the SKU/Flavor special-case rendering in
 // LogEntryForm below (SKU select \u2192 Flavor select scoped to that SKU, or a
@@ -3398,6 +3403,7 @@ const PRE_ROLL_FLAVORS={
 const SKU_FLAVOR_CONFIG={
   cartridges:{skus:CARTRIDGE_SKUS,flavors:CARTRIDGE_FLAVORS},
   pre_rolls:{skus:PRE_ROLL_SKUS,flavors:PRE_ROLL_FLAVORS},
+  gummies:{skus:GUMMY_SKUS,flavors:GUMMY_FLAVORS},
 };
 // Which ingredient fields (in the Pre-Rolls "Infused Flower" section) apply
 // to each SKU. THCA Infused uses Flower+Terp+THCA; Mates Reserve uses those
@@ -3420,6 +3426,7 @@ const PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS=['thca_metrc','thca_qty','live_resin_
 const RD_TEST_PAIRS={
   pre_rolls:[['rd1_result','rd2_result']],
   cartridges:[['primed_rd1','primed_rd2'],['filled_rd1','filled_rd2']],
+  gummies:[['gummy_rd1','gummy_rd2']],
 };
 function slug(s){return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
 // Turns a plain list of names into an array of checkbox field definitions
@@ -3680,15 +3687,30 @@ const LOG_TYPES={
     {key:'batch_number',label:'Batch / Lot Number',type:'text',placeholder:'e.g. GUM-2026-014'},
     {key:'date',label:'Date',type:'date'},
     {key:'operator',label:'Operator / Personnel',type:'text',placeholder:'Who ran this batch'},
-    {key:'flavor',label:'Flavor / SKU',type:'text',placeholder:'e.g. Watermelon 10mg'},
-    {key:'oil_source_batch',label:'Distillate Source Batch #',type:'text',placeholder:'Which extraction batch this distillate came from'},
-    {key:'input_weight',label:'Input Distillate Weight',type:'text',placeholder:'e.g. 500g distillate'},
-    {key:'units_produced',label:'Units Produced',type:'text',placeholder:'e.g. 5,000 gummies'},
-    {key:'target_unit_weight',label:'Target Weight per Unit',type:'text',placeholder:'e.g. 4g / 10mg THC'},
-    {key:'actual_avg_weight',label:'Actual Avg Weight per Unit',type:'text',placeholder:'e.g. 4.05g'},
-    {key:'cart_waste',label:'Waste',type:'text',placeholder:'Units or product wasted/rejected'},
-    {key:'cart_packaged',label:'Total Packaged',type:'text',placeholder:'Final packaged unit count'},
-    {key:'metrc_tag',label:'METRC Tag #(s)',type:'text',placeholder:'Source and/or output tags'},
+    {key:'sku',label:'SKU',type:'select',options:GUMMY_SKUS},
+    {key:'flavor',label:'Flavor',type:'select',options:[]},
+    {key:'_s_mixture',label:'--- GUMMY MIXTURE BATCH ---',type:'section'},
+    {key:'distillate_metrc',label:'Distillate METRC #',type:'text',placeholder:'METRC tag for the distillate used'},
+    {key:'distillate_qty',label:'Distillate Used',type:'text',placeholder:'e.g. 500g'},
+    {key:'gummy_mixture_batch_weight',label:'Gummy Mixture Batch Weight',type:'text',placeholder:'e.g. 4,500g'},
+    {key:'_s_production',label:'--- GUMMIES PRODUCTION BATCH (EACHES) ---',type:'section'},
+    {key:'gummy_mixture_used',label:'Gummy Mixture Used',type:'text',placeholder:'Amount used for this run'},
+    {key:'gummy_mixture_waste',label:'Gummy Mixture Waste',type:'text',placeholder:'Amount wasted'},
+    {key:'units_produced',label:'Total Gummies Produced',type:'text',placeholder:'e.g. 5,000 gummies'},
+    {key:'gummies_batch_metrc',label:'Gummies Production Batch METRC#',type:'text',placeholder:'METRC tag for this production batch'},
+    {key:'_s_sugared',label:'--- SUGARED GUMMIES ---',type:'section'},
+    {key:'total_gummies_used',label:'Total Gummies Used',type:'text',placeholder:'Gummies used for sugaring'},
+    {key:'total_gummies_waste_presugar',label:'Total Gummies Waste (Before Sugaring)',type:'text',placeholder:'Gummies wasted before sugaring'},
+    {key:'total_sugar_coated_gummies',label:'Total Sugar Coated Gummies',type:'text',placeholder:'e.g. 4,900 gummies'},
+    {key:'sugar_coated_gummies_metrc',label:'Sugar Coated Gummies METRC#',type:'text',placeholder:'METRC tag for the sugar coated gummies'},
+    {key:'gummy_rd1',label:'R&D Test',type:'text'},
+    {key:'gummy_rd2',label:'R&D Test 2',type:'text'},
+    {key:'_s_final_packaging',label:'--- FINAL PACKAGING ---',type:'section'},
+    {key:'sugar_coated_used',label:'Total Sugar Coated Gummies Used',type:'text',placeholder:'Amount used for packaging'},
+    {key:'sugar_coated_waste',label:'Total Sugar Coated Gummies Waste',type:'text',placeholder:'Amount wasted during packaging'},
+    {key:'total_packaged_gummies',label:'Total Packaged Gummies',type:'text',placeholder:'Final packaged unit count'},
+    {key:'final_packaged_gummies_metrc',label:'Final Packaged Gummies METRC#',type:'text',placeholder:'METRC tag for packaged units'},
+    {key:'gummy_mandatory_test',label:'Mandatory Testing',type:'select',options:['Not Submitted','Submitted','Passed','Failed']},
     {key:'status',label:'Status',type:'select',options:['In Progress','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
