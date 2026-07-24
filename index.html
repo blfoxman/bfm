@@ -3359,6 +3359,25 @@ const QMS_STATUSES={open:{label:'Open',color:'#ef4444'},in_progress:{label:'In P
 // Supabase column-name fragment (lowercase, alphanumeric + underscores only).
 // Used for the security inspection's per-camera/door/alarm fields so the JS key
 // always matches a real Postgres column name.
+// Cartridge SKUs and their flavor lists (cascading dropdown in the Batch
+// Tracker's Cartridges form). SKUs with no flavor list yet fall back to a
+// free-text flavor field so new batches aren't blocked while Sam fills those in.
+const CARTRIDGE_SKUS=[
+  'Muha Meds 2G AIO',
+  'Muha Meds 1G Reserve AIO',
+  'Muha Meds 1G Melted Diamond AIO',
+  'Muha Meds 1G 510 Cartridges',
+  'Bodega Boyz 2G AIO',
+  '1G Pusha Pods',
+];
+const CARTRIDGE_FLAVORS={
+  'Muha Meds 2G AIO':['Moroccan Peaches','Honey Melon','Strawberry Lava','Frozen Pomegranate','Pineapple Paradise','Gelato #33','Lemon Tart','Purple Punch','Blue Dream','Do-Si OG'],
+  'Muha Meds 1G Reserve AIO':['Golden Papaya','Grape Dosi','Lemon Kushmintz','Wedding Cake','OG Kush'],
+  'Muha Meds 1G Melted Diamond AIO':['Durban Delight','Grape Gas','Lemon Cherry Gelato','Mango Mirage','Orange Tangie'],
+  'Muha Meds 1G 510 Cartridges':[],
+  'Bodega Boyz 2G AIO':[],
+  '1G Pusha Pods':[],
+};
 function slug(s){return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
 // Turns a plain list of names into an array of checkbox field definitions
 // (used for the Sanitation Log's Daily/Weekly/Monthly area & equipment checklists).
@@ -3541,6 +3560,8 @@ const LOG_TYPES={
     {key:'batch_number',label:'Batch / Lot Number *',type:'text',placeholder:'e.g. CART-2026-014'},
     {key:'date',label:'Date *',type:'date'},
     {key:'operator',label:'Operator / Personnel *',type:'text',placeholder:'Who ran this batch'},
+    {key:'sku',label:'SKU *',type:'select',options:CARTRIDGE_SKUS},
+    {key:'flavor',label:'Flavor *',type:'select',options:[]},
     {key:'oil_source_batch',label:'Oil / Distillate Source Batch #  *',type:'text',placeholder:'Which extraction batch this oil came from'},
     {key:'input_weight',label:'Input Oil Weight *',type:'text',placeholder:'e.g. 800g distillate'},
     {key:'units_produced',label:'Cartridges Filled *',type:'text',placeholder:'e.g. 800 units'},
@@ -3692,7 +3713,20 @@ function exportLogPdf(logType,entries,dateFrom,dateTo){
 
 function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
   const lt=LOG_TYPES[logType];
-  const init=()=>{const f={submitted_by:cu.name,created_at:new Date().toISOString()};lt.fields.forEach(fl=>{if(fl.type==='section')return;else if(fl.type==='date')f[fl.key]=new Date().toISOString().slice(0,10);else if(fl.type==='time')f[fl.key]=new Date().toTimeString().slice(0,5);else if(fl.type==='select')f[fl.key]=fl.options[0];else if(fl.type==='checkbox')f[fl.key]=false;else f[fl.key]='';});return f;};
+  const init=()=>{
+    const f={submitted_by:cu.name,created_at:new Date().toISOString()};
+    lt.fields.forEach(fl=>{
+      if(fl.type==='section')return;
+      else if(fl.type==='date')f[fl.key]=new Date().toISOString().slice(0,10);
+      else if(fl.type==='time')f[fl.key]=new Date().toTimeString().slice(0,5);
+      else if(fl.type==='checkbox')f[fl.key]=false;
+      else if(logType==='cartridges'&&fl.key==='sku')f[fl.key]=CARTRIDGE_SKUS[0];
+      else if(logType==='cartridges'&&fl.key==='flavor')f[fl.key]=(CARTRIDGE_FLAVORS[CARTRIDGE_SKUS[0]]||[])[0]||'';
+      else if(fl.type==='select')f[fl.key]=fl.options[0];
+      else f[fl.key]='';
+    });
+    return f;
+  };
   const[form,setForm]=React.useState(init);
   const[sig,setSig]=React.useState(null);
   const[attachments,setAttachments]=React.useState([]);
@@ -3752,6 +3786,31 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
       el('input',{type:'checkbox',id:'chk_'+f.key,checked:!!form[f.key],onChange:ev=>setF(f.key,ev.target.checked),style:{width:18,height:18,accentColor:'var(--green)',cursor:'pointer',flexShrink:0}}),
       el('label',{htmlFor:'chk_'+f.key,style:{fontSize:13,fontWeight:700,color:'var(--green)',cursor:'pointer',margin:0}},f.label),
     );
+    if(logType==='cartridges'&&f.key==='sku'){
+      return el('div',{key:f.key,className:'fg'},
+        el('label',null,f.label),
+        el('select',{value:form.sku||CARTRIDGE_SKUS[0],onChange:ev=>{
+          const newSku=ev.target.value;
+          const flavors=CARTRIDGE_FLAVORS[newSku]||[];
+          setForm(p=>({...p,sku:newSku,flavor:flavors[0]||''}));
+        },style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13}},
+          CARTRIDGE_SKUS.map(o=>el('option',{key:o,value:o},o))
+        ),
+      );
+    }
+    if(logType==='cartridges'&&f.key==='flavor'){
+      const flavors=CARTRIDGE_FLAVORS[form.sku]||[];
+      if(flavors.length>0) return el('div',{key:f.key,className:'fg'},
+        el('label',null,f.label),
+        el('select',{value:form.flavor||flavors[0],onChange:ev=>setF('flavor',ev.target.value),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13}},
+          flavors.map(o=>el('option',{key:o,value:o},o))
+        ),
+      );
+      return el('div',{key:f.key,className:'fg'},
+        el('label',null,f.label),
+        el('input',{type:'text',value:form.flavor||'',onChange:ev=>setF('flavor',ev.target.value),placeholder:'No flavor list yet for this SKU \u2014 type it in',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
+      );
+    }
     return el('div',{key:f.key,className:'fg'},
     el('label',null,f.label),
     f.type==='select'?el('select',{value:form[f.key]||f.options[0],onChange:ev=>setF(f.key,ev.target.value),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13}},f.options.map(o=>el('option',{key:o,value:o},o)))
