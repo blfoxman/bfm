@@ -3411,6 +3411,16 @@ const PRE_ROLL_SKU_INGREDIENTS={
   'Bodega Boyz - Shorties':[],
 };
 const PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS=['thca_metrc','thca_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'];
+// R&D test checkpoints, keyed by batch logType. Each pair is [rd1_key,rd2_key];
+// rd2 only appears once rd1 has been marked Failed. A batch type can have more
+// than one checkpoint (Cartridges has one at Primed Oil and one at Filled
+// Hardware); Mandatory Test fields (separate, plain select fields) are NOT
+// part of this config unless they need to be gated on a specific R&D passing
+// (Pre-Rolls' mandatory_testing field has its own gating check below).
+const RD_TEST_PAIRS={
+  pre_rolls:[['rd1_result','rd2_result']],
+  cartridges:[['primed_rd1','primed_rd2'],['filled_rd1','filled_rd2']],
+};
 function slug(s){return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
 // Turns a plain list of names into an array of checkbox field definitions
 // (used for the Sanitation Log's Daily/Weekly/Monthly area & equipment checklists).
@@ -3584,38 +3594,45 @@ const LOG_TYPES={
     {key:'flavor',label:'Flavor',type:'select',options:[]},
     {key:'_s_infused_flower',label:'--- INFUSED FLOWER ---',type:'section'},
     {key:'flower_metrc',label:'Flower METRC #',type:'text',placeholder:'METRC tag for the source flower'},
-    {key:'flower_qty',label:'Flower QTY',type:'text',placeholder:'e.g. 1,000g'},
+    {key:'flower_qty',label:'Flower Used',type:'text',placeholder:'e.g. 1,000g'},
     {key:'thca_metrc',label:'THCA #',type:'text',placeholder:'METRC tag for the THCA used'},
-    {key:'thca_qty',label:'THCA QTY',type:'text',placeholder:'e.g. 200g'},
-    {key:'terp_qty',label:'Terp QTY',type:'text',placeholder:'e.g. 40g'},
+    {key:'thca_qty',label:'THCA Used',type:'text',placeholder:'e.g. 200g'},
+    {key:'terp_qty',label:'Terpene Used',type:'text',placeholder:'e.g. 40g'},
     {key:'live_resin_metrc',label:'Live Resin METRC #',type:'text',placeholder:'METRC tag for the live resin used'},
-    {key:'live_resin_qty',label:'Live Resin QTY',type:'text',placeholder:'e.g. 150g'},
+    {key:'live_resin_qty',label:'Live Resin Used',type:'text',placeholder:'e.g. 150g'},
     {key:'decarbed_resin_metrc',label:'Decarbed Cured Resin METRC #',type:'text',placeholder:'METRC tag for the decarbed cured resin'},
-    {key:'decarbed_resin_qty',label:'Decarbed Cured Resin QTY',type:'text',placeholder:'e.g. 100g'},
+    {key:'decarbed_resin_qty',label:'Decarbed Cured Resin Used',type:'text',placeholder:'e.g. 100g'},
     {key:'distillate_metrc',label:'Distillate METRC #',type:'text',placeholder:'METRC tag for the distillate used'},
-    {key:'distillate_qty',label:'Distillate QTY',type:'text',placeholder:'e.g. 80g'},
+    {key:'distillate_qty',label:'Distillate Used',type:'text',placeholder:'e.g. 80g'},
     {key:'infused_flower_number',label:'Infused Flower #',type:'text',placeholder:'Infused flower batch/lot #'},
     {key:'infused_flower_total_wt',label:'Infused Flower Total WT',type:'text',placeholder:'e.g. 1,240g'},
+    {key:'flower_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_infused_joints',label:'--- INFUSED JOINTS ---',type:'section'},
     {key:'infused_flower_used',label:'Infused Flower Used',type:'text',placeholder:'Amount used for this run'},
     {key:'infused_flower_waste',label:'Infused Flower Waste',type:'text',placeholder:'Amount wasted'},
+    {key:'infused_flower_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'total_joint_filled',label:'Total Joint Filled',type:'text',placeholder:'e.g. 1,500 joints'},
     {key:'infused_preroll_metrc',label:'Infused Pre Roll METRC Tag',type:'text',placeholder:'METRC tag for the infused joints'},
+    {key:'joints_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_kiefed',label:'--- INFUSED KIEFED PREROLL ---',type:'section'},
     {key:'total_infused_preroll_used',label:'Total Infused Pre Roll Used',type:'text',placeholder:'Joints used for kiefing'},
     {key:'total_infused_preroll_waste',label:'Total Infused Pre Roll Waste',type:'text',placeholder:'Joints wasted'},
+    {key:'preroll_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'kief_metrc',label:'Kief METRC #',type:'text',placeholder:'METRC tag for the kief used'},
     {key:'kief_qty_used',label:'Kief QTY Used',type:'text',placeholder:'e.g. 60g'},
     {key:'total_kiefed_infused_joints',label:'Total Kiefed Infused Joints',type:'text',placeholder:'e.g. 1,480 joints'},
     {key:'kiefed_infused_preroll_metrc',label:'Kiefed Infused Preroll METRC #',type:'text',placeholder:'METRC tag for the kiefed joints'},
+    {key:'kiefed_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_final_packaging',label:'--- FINAL PACKAGING ---',type:'section'},
     {key:'kiefed_infused_joints_used',label:'Kiefed Infused Joints Used',type:'text',placeholder:'Joints used for packaging'},
     {key:'kief_infused_joints_waste',label:'Kief Infused Joints Waste',type:'text',placeholder:'Joints wasted during packaging'},
+    {key:'kief_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'total_jar_packaged',label:'Total Jar Packaged',type:'text',placeholder:'Final packaged jar count'},
     {key:'final_packaged_tag',label:'Final Packaged Tag #',type:'text',placeholder:'METRC tag for packaged units'},
     {key:'rd1_result',label:'R&D 1',type:'text'},
     {key:'rd2_result',label:'R&D 2',type:'text'},
     {key:'mandatory_testing',label:'Mandatory Testing',type:'select',options:['Not Submitted','Submitted','Passed','Failed']},
+    {key:'packaging_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'status',label:'Status',type:'select',options:['In Progress','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
@@ -3629,22 +3646,33 @@ const LOG_TYPES={
     {key:'oil_source_batch',label:'Oil / Distillate Source Batch #',type:'text',placeholder:'Which extraction batch this oil came from'},
     {key:'input_weight',label:'Input Oil Weight',type:'text',placeholder:'e.g. 800g distillate'},
     {key:'terpene_added',label:'Amount Terpene Added',type:'text',placeholder:'e.g. 40g or 5%'},
+    {key:'source_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_primed',label:'--- PRIMED OIL ---',type:'section'},
     {key:'primed_oil_total_weight',label:'Primed Oil Total Weight',type:'text',placeholder:'e.g. 840g'},
     {key:'primed_oil_metrc',label:'Primed Oil METRC #',type:'text',placeholder:'METRC tag for the primed oil'},
     {key:'primed_oil_used',label:'Primed Oil Used',type:'text',placeholder:'How much primed oil was used in this fill run'},
+    {key:'primed_rd1',label:'R&D Test',type:'text'},
+    {key:'primed_rd2',label:'R&D Test 2',type:'text'},
+    {key:'primed_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_filled',label:'--- FILLED HARDWARE ---',type:'section'},
     {key:'units_produced',label:'Cartridges Filled',type:'text',placeholder:'e.g. 800 units'},
     {key:'filled_hardware_metrc',label:'Filled Hardware METRC Tag',type:'text',placeholder:'METRC tag for the filled hardware'},
     {key:'oil_waste',label:'Oil Waste',type:'text',placeholder:'Oil lost/wasted during filling'},
+    {key:'oil_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'oil_remnant',label:'Oil Remnant',type:'text',placeholder:'Oil remaining/leftover after filling'},
     {key:'cart_taken_testing',label:'Total Cart Taken for Testing',type:'text',placeholder:'Units pulled for lab testing'},
     {key:'cart_waste',label:'Total Cart Waste',type:'text',placeholder:'Units wasted or rejected'},
+    {key:'cart_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'fill_weight_mg',label:'Fill Weight per Cartridge',type:'text',placeholder:'e.g. 500mg or 1000mg'},
     {key:'hardware_type',label:'Hardware Type / Supplier',type:'text',placeholder:'e.g. CCELL, supplier name'},
+    {key:'filled_rd1',label:'R&D Test',type:'text'},
+    {key:'filled_rd2',label:'R&D Test 2',type:'text'},
+    {key:'filled_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_packaged',label:'--- PACKAGED ---',type:'section'},
     {key:'cart_packaged',label:'Total Cart Packaged',type:'text',placeholder:'Final packaged unit count'},
     {key:'cart_packaged_metrc',label:'Total Cart Packaged METRC#',type:'text',placeholder:'METRC tag for packaged units'},
+    {key:'mandatory_test',label:'Mandatory Test',type:'select',options:['Not Submitted','Submitted','Passed','Failed']},
+    {key:'packaged_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'status',label:'Status',type:'select',options:['In Progress','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
@@ -3915,20 +3943,25 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
       if(!allowed.includes(f.key)) return null;
       // else fall through to the generic text-field renderer below
     }
-    if(logType==='pre_rolls'&&(f.key==='rd1_result'||f.key==='rd2_result')){
-      if(f.key==='rd2_result'&&form.rd1_result!=='Failed') return null;
-      const color=opt=>opt==='Passed'?'#16a34a':'#dc2626';
-      return el('div',{key:f.key,className:'fg'},
-        el('label',null,f.label),
-        el('div',{style:{display:'flex',gap:8}},
-          ['Passed','Failed'].map(opt=>el('button',{key:opt,type:'button',onClick:()=>setF(f.key,form[f.key]===opt?'':opt),
-            style:{padding:'8px 20px',borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',
-              background:form[f.key]===opt?color(opt):'var(--bg)',
-              color:form[f.key]===opt?'#fff':'var(--text2)',
-              border:'1px solid '+(form[f.key]===opt?color(opt):'var(--border)'),
-            }},(form[f.key]===opt?'\u2713 ':'')+opt))
-        ),
-      );
+    {
+      const rdPairs=RD_TEST_PAIRS[logType]||[];
+      const asRd1=rdPairs.find(p=>p[0]===f.key);
+      const asRd2=rdPairs.find(p=>p[1]===f.key);
+      if(asRd1||asRd2){
+        if(asRd2&&form[asRd2[0]]!=='Failed') return null;
+        const color=opt=>opt==='Passed'?'#16a34a':'#dc2626';
+        return el('div',{key:f.key,className:'fg'},
+          el('label',null,f.label),
+          el('div',{style:{display:'flex',gap:8}},
+            ['Passed','Failed'].map(opt=>el('button',{key:opt,type:'button',onClick:()=>setF(f.key,form[f.key]===opt?'':opt),
+              style:{padding:'8px 20px',borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',
+                background:form[f.key]===opt?color(opt):'var(--bg)',
+                color:form[f.key]===opt?'#fff':'var(--text2)',
+                border:'1px solid '+(form[f.key]===opt?color(opt):'var(--border)'),
+              }},(form[f.key]===opt?'\u2713 ':'')+opt))
+          ),
+        );
+      }
     }
     if(logType==='pre_rolls'&&f.key==='mandatory_testing'){
       const rdPassed=form.rd1_result==='Passed'||form.rd2_result==='Passed';
