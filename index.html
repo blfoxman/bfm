@@ -3396,6 +3396,24 @@ const GUMMY_SKUS=['Muha Meds Distillate Gummies'];
 const GUMMY_FLAVORS={
   'Muha Meds Distillate Gummies':['Mango Mirage','Strawberry Lemon','Green Apple','Very Berry','Watermelon'],
 };
+// Gummies auto-calculation chain:
+//   Gummy Mixture Used        = Gummy Mixture Batch Weight \u2212 Gummy Mixture Waste
+//   Total Sugar Coated Gummies = Total Gummies Produced \u2212 Total Gummies Waste (Before Sugaring)
+//   Total Packaged Gummies    = (Total Sugar Coated Gummies \u2212 Sugar Coated Gummies Waste) / 10
+// All three are derived/read-only in the UI; recalculated on every relevant
+// field change (and on load, so edited/legacy records stay correct too).
+function recalcGummy(logType,f){
+  if(logType!=='gummies') return f;
+  const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
+  const mixtureUsed=num(f.gummy_mixture_batch_weight)-num(f.gummy_mixture_waste);
+  const sugarCoated=num(f.units_produced)-num(f.total_gummies_waste_presugar);
+  const packaged=(sugarCoated-num(f.sugar_coated_waste))/10;
+  return{...f,
+    gummy_mixture_used:String(Math.round(mixtureUsed*100)/100),
+    total_sugar_coated_gummies:String(Math.round(sugarCoated*100)/100),
+    total_packaged_gummies:String(Math.round(packaged*100)/100),
+  };
+}
 // Generalized SKU\u2192Flavor cascading dropdown config, keyed by batch log type.
 // Any batch type listed here gets the SKU/Flavor special-case rendering in
 // LogEntryForm below (SKU select \u2192 Flavor select scoped to that SKU, or a
@@ -3878,14 +3896,14 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
     // Prefill from the existing record when editing (fresh defaults above cover
     // any newer fields the saved record predates), so reopening a saved batch
     // shows what was already entered instead of a blank form.
-    if(editData) return {...f,...editData};
-    return f;
+    if(editData) return recalcGummy(logType,{...f,...editData});
+    return recalcGummy(logType,f);
   };
   const[form,setForm]=React.useState(init);
   const[sig,setSig]=React.useState(null);
   const[attachments,setAttachments]=React.useState([]);
   const[saving,setSaving]=React.useState(false);
-  const setF=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const setF=(k,v)=>setForm(p=>recalcGummy(logType,{...p,[k]:v}));
 
   function handleFiles(files){
     Array.from(files).forEach(file=>{
@@ -3965,6 +3983,12 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
       return el('div',{key:f.key,className:'fg'},
         el('label',null,f.label),
         el('input',{type:'text',value:form.flavor||'',onChange:ev=>setF('flavor',ev.target.value),placeholder:'No flavor list yet for this SKU \u2014 type it in',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
+      );
+    }
+    if(logType==='gummies'&&['gummy_mixture_used','total_sugar_coated_gummies','total_packaged_gummies'].includes(f.key)){
+      return el('div',{key:f.key,className:'fg'},
+        el('label',null,f.label+' (auto-calculated)'),
+        el('div',{style:{width:'100%',background:'var(--surface2)',border:'1px dashed var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,fontWeight:700,boxSizing:'border-box'}},form[f.key]||'0'),
       );
     }
     if(logType==='pre_rolls'&&PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS.includes(f.key)){
