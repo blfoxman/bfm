@@ -4256,6 +4256,9 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
   const[search,setSearch]=React.useState('');
 
   const lt=LOG_TYPES[activeType];
+  // Production Manager can also edit/delete batch records, in addition to the
+  // usual isElevated/isAdmin tiers (Batch Tracker-specific access grant).
+  const canManageBatch=isElevated||isAdmin||hasRole(cu,'production_manager');
 
   React.useEffect(()=>{
     setLoading(true);setEntries([]);
@@ -4319,8 +4322,8 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
             ),
             el('div',{style:{display:'flex',gap:6,flexShrink:0,flexWrap:'wrap'}},
               el('button',{onClick:()=>exportLogPdf(activeType,[entry],'',''),className:'btn b-ghost btn-sm'},'PDF'),
-              isElevated&&el('button',{onClick:()=>{setEditEntry(entry);setShowForm(true);},className:'btn b-ghost btn-sm'},'Edit'),
-              isAdmin&&el('button',{onClick:async()=>{if(!confirm('Delete this batch record?'))return;await fetch(`${SUPA_URL}/rest/v1/${lt.table}?id=eq.${entry.id}`,{method:'DELETE',headers:H.headers});setEntries(p=>p.filter(e=>e.id!==entry.id));},className:'btn b-red btn-sm'},'Delete'),
+              canManageBatch&&el('button',{onClick:()=>{setEditEntry(entry);setShowForm(true);},className:'btn b-ghost btn-sm'},'Edit'),
+              canManageBatch&&el('button',{onClick:async()=>{if(!confirm('Delete this batch record?'))return;await fetch(`${SUPA_URL}/rest/v1/${lt.table}?id=eq.${entry.id}`,{method:'DELETE',headers:H.headers});setEntries(p=>p.filter(e=>e.id!==entry.id));},className:'btn b-red btn-sm'},'Delete'),
             ),
           ),
         ))
