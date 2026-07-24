@@ -3495,7 +3495,64 @@ const LOG_TYPES={
     {key:'retest_date',label:'Retest Date (if required)',type:'date'},
     {key:'notes',label:'Notes',type:'textarea',placeholder:''},
   ]},
+  // \u2500\u2500 BATCH TRACKER (category:'batch' \u2014 shown on its own sidebar tab, not Facility Logs) \u2500\u2500
+  ethanol_extraction:{id:'ethanol_extraction',category:'batch',label:'Ethanol Extraction',icon:'\uD83E\uDDEA',color:'#7c3aed',bg:'#f5f3ff',table:'pf_batch_tracker',dcr:'Missouri DCR / METRC \u2014 Batch Production Record',freq:'Per batch',fields:[
+    {key:'batch_number',label:'Batch / Lot Number *',type:'text',placeholder:'e.g. ETH-2026-014'},
+    {key:'date',label:'Date *',type:'date'},
+    {key:'operator',label:'Operator / Personnel *',type:'text',placeholder:'Who performed the extraction'},
+    {key:'strain_input',label:'Strain(s) / Input Material *',type:'text',placeholder:'Strain name(s) used'},
+    {key:'input_weight',label:'Input Weight *',type:'text',placeholder:'e.g. 10 lbs biomass'},
+    {key:'ethanol_volume',label:'Ethanol Volume Used',type:'text',placeholder:'e.g. 15 gallons'},
+    {key:'extraction_temp',label:'Extraction Temp / Method',type:'text',placeholder:'e.g. -40\u00B0F cold ethanol'},
+    {key:'output_weight',label:'Output Weight (Crude Oil)',type:'text',placeholder:'e.g. 1,120g'},
+    {key:'yield_percent',label:'Yield %',type:'text',placeholder:'e.g. 12.4%'},
+    {key:'metrc_tag',label:'METRC Tag #(s)',type:'text',placeholder:'Source and/or output tags'},
+    {key:'status',label:'Status *',type:'select',options:['In Progress','Winterization','Filtration','QC Hold','Passed','Failed','Completed']},
+    {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
+  ]},
+  butane_extraction:{id:'butane_extraction',category:'batch',label:'Butane Extraction',icon:'\uD83D\uDD25',color:'#ea580c',bg:'#fff7ed',table:'pf_batch_tracker',dcr:'Missouri DCR / METRC \u2014 Batch Production Record',freq:'Per batch',fields:[
+    {key:'batch_number',label:'Batch / Lot Number *',type:'text',placeholder:'e.g. BHO-2026-014'},
+    {key:'date',label:'Date *',type:'date'},
+    {key:'operator',label:'Operator / Personnel *',type:'text',placeholder:'Who performed the extraction'},
+    {key:'strain_input',label:'Strain(s) / Input Material *',type:'text',placeholder:'Strain name(s) used'},
+    {key:'input_weight',label:'Input Weight *',type:'text',placeholder:'e.g. 5 lbs flower/trim'},
+    {key:'butane_volume',label:'Butane Volume Used',type:'text',placeholder:'e.g. 8 lbs'},
+    {key:'purge_time_temp',label:'Purge Time / Temp',type:'text',placeholder:'e.g. 12 hrs at 90\u00B0F'},
+    {key:'output_weight',label:'Output Weight (Concentrate)',type:'text',placeholder:'e.g. 640g'},
+    {key:'yield_percent',label:'Yield %',type:'text',placeholder:'e.g. 14.1%'},
+    {key:'metrc_tag',label:'METRC Tag #(s)',type:'text',placeholder:'Source and/or output tags'},
+    {key:'status',label:'Status *',type:'select',options:['In Progress','Purging','QC Hold','Passed','Failed','Completed']},
+    {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
+  ]},
+  pre_rolls:{id:'pre_rolls',category:'batch',label:'Pre-Rolls',icon:'\uD83C\uDF3F',color:'#0891b2',bg:'#ecfeff',table:'pf_batch_tracker',dcr:'Missouri DCR / METRC \u2014 Batch Production Record',freq:'Per batch',fields:[
+    {key:'batch_number',label:'Batch / Lot Number *',type:'text',placeholder:'e.g. PR-2026-014'},
+    {key:'date',label:'Date *',type:'date'},
+    {key:'operator',label:'Operator / Personnel *',type:'text',placeholder:'Who ran this batch'},
+    {key:'strain_input',label:'Strain *',type:'text',placeholder:'Strain used'},
+    {key:'input_weight',label:'Input Flower Weight *',type:'text',placeholder:'e.g. 2,000g'},
+    {key:'units_produced',label:'Units Produced *',type:'text',placeholder:'e.g. 1,500 pre-rolls'},
+    {key:'target_unit_weight',label:'Target Weight per Unit',type:'text',placeholder:'e.g. 1.0g'},
+    {key:'actual_avg_weight',label:'Actual Avg Weight per Unit',type:'text',placeholder:'e.g. 1.02g'},
+    {key:'metrc_tag',label:'METRC Tag #(s)',type:'text',placeholder:'Source and/or output tags'},
+    {key:'status',label:'Status *',type:'select',options:['In Progress','QC Hold','Passed','Failed','Completed']},
+    {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
+  ]},
+  cartridges:{id:'cartridges',category:'batch',label:'Cartridges',icon:'\uD83D\uDCA8',color:'#be185d',bg:'#fdf2f8',table:'pf_batch_tracker',dcr:'Missouri DCR / METRC \u2014 Batch Production Record',freq:'Per batch',fields:[
+    {key:'batch_number',label:'Batch / Lot Number *',type:'text',placeholder:'e.g. CART-2026-014'},
+    {key:'date',label:'Date *',type:'date'},
+    {key:'operator',label:'Operator / Personnel *',type:'text',placeholder:'Who ran this batch'},
+    {key:'oil_source_batch',label:'Oil / Distillate Source Batch #  *',type:'text',placeholder:'Which extraction batch this oil came from'},
+    {key:'input_weight',label:'Input Oil Weight *',type:'text',placeholder:'e.g. 800g distillate'},
+    {key:'units_produced',label:'Cartridges Filled *',type:'text',placeholder:'e.g. 800 units'},
+    {key:'fill_weight_mg',label:'Fill Weight per Cartridge',type:'text',placeholder:'e.g. 500mg or 1000mg'},
+    {key:'hardware_type',label:'Hardware Type / Supplier',type:'text',placeholder:'e.g. CCELL, supplier name'},
+    {key:'metrc_tag',label:'METRC Tag #(s)',type:'text',placeholder:'Source and/or output tags'},
+    {key:'status',label:'Status *',type:'select',options:['In Progress','QC Hold','Passed','Failed','Completed']},
+    {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
+  ]},
 };
+
+const BATCH_TYPE_IDS=['ethanol_extraction','butane_extraction','pre_rolls','cartridges'];
 
 function exportLogPdf(logType,entries,dateFrom,dateTo){
   const{jsPDF}=window.jspdf;
@@ -3970,7 +4027,7 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
       el('div',{style:{fontSize:13,opacity:.85,lineHeight:1.6}},'All logs are timestamped, signed, and exportable as PDF for DCR inspections and ISO 9001 audits. Retain all records for minimum 5 years per Missouri DCR.'),
     ),
     el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:14}},
-      Object.values(LOG_TYPES).map(log=>el('div',{key:log.id,onClick:()=>setActiveLog(log.id),
+      Object.values(LOG_TYPES).filter(log=>log.category!=='batch').map(log=>el('div',{key:log.id,onClick:()=>setActiveLog(log.id),
         style:{background:log.bg,border:'2px solid',borderColor:log.color+'30',borderRadius:14,padding:'20px',cursor:'pointer',transition:'all .2s'},
         onMouseEnter:ev=>{ev.currentTarget.style.borderColor=log.color;ev.currentTarget.style.transform='translateY(-2px)';},
         onMouseLeave:ev=>{ev.currentTarget.style.borderColor=log.color+'30';ev.currentTarget.style.transform='translateY(0)';},
@@ -4105,6 +4162,100 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
         setShowForm(false);setEditEntry(null);
       }}),
 
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BATCH TRACKER \u2014 dropdown-selected batch type, list + create/edit/PDF, one shared table
+// ══════════════════════════════════════════════════════════════════════════════
+function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
+  const[activeType,setActiveType]=React.useState('ethanol_extraction');
+  const[entries,setEntries]=React.useState([]);
+  const[loading,setLoading]=React.useState(false);
+  const[showForm,setShowForm]=React.useState(false);
+  const[editEntry,setEditEntry]=React.useState(null);
+  const[dateFrom,setDateFrom]=React.useState('');
+  const[dateTo,setDateTo]=React.useState('');
+  const[search,setSearch]=React.useState('');
+
+  const lt=LOG_TYPES[activeType];
+
+  React.useEffect(()=>{
+    setLoading(true);setEntries([]);
+    let url=`${SUPA_URL}/rest/v1/${lt.table}?select=*&log_type=eq.${activeType}&order=created_at.desc`;
+    if(dateFrom)url+=`&created_at=gte.${dateFrom}`;
+    if(dateTo)url+=`&created_at=lte.${dateTo}T23:59:59`;
+    fetch(url,{headers:H.headers}).then(r=>r.ok?r.json():[]).then(rows=>{setEntries(Array.isArray(rows)?rows:[]);setLoading(false);}).catch(()=>setLoading(false));
+  },[activeType,dateFrom,dateTo]);
+
+  const filtered=entries.filter(e=>!search||JSON.stringify(e).toLowerCase().includes(search.toLowerCase()));
+
+  return el('div',{style:{padding:'0 0 48px'}},
+    el('div',{style:{background:lt.color,borderRadius:14,padding:'20px 24px',marginBottom:20,color:'#fff'}},
+      el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:14}},
+        el('div',null,
+          el('div',{style:{fontSize:20,fontWeight:800,marginBottom:8}},'\uD83E\uDDEA Batch Tracker'),
+          el('select',{value:activeType,onChange:ev=>{setActiveType(ev.target.value);setSearch('');setDateFrom('');setDateTo('');},
+            style:{background:'rgba(255,255,255,.15)',color:'#fff',border:'1px solid rgba(255,255,255,.4)',borderRadius:8,padding:'8px 14px',fontFamily:'inherit',fontSize:14,fontWeight:700,cursor:'pointer'}},
+            BATCH_TYPE_IDS.map(id=>el('option',{key:id,value:id,style:{color:'#0f172a'}},LOG_TYPES[id].icon+' '+LOG_TYPES[id].label))
+          ),
+          el('div',{style:{fontSize:12,opacity:.8,marginTop:6}},lt.dcr+' \u00B7 '+lt.freq),
+        ),
+        el('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
+          el('button',{onClick:()=>{setEditEntry(null);setShowForm(true);},style:{background:'#fff',color:lt.color,border:'none',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'+ New Batch'),
+          el('button',{onClick:()=>exportLogPdf(activeType,filtered,dateFrom,dateTo),style:{background:'rgba(255,255,255,.2)',color:'#fff',border:'1px solid rgba(255,255,255,.4)',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'\uD83D\uDCC4 Export PDF'),
+        ),
+      ),
+    ),
+    el('div',{style:{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap',alignItems:'center'}},
+      el('input',{type:'text',value:search,onChange:ev=>setSearch(ev.target.value),placeholder:'Search batches...',style:{flex:1,minWidth:160,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 12px',color:'var(--text)',fontFamily:'inherit',fontSize:13}}),
+      el('span',{style:{fontSize:12,color:'var(--text2)'}},'From:'),
+      el('input',{type:'date',value:dateFrom,onChange:ev=>setDateFrom(ev.target.value),style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 12px',color:'var(--text)',fontFamily:'inherit',fontSize:13}}),
+      el('span',{style:{fontSize:12,color:'var(--text2)'}},'To:'),
+      el('input',{type:'date',value:dateTo,onChange:ev=>setDateTo(ev.target.value),style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 12px',color:'var(--text)',fontFamily:'inherit',fontSize:13}}),
+      (dateFrom||dateTo)&&el('button',{onClick:()=>{setDateFrom('');setDateTo('');},className:'btn b-ghost btn-sm'},'Clear'),
+    ),
+    el('div',{style:{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 16px',marginBottom:16,display:'flex',gap:20,flexWrap:'wrap',fontSize:13}},
+      el('span',null,el('strong',{style:{color:lt.color}},filtered.length),' batches'),
+      el('span',{style:{color:'var(--text2)'}},'Last: '+(entries[0]?new Date(entries[0].created_at).toLocaleDateString():'None')),
+    ),
+    loading?el('div',{style:{textAlign:'center',padding:40,color:'var(--text3)'}},'Loading...')
+    :filtered.length===0?el('div',{style:{textAlign:'center',padding:'48px 24px',background:'var(--surface)',borderRadius:12,border:'1px solid var(--border)'}},
+        el('div',{style:{fontSize:36,marginBottom:12}},lt.icon),
+        el('div',{style:{fontSize:15,fontWeight:700,color:'var(--text)',marginBottom:6}},'No batches yet'),
+        el('button',{onClick:()=>{setEditEntry(null);setShowForm(true);},style:{background:lt.color,color:'#fff',border:'none',borderRadius:8,padding:'10px 24px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',marginTop:8}},'+ New Batch'),
+      )
+    :el('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+        filtered.map((entry,i)=>el('div',{key:entry.id||i,style:{background:'#ffffff',border:'1px solid var(--border)',borderRadius:12,padding:'14px 16px',boxShadow:'0 1px 3px rgba(15,23,42,.04)'}},
+          el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,flexWrap:'wrap'}},
+            el('div',{style:{flex:1}},
+              el('div',{style:{display:'flex',gap:8,marginBottom:6,flexWrap:'wrap',alignItems:'center'}},
+                el('span',{style:{fontSize:12,fontWeight:700,color:lt.color}},lt.icon+' '+(entry.batch_number||'#'+(filtered.length-i))),
+                entry.status&&el('span',{style:{background:lt.color+'20',color:lt.color,borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:700}},entry.status),
+                el('span',{style:{fontSize:12,color:'var(--text2)'}},entry.date||''),
+                el('span',{style:{fontSize:12,color:'var(--text2)'}},'\u00B7 '+(entry.submitted_by||'')),
+                entry.signature_image&&el('span',{style:{background:'rgba(22,163,74,.1)',color:'#16a34a',borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:700}},'\u270D\uFE0F Signed'),
+              ),
+              el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:4}},
+                lt.fields.filter(f=>f.key!=='batch_number'&&f.key!=='date'&&f.key!=='status').slice(0,4).map(f=>entry[f.key]?el('div',{key:f.key,style:{fontSize:12,color:'var(--text2)'}},el('span',{style:{fontWeight:600,color:'var(--text)'}},f.label.replace(' *','')+': '),entry[f.key]):null)
+              ),
+            ),
+            el('div',{style:{display:'flex',gap:6,flexShrink:0,flexWrap:'wrap'}},
+              el('button',{onClick:()=>exportLogPdf(activeType,[entry],'',''),className:'btn b-ghost btn-sm'},'PDF'),
+              isElevated&&el('button',{onClick:()=>{setEditEntry(entry);setShowForm(true);},className:'btn b-ghost btn-sm'},'Edit'),
+              isAdmin&&el('button',{onClick:async()=>{if(!confirm('Delete this batch record?'))return;await fetch(`${SUPA_URL}/rest/v1/${lt.table}?id=eq.${entry.id}`,{method:'DELETE',headers:H.headers});setEntries(p=>p.filter(e=>e.id!==entry.id));},className:'btn b-red btn-sm'},'Delete'),
+            ),
+          ),
+        ))
+      ),
+    (showForm||editEntry)&&el(LogEntryForm,{logType:activeType,cu,SUPA_URL,SUPA_KEY,H,
+      editData:editEntry,
+      onClose:()=>{setShowForm(false);setEditEntry(null);},
+      onSave:(rec)=>{
+        if(editEntry){setEntries(p=>p.map(e=>e.id===rec.id?rec:e));}
+        else{setEntries(p=>[rec,...p]);}
+        setShowForm(false);setEditEntry(null);
+      }}),
   );
 }
 
@@ -10694,6 +10845,7 @@ function App(){
     canAccessQms&&{id:'compliance',ico:'\u2705',label:'Compliance'},
     canAccessQms&&{id:'risks',ico:'\u26A0\uFE0F',label:'Risk Register'},
     {id:'logs',ico:'\uD83D\uDCCB',label:'Facility Logs'},
+    {id:'batch',ico:'\uD83E\uDDEA',label:'Batch Tracker'},
     {id:'mydocs',ico:'\uD83D\uDCC1',label:'My Documents'},
     {id:'scores',ico:'\uD83C\uDFC6',label:'Scoreboard'},
     isAdmin&&{id:'team',ico:'\uD83D\uDC65',label:'Team & Access',badge:pending||null},
@@ -10902,6 +11054,7 @@ function App(){
       page==='compliance'&&canAccessQms&&el(ComplianceModule,{cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db}),
       page==='risks'&&canAccessQms&&el(RiskRegister,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
       page==='logs'&&el(FacilityLogs,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
+      page==='batch'&&el(BatchTracker,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
       page==='qms'&&canAccessQms&&el(QMS,{cu,users,tasks,sops,
         deviations:qmsDeviations,setDeviations:setQmsDeviations,
         capas:qmsCAPAs,setCapas:setQmsCAPAs,
