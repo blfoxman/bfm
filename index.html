@@ -4254,7 +4254,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
       return el('div',{key:f.key,className:'fg'},
         el('label',null,f.label),
         el('input',{type:'text',value:form[f.key]||'',onChange:ev=>setF(f.key,ev.target.value),placeholder:f.placeholder||'',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
-        el('div',{style:{fontSize:11,color:'var(--accent)',marginTop:4,fontWeight:600}},'\uD83D\uDCA1 Suggested: '+(form[suggestion[0]]||'0')+' ('+suggestion[1]+' of Total Biomass Used)'),
+        el('div',{style:{fontSize:11,color:'var(--accent)',marginTop:4,fontWeight:600}},'\uD83D\uDCA1 Average weight for a good to very good yield is usually: '+(form[suggestion[0]]||'0')+' ('+suggestion[1]+' of Total Biomass Used)'),
       );
     }
     if(logType==='ethanol_extraction'&&f.key==='yield_quality_result'){
