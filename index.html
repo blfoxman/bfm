@@ -798,9 +798,14 @@ function Auth({onLogin}){
   async function login(){
     setLoading(true);setMsg('');
     try{
-      const users=await db.get('pf_users',`email=eq.${encodeURIComponent(f.email)}`);
-      if(!users.length||users[0].pw!==f.pw){setMsg('Invalid email or password.');setLoading(false);return;}
-      const u=users[0];
+      const res=await fetch(`${SUPA_URL}/rest/v1/rpc/verify_login`,{
+        method:'POST',
+        headers:{...H.headers,'Content-Type':'application/json'},
+        body:JSON.stringify({p_email:f.email,p_password:f.pw}),
+      });
+      const result=await res.json();
+      if(!result||!result.ok){setMsg('Invalid email or password.');setLoading(false);return;}
+      const u=result.user;
       if(!u.approved){setPend(true);setLoading(false);return;}
       localStorage.setItem('pf_session',JSON.stringify(u));
       onLogin(u);
@@ -812,7 +817,7 @@ function Auth({onLogin}){
     if(!f.firstName||!f.lastName||!f.email||!f.pw){setMsg('Please fill all fields.');return;}
     setLoading(true);setMsg('');
     try{
-      const exists=await db.get('pf_users',`email=eq.${encodeURIComponent(f.email)}`);
+      const exists=await db.get('pf_users_safe',`email=eq.${encodeURIComponent(f.email)}`);
       if(exists.length){setMsg('Email already registered.');setLoading(false);return;}
       const fullName=f.firstName.trim()+' '+f.lastName.trim();
       await db.insert('pf_users',{id:'u'+Date.now(),name:fullName,first_name:f.firstName,last_name:f.lastName,email:f.email,pw:f.pw,role:'team_member',dept:(f.depts||[])[0]||'Production',depts:f.depts||[],licenses:f.licenses||[],loc:f.loc,approved:false,perms:[],managers:[],oversees_depts:[]});
@@ -11303,7 +11308,7 @@ function App(){
     Promise.all([
       db.get('pf_tasks','order=created_at.desc').catch(()=>[]),
       db.get('pf_sales_tasks','order=created_at.desc').catch(()=>[]),
-      db.get('pf_users').catch(()=>[]),
+      db.get('pf_users_safe').catch(()=>[]),
       db.get('pf_events','order=date.asc').catch(()=>[]),
       db.get('pf_meeting_notes','order=created_at.desc').catch(()=>[]),
       db.get('pf_sops','order=created_at.desc').catch(()=>[]),
@@ -11341,7 +11346,7 @@ function App(){
   },[cu,dbReady,doRefresh]);
 
   useEffect(()=>{
-    db.get('pf_users','limit=1').then(()=>setDbReady(true)).catch(()=>setDbReady(false));
+    db.get('pf_users_safe','limit=1').then(()=>setDbReady(true)).catch(()=>setDbReady(false));
   },[]);
 
   useEffect(()=>{
@@ -11373,7 +11378,7 @@ function App(){
     Promise.all([
       db.get('pf_tasks','order=created_at.desc').catch(()=>[]),
       db.get('pf_sales_tasks','order=created_at.desc').catch(()=>[]),
-      db.get('pf_users').catch(()=>[]),
+      db.get('pf_users_safe').catch(()=>[]),
       db.get('pf_events','order=date.asc').catch(()=>[]),
       db.get('pf_meeting_notes','order=created_at.desc').catch(()=>[]),
       db.get('pf_sops','order=created_at.desc').catch(()=>[]),
