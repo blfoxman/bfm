@@ -5064,22 +5064,35 @@ function ComplianceModule({cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db
   const[framework,setFramework]=React.useState('iso9001');
   const[checks,setChecks]=React.useState({});
   const[notes,setNotes]=React.useState({});
+  const[verifiedAt,setVerifiedAt]=React.useState({});
   const[saving,setSaving]=React.useState(false);
   const[saved,setSaved]=React.useState('');
   const[expanded,setExpanded]=React.useState({});
   const[expandAll,setExpandAll]=React.useState(false);
   const TABLE='pf_compliance_checks';
   const fw=COMPLIANCE_FRAMEWORKS[framework];
+  // Re-verification resets on the 1st of every calendar month, not a rolling
+  // 30-day window \u2014 a clause verified on 6/29 is stale again on 7/1.
 
   React.useEffect(()=>{
     fetch(`${SUPA_URL}/rest/v1/${TABLE}?framework=eq.${framework}&select=*`,{headers:H.headers})
       .then(r=>r.ok?r.json():[]).then(rows=>{
         if(!Array.isArray(rows))return;
-        const c={},n={};
-        rows.forEach(r=>{c[r.clause_id]=r.status||'pending';n[r.clause_id]=r.notes||'';});
-        setChecks(c);setNotes(n);
+        const c={},n={},v={};
+        rows.forEach(r=>{c[r.clause_id]=r.status||'pending';n[r.clause_id]=r.notes||'';v[r.clause_id]=r.updated_at||null;});
+        setChecks(c);setNotes(n);setVerifiedAt(v);
       }).catch(()=>{});
   },[framework]);
+
+  function isStale(clauseId){
+    const status=checks[clauseId]||'pending';
+    if(status==='pending') return false; // nothing to re-verify if it was never started
+    const ts=verifiedAt[clauseId];
+    if(!ts) return true;
+    const now=new Date();
+    const monthStart=new Date(now.getFullYear(),now.getMonth(),1);
+    return new Date(ts)<monthStart;
+  }
 
   async function saveClause(clauseId,status,note){
     const rec={clause_id:clauseId,framework,status,notes:note||'',updated_by:cu.name,updated_at:new Date().toISOString()};
@@ -5088,6 +5101,7 @@ function ComplianceModule({cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db
       await fetch(`${SUPA_URL}/rest/v1/${TABLE}`,{method:'POST',headers:{...H.headers,'Prefer':'return=representation'},body:JSON.stringify(rec)});
       setChecks(p=>({...p,[clauseId]:status}));
       setNotes(p=>({...p,[clauseId]:note}));
+      setVerifiedAt(p=>({...p,[clauseId]:rec.updated_at}));
       setSaved('\u2713 Saved');setTimeout(()=>setSaved(''),2000);
     }catch(e){alert('Save failed: '+e.message);}
   }
@@ -5097,6 +5111,7 @@ function ComplianceModule({cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db
   const completed=clauses.filter(c=>checks[c.id]==='compliant').length;
   const inprog=clauses.filter(c=>checks[c.id]==='in_progress').length;
   const gaps=clauses.filter(c=>checks[c.id]==='gap').length;
+  const dueForReview=clauses.filter(c=>isStale(c.id)).length;
   const pct=Math.round((completed/total)*100);
 
   const STATUS=[
@@ -5127,11 +5142,12 @@ function ComplianceModule({cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db
         el('div',{style:{background:'rgba(255,255,255,.15)',borderRadius:20,height:12,overflow:'hidden'}},
           el('div',{style:{width:pct+'%',height:'100%',background:pct>=80?'#22c55e':pct>=50?'#f59e0b':'#f87171',borderRadius:20,transition:'width .5s'}}),
         ),
-        el('div',{style:{display:'flex',gap:20,marginTop:10,fontSize:11,opacity:.8}},
+        el('div',{style:{display:'flex',gap:20,marginTop:10,fontSize:11,opacity:.8,flexWrap:'wrap'}},
           el('span',null,'\u2713 '+completed+' Compliant'),
           el('span',null,'\u23F3 '+inprog+' In Progress'),
           el('span',null,'\u26A0 '+gaps+' Gaps'),
           el('span',null,'\u25CB '+(total-completed-inprog-gaps)+' Not Started'),
+          dueForReview>0&&el('span',{style:{color:'#fde68a',fontWeight:700,opacity:1}},'\uD83D\uDD01 '+dueForReview+' Due for Monthly Re-verification'),
         ),
       ),
     ),
@@ -5179,8 +5195,10 @@ function ComplianceModule({cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db
         const note=notes[clause.id]||'';
         const isOpen=expandAll||(expanded[clause.id]||false);
         const so=STATUS.find(o=>o.v===status)||STATUS[0];
+        const stale=isStale(clause.id);
+        const lastVerified=verifiedAt[clause.id];
 
-        return el('div',{key:clause.id,style:{background:'#ffffff',border:'1px solid var(--border)',borderRadius:12,overflow:'hidden',boxShadow:isOpen?'0 2px 12px rgba(15,23,42,.08)':'0 1px 3px rgba(15,23,42,.04)',transition:'box-shadow .2s'}},
+        return el('div',{key:clause.id,style:{background:'#ffffff',border:'1px solid '+(stale?'#f59e0b':'var(--border)'),borderRadius:12,overflow:'hidden',boxShadow:isOpen?'0 2px 12px rgba(15,23,42,.08)':'0 1px 3px rgba(15,23,42,.04)',transition:'box-shadow .2s'}},
           // Header row
           el('div',{onClick:()=>setExpanded(p=>({...p,[clause.id]:!p[clause.id]})),
             style:{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',cursor:'pointer',userSelect:'none',background:isOpen?'rgba(30,58,95,.03)':'transparent'},
@@ -5190,6 +5208,7 @@ function ComplianceModule({cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db
               el('div',{style:{fontSize:14,fontWeight:700,color:'var(--text)'}},clause.title),
               !isOpen&&el('div',{style:{fontSize:12,color:'var(--text2)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},clause.req),
             ),
+            stale&&el('span',{style:{background:'rgba(245,158,11,.12)',color:'#d97706',border:'1px solid rgba(245,158,11,.4)',borderRadius:6,padding:'3px 10px',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}},'\uD83D\uDD01 Needs Re-verification'),
             el('span',{style:sStyle(status)},so.label),
             el('span',{style:{color:'var(--text3)',fontSize:12,marginLeft:6,flexShrink:0}},isOpen?'\u25B2':'\u25BC'),
           ),
@@ -5215,7 +5234,12 @@ function ComplianceModule({cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db
 
             // Status buttons
             el('div',{style:{marginBottom:14}},
-              el('div',{style:{fontSize:10,fontWeight:800,color:'var(--accent)',textTransform:'uppercase',letterSpacing:'.6px',marginBottom:8}},'Set Status'),
+              el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},
+                el('div',{style:{fontSize:10,fontWeight:800,color:'var(--accent)',textTransform:'uppercase',letterSpacing:'.6px'}},'Set Status'),
+                el('div',{style:{fontSize:11,color:stale?'#d97706':'var(--text3)',fontWeight:stale?700:400}},
+                  lastVerified?('Last verified: '+new Date(lastVerified).toLocaleDateString()+(stale?' \u2014 before this month, needs re-verification':'')):'Never verified',
+                ),
+              ),
               el('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
                 STATUS.map(opt=>el('button',{key:opt.v,
                   onClick:()=>saveClause(clause.id,opt.v,note),
@@ -5225,6 +5249,9 @@ function ComplianceModule({cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db
                     color:status===opt.v?opt.color:'var(--text2)',
                   }
                 },opt.label)),
+                status!=='pending'&&el('button',{onClick:()=>saveClause(clause.id,status,note),
+                  style:{padding:'7px 14px',borderRadius:8,border:'2px solid #16a34a',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',background:'rgba(22,163,74,.08)',color:'#16a34a'}
+                },'\uD83D\uDD01 Re-verify Now (keeps '+so.label+')'),
               ),
             ),
 
