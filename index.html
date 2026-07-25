@@ -193,11 +193,44 @@ const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const APP_URL='https://blfoxman.github.io/BFM';
 const H={headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}};
 
+function getSessionToken(){
+  try{return localStorage.getItem('pf_token')||'';}catch{return '';}
+}
+async function rpcWrite(table,op,id,data){
+  const res=await fetch(`${SUPA_URL}/rest/v1/rpc/secure_write`,{
+    method:'POST',
+    headers:{...H.headers,'Content-Type':'application/json'},
+    body:JSON.stringify({p_token:getSessionToken(),p_table:table,p_op:op,p_id:id?String(id):null,p_data:data||null}),
+  });
+  let result;
+  try{result=await res.json();}catch{result=null;}
+  if(!result||!result.ok){
+    const err=(result&&result.error)||'Write failed';
+    if(err==='unauthorized'){
+      try{localStorage.removeItem('pf_session');localStorage.removeItem('pf_token');}catch{}
+      alert('Your session has expired. Please sign in again.');
+      window.location.reload();
+    }
+    throw new Error(err);
+  }
+  return result.data;
+}
+async function kioskWrite(table,op,id,data){
+  const res=await fetch(`${SUPA_URL}/rest/v1/rpc/kiosk_write`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
+    body:JSON.stringify({p_table:table,p_op:op,p_id:id?String(id):null,p_data:data||null}),
+  });
+  let result;
+  try{result=await res.json();}catch{result=null;}
+  if(!result||!result.ok) throw new Error((result&&result.error)||'Save failed');
+  return result.data;
+}
 const db={
   get:(t,q='')=>fetch(`${SUPA_URL}/rest/v1/${t}${q?'?'+q:''}`,{headers:{...H.headers,'Accept':'application/json'}}).then(r=>r.ok?r.json():r.text().then(e=>{throw new Error(e);})),
-  insert:(t,d)=>fetch(`${SUPA_URL}/rest/v1/${t}`,{method:'POST',headers:{...H.headers,'Prefer':'return=representation'},body:JSON.stringify(d)}).then(r=>r.ok?r.json():r.text().then(e=>{throw new Error(e);})),
-  update:(t,id,d)=>fetch(`${SUPA_URL}/rest/v1/${t}?id=eq.${id}`,{method:'PATCH',headers:{...H.headers,'Prefer':'return=representation'},body:JSON.stringify(d)}).then(r=>r.ok?r.json():r.text().then(e=>{throw new Error(e);})),
-  remove:(t,id)=>fetch(`${SUPA_URL}/rest/v1/${t}?id=eq.${id}`,{method:'DELETE',headers:H.headers}).then(r=>{if(!r.ok)throw new Error(r.status);}),
+  insert:(t,d)=>rpcWrite(t,'insert',null,d),
+  update:(t,id,d)=>rpcWrite(t,'update',id,d),
+  remove:(t,id)=>rpcWrite(t,'delete',id,null),
 };
 
 // \u2500\u2500 AUTO MIGRATION \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -808,6 +841,7 @@ function Auth({onLogin}){
       const u=result.user;
       if(!u.approved){setPend(true);setLoading(false);return;}
       localStorage.setItem('pf_session',JSON.stringify(u));
+      localStorage.setItem('pf_token',result.token||'');
       onLogin(u);
     }catch(e){setMsg('Connection error.');console.error(e);}
     setLoading(false);
@@ -2262,49 +2296,14 @@ function Team({users,setUsers,cu}){
       managers:editU.managers||[],
       oversees_depts:editU.oversees_depts||[],
     };
-    // Try full update first; if oversees_depts column missing, add it then retry
-    async function doUpdate(){
-      return fetch(`${SUPA_URL}/rest/v1/pf_users?id=eq.${editU.id}`,{
-        method:'PATCH',
-        headers:{...H.headers,'Prefer':'return=representation'},
-        body:JSON.stringify(update),
-      }).then(async r=>{
-        if(!r.ok){
-          const txt=await r.text();
-          if(txt.includes('oversees_depts')||txt.includes('column')){
-            // Column missing \u2014 run ALTER then retry without oversees_depts first
-            throw new Error('MISSING_COLUMN:'+txt);
-          }
-          throw new Error(txt);
-        }
-        return r.json();
-      });
-    }
     try{
-      await doUpdate();
+      await db.update('pf_users',editU.id,update);
       setUsers(p=>p.map(u=>u.id===editU.id?{...u,...update}:u));
       setSaveMsg('\u2713 Saved!');
       setTimeout(()=>{setSaveMsg('');setEditU(null);},800);
     }catch(e){
-      if(e.message.startsWith('MISSING_COLUMN')){
-        // Save without oversees_depts so at least other fields persist
-        setSaveMsg('Adding column\u2026 retrying\u2026');
-        const fallback={role:editU.role,roles:editU.roles&&editU.roles.length?editU.roles:(editU.role?[editU.role]:[]),dept:editU.dept,depts:editU.depts||[],licenses:editU.licenses||[],loc:editU.loc,managers:editU.managers||[]};
-        try{
-          await fetch(`${SUPA_URL}/rest/v1/pf_users?id=eq.${editU.id}`,{method:'PATCH',headers:{...H.headers,'Prefer':'return=representation'},body:JSON.stringify(fallback)});
-          setUsers(p=>p.map(u=>u.id===editU.id?{...u,...fallback}:u));
-          setSaveMsg('\u26A0\uFE0F Saved (without dept access) \u2014 run SQL migration below');
-          setTimeout(()=>setSaveMsg(''),4000);
-          // Show migration prompt
-          navigator.clipboard.writeText("ALTER TABLE pf_users ADD COLUMN IF NOT EXISTS oversees_depts jsonb default '[]';").catch(()=>{});
-          alert('\u26A0\uFE0F Run this SQL in your Supabase SQL Editor to enable Department Access:\n\nALTER TABLE pf_users ADD COLUMN IF NOT EXISTS oversees_depts jsonb default \'[]\';\n\n(Copied to clipboard)');
-        }catch(e2){
-          setSaveMsg('\u274C Save failed: '+e2.message.slice(0,60));
-        }
-      } else {
-        console.error('saveEdit error:',e);
-        setSaveMsg('\u274C '+e.message.slice(0,80));
-      }
+      console.error('saveEdit error:',e);
+      setSaveMsg('\u274C '+e.message.slice(0,80));
     }
   }
 
@@ -4095,13 +4094,11 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
     try{
       if(editData){
         const update={...form,signature_image:sig||editData.signature_image||null,updated_by:cu.name,updated_at:new Date().toISOString()};
-        const res=await fetch(`${SUPA_URL}/rest/v1/${lt.table}?id=eq.${editData.id}`,{method:'PATCH',headers:{...H.headers,'Prefer':'return=representation'},body:JSON.stringify(update)});
-        if(!res.ok){const e=await res.json();throw new Error(e.message||'Update failed');}
+        await db.update(lt.table,editData.id,update);
         onSave({...editData,...update});
       } else {
         const rec={...form,id:'log-'+Date.now(),log_type:logType,signature_image:sig||null,attachments:attachments.map(a=>({id:a.id,name:a.name,type:a.type,size:a.size,data:a.data})),submitted_by:cu.name,submitted_by_id:cu.id,created_at:new Date().toISOString()};
-        const res=await fetch(`${SUPA_URL}/rest/v1/${lt.table}`,{method:'POST',headers:{...H.headers,'Prefer':'return=representation'},body:JSON.stringify(rec)});
-        if(!res.ok){const e=await res.json();throw new Error(e.message||'Save failed');}
+        await db.insert(lt.table,rec);
         onSave(rec);
       }
     }catch(e){alert('Save failed: '+e.message);}
@@ -4406,10 +4403,9 @@ function SecurityInspectionForm({cu,onSave,onClose,editData,SUPA_URL,SUPA_KEY,H}
     const rec={...form,id:editData?.id||('sec-insp-'+Date.now()),log_type:'security_inspection',signature_image:sig,submitted_by:cu.name,submitted_by_id:cu.id,created_at:editData?.created_at||new Date().toISOString(),updated_at:new Date().toISOString()};
     try{
       if(editData){
-        await fetch(`${SUPA_URL}/rest/v1/pf_log_security_inspection?id=eq.${editData.id}`,{method:'PATCH',headers:{...H.headers,'Prefer':'return=representation'},body:JSON.stringify(rec)});
+        await db.update('pf_log_security_inspection',editData.id,rec);
       } else {
-        const res=await fetch(`${SUPA_URL}/rest/v1/pf_log_security_inspection`,{method:'POST',headers:{...H.headers,'Prefer':'return=representation'},body:JSON.stringify(rec)});
-        if(!res.ok){const e=await res.json();throw new Error(e.message||'Save failed');}
+        await db.insert('pf_log_security_inspection',rec);
       }
       onSave(rec);
     }catch(e){alert('Save failed: '+e.message);}
@@ -4681,7 +4677,7 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
                 onClick:async()=>{
                   const now=new Date().toTimeString().slice(0,5);
                   if(!confirm('Clock out '+entry.visitor_name+' at '+now+'?')) return;
-                  await fetch(`${SUPA_URL}/rest/v1/pf_log_visitor?id=eq.${entry.id}`,{method:'PATCH',headers:H.headers,body:JSON.stringify({time_out:now})});
+                  await db.update('pf_log_visitor',entry.id,{time_out:now});
                   setEntries(p=>p.map(e=>e.id===entry.id?{...e,time_out:now}:e));
                 },
                 style:{background:'#dc2626',color:'#fff',border:'none',borderRadius:'var(--rs)',padding:'5px 12px',fontFamily:'inherit',fontSize:12,fontWeight:700,cursor:'pointer'}
@@ -4689,7 +4685,7 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
               activeLog==='visitor'&&isElevated&&entry.time_out&&el('button',{
                 onClick:async()=>{
                   if(!confirm('Remove clock-out for '+entry.visitor_name+'?')) return;
-                  await fetch(`${SUPA_URL}/rest/v1/pf_log_visitor?id=eq.${entry.id}`,{method:'PATCH',headers:H.headers,body:JSON.stringify({time_out:''})});
+                  await db.update('pf_log_visitor',entry.id,{time_out:''});
                   setEntries(p=>p.map(e=>e.id===entry.id?{...e,time_out:''}:e));
                 },
                 className:'btn b-ghost btn-sm'
@@ -4701,12 +4697,12 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
                   const no2=prompt('Clock-out time (HH:MM, leave blank if still on site):',entry.time_out||'');
                   const update={time_in:ni};
                   if(no2!==null) update.time_out=no2;
-                  await fetch(`${SUPA_URL}/rest/v1/pf_log_visitor?id=eq.${entry.id}`,{method:'PATCH',headers:H.headers,body:JSON.stringify(update)});
+                  await db.update('pf_log_visitor',entry.id,update);
                   setEntries(p=>p.map(e=>e.id===entry.id?{...e,...update}:e));
                 },
                 className:'btn b-ghost btn-sm'
               },'Edit Times'),
-              isAdmin&&el('button',{onClick:async()=>{if(!confirm('Delete this entry?'))return;await fetch(`${SUPA_URL}/rest/v1/${lt.table}?id=eq.${entry.id}`,{method:'DELETE',headers:H.headers});setEntries(p=>p.filter(e=>e.id!==entry.id));},className:'btn b-red btn-sm'},'Delete'),
+              isAdmin&&el('button',{onClick:async()=>{if(!confirm('Delete this entry?'))return;await db.remove(lt.table,entry.id);setEntries(p=>p.filter(e=>e.id!==entry.id));},className:'btn b-red btn-sm'},'Delete'),
             ),
           ),
         ))
@@ -4804,7 +4800,7 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
             el('div',{style:{display:'flex',gap:6,flexShrink:0,flexWrap:'wrap'}},
               el('button',{onClick:()=>exportLogPdf(activeType,[entry],'',''),className:'btn b-ghost btn-sm'},'PDF'),
               canManageBatch&&el('button',{onClick:()=>{setEditEntry(entry);setShowForm(true);},className:'btn b-ghost btn-sm'},'Edit'),
-              canManageBatch&&el('button',{onClick:async()=>{if(!confirm('Delete this batch record?'))return;await fetch(`${SUPA_URL}/rest/v1/${lt.table}?id=eq.${entry.id}`,{method:'DELETE',headers:H.headers});setEntries(p=>p.filter(e=>e.id!==entry.id));},className:'btn b-red btn-sm'},'Delete'),
+              canManageBatch&&el('button',{onClick:async()=>{if(!confirm('Delete this batch record?'))return;await db.remove(lt.table,entry.id);setEntries(p=>p.filter(e=>e.id!==entry.id));},className:'btn b-red btn-sm'},'Delete'),
             ),
           ),
         ))
@@ -4859,12 +4855,11 @@ function RiskRegister({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
     const rec={...form,updated_by:cu.name,updated_at:new Date().toISOString()};
     try{
       if(editRisk){
-        await fetch(`${SUPA_URL}/rest/v1/${TABLE}?id=eq.${editRisk.id}`,{method:'PATCH',headers:H.headers,body:JSON.stringify(rec)});
+        await db.update(TABLE,editRisk.id,rec);
         setRisks(p=>p.map(r=>r.id===editRisk.id?{...r,...rec}:r));
       } else {
         rec.id='risk-'+Date.now();rec.created_by=cu.name;rec.created_at=new Date().toISOString();
-        const res=await fetch(`${SUPA_URL}/rest/v1/${TABLE}`,{method:'POST',headers:{...H.headers,'Prefer':'return=representation'},body:JSON.stringify(rec)});
-        if(!res.ok)throw new Error(await res.text());
+        await db.insert(TABLE,rec);
         setRisks(p=>[rec,...p]);
       }
       setShowForm(false);
@@ -4874,7 +4869,7 @@ function RiskRegister({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
 
   async function deleteRisk(id){
     if(!confirm('Delete this risk?'))return;
-    await fetch(`${SUPA_URL}/rest/v1/${TABLE}?id=eq.${id}`,{method:'DELETE',headers:H.headers});
+    await db.remove(TABLE,id);
     setRisks(p=>p.filter(r=>r.id!==id));
   }
 
@@ -5102,8 +5097,12 @@ function ComplianceModule({cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db
   async function saveClause(clauseId,status,note){
     const rec={clause_id:clauseId,framework,status,notes:note||'',updated_by:cu.name,updated_at:new Date().toISOString()};
     try{
-      await fetch(`${SUPA_URL}/rest/v1/${TABLE}?clause_id=eq.${encodeURIComponent(clauseId)}&framework=eq.${framework}`,{method:'DELETE',headers:H.headers});
-      await fetch(`${SUPA_URL}/rest/v1/${TABLE}`,{method:'POST',headers:{...H.headers,'Prefer':'return=representation'},body:JSON.stringify(rec)});
+      const existing=await db.get(TABLE,`clause_id=eq.${encodeURIComponent(clauseId)}&framework=eq.${framework}&select=id&limit=1`);
+      if(existing&&existing.length&&existing[0].id){
+        await db.update(TABLE,existing[0].id,rec);
+      } else {
+        await db.insert(TABLE,rec);
+      }
       setChecks(p=>({...p,[clauseId]:status}));
       setNotes(p=>({...p,[clauseId]:note}));
       setVerifiedAt(p=>({...p,[clauseId]:rec.updated_at}));
@@ -5721,7 +5720,7 @@ Return ONLY the full revised JSON with the same structure, no markdown. Keep unc
     const updated={...gen,...f,corrective_steps:steps,title:ca.title,ca_number:ca.ca_number,date_issued:gen.date_issued};
     const update={generated_content:JSON.stringify(updated),updated_at:new Date().toISOString(),updated_by:cu.name};
     try{
-      await fetch(`${SUPA_URL}/rest/v1/pf_qms_corrective?id=eq.${ca.id}`,{method:'PATCH',headers:{...H.headers},body:JSON.stringify(update)});
+      await db.update('pf_qms_corrective',ca.id,update);
       onSave({...ca,...update});
     }catch(e){setError('Save failed: '+e.message);}
     setSaving(false);
@@ -5918,13 +5917,7 @@ Write a formal, professional Corrective Action notice. Be factual, specific, and
       updated_by:cu.name,
     };
     try{
-      // Use direct fetch with longer timeout for CA saves
-      const caInsertRes=await fetch(`${SUPA_URL}/rest/v1/pf_qms_corrective`,{
-        method:'POST',
-        headers:{...H.headers,'Prefer':'return=representation','statement_timeout':'30000'},
-        body:JSON.stringify(rec),
-      });
-      if(!caInsertRes.ok){const err=await caInsertRes.json();throw new Error(err.message||err.details||'Insert failed');}
+      await db.insert('pf_qms_corrective',rec);
       // Notify the employee
       if(employee.email){
         await sendEmail({to:employee.email,
@@ -6177,8 +6170,7 @@ Write a formal, professional Corrective Action notice. Be factual, specific, and
                     created_at:new Date().toISOString(),updated_at:new Date().toISOString(),updated_by:cu.name,
                   };
                   try{
-                    const r=await fetch(`${SUPA_URL}/rest/v1/pf_qms_corrective`,{method:'POST',headers:{...H.headers,'Prefer':'return=representation'},body:JSON.stringify(rec)});
-                    if(!r.ok){const e=await r.json();throw new Error(e.message||'Save failed');}
+                    await db.insert('pf_qms_corrective',rec);
                     onSave(rec);
                     alert('\u2713 Saved as draft. Find it in Corrective Actions \u2014 status: Draft.');
                   }catch(e){alert('Save failed: '+e.message);}
@@ -7145,7 +7137,7 @@ function QMS({cu,users,tasks,sops,deviations,setDeviations,capas,setCapas,audits
                   if(!sel.employee_email){alert('No email on file for this employee.');return;}
                   if(!window.confirm('Send to '+sel.employee_name+'? They will receive an email and must sign.')) return;
                   try{
-                    await fetch(`${SUPA_URL}/rest/v1/pf_qms_corrective?id=eq.${sel.id}`,{method:'PATCH',headers:{...H.headers},body:JSON.stringify({status:'pending',updated_at:new Date().toISOString(),updated_by:cu.name})});
+                    await db.update('pf_qms_corrective',sel.id,{status:'pending',updated_at:new Date().toISOString(),updated_by:cu.name});
                     setCorrective(p=>p.map(c=>c.id===sel.id?{...c,status:'pending'}:c));
                     setSel(p=>({...p,status:'pending'}));
                     await sendEmail({to:sel.employee_email,subject:`\u2696\uFE0F Corrective Action Notice \u2014 ${sel.title}`,
@@ -10667,12 +10659,7 @@ function SanitationKiosk(){
     setSaving(true);setError('');
     const rec={...form,id:'log-'+Date.now(),log_type:'sanitation',signature_image:sig,attachments:[],submitted_by:form.cleaned_by,submitted_by_id:'kiosk',created_at:new Date().toISOString()};
     try{
-      const res=await fetch(`${SUPA_URL}/rest/v1/pf_log_sanitation`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Prefer':'return=representation'},
-        body:JSON.stringify(rec),
-      });
-      if(!res.ok){const e=await res.json();throw new Error(e.message||'Save failed');}
+      await kioskWrite('pf_log_sanitation','insert',null,rec);
       setDone(true);
     }catch(e){setError('Error: '+e.message);}
     setSaving(false);
@@ -10785,12 +10772,7 @@ function LogKiosk({logKey}){
     const submittedBy=nameField?form[nameField.key]:'Kiosk User';
     const rec={...form,id:'log-'+Date.now(),log_type:logKey,signature_image:sig,attachments:[],submitted_by:submittedBy,submitted_by_id:'kiosk',created_at:new Date().toISOString()};
     try{
-      const res=await fetch(`${SUPA_URL}/rest/v1/${lt.table}`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Prefer':'return=representation'},
-        body:JSON.stringify(rec),
-      });
-      if(!res.ok){const e=await res.json();throw new Error(e.message||'Save failed');}
+      await kioskWrite(lt.table,'insert',null,rec);
       setDone(true);
     }catch(e){setError('Error: '+e.message);}
     setSaving(false);
@@ -10908,12 +10890,7 @@ function SecurityKiosk(){
     setSaving(true);setError('');
     const rec={...form,id:'sec-insp-'+Date.now(),log_type:'security_inspection',signature_image:sig,submitted_by:form.inspected_by.trim(),submitted_by_id:'kiosk',created_at:new Date().toISOString()};
     try{
-      const res=await fetch(`${SUPA_URL}/rest/v1/pf_log_security_inspection`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Prefer':'return=representation'},
-        body:JSON.stringify(rec),
-      });
-      if(!res.ok){const e=await res.json();throw new Error(e.message||'Save failed');}
+      await kioskWrite('pf_log_security_inspection','insert',null,rec);
       setDone(true);
     }catch(e){setError('Error: '+e.message);}
     setSaving(false);
@@ -11098,11 +11075,7 @@ function VisitorKiosk(){
       created_at:new Date().toISOString(),
     };
     try{
-      const res=await fetch(`${SUPA_URL}/rest/v1/pf_log_visitor`,{
-        method:'POST',headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Prefer':'return=representation'},
-        body:JSON.stringify(rec),
-      });
-      if(!res.ok){const e=await res.json();throw new Error(e.message||'Save failed');}
+      await kioskWrite('pf_log_visitor','insert',null,rec);
       setExistingVisit(rec);
       setStep('done');
     }catch(e){alert('Error: '+e.message);}
@@ -11128,11 +11101,7 @@ function VisitorKiosk(){
     if(!lookupResult){return;}
     setSaving(true);
     try{
-      await fetch(`${SUPA_URL}/rest/v1/pf_log_visitor?id=eq.${lookupResult.id}`,{
-        method:'PATCH',
-        headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-        body:JSON.stringify({time_out:new Date().toTimeString().slice(0,5),signout_signature:sig}),
-      });
+      await kioskWrite('pf_log_visitor','update',lookupResult.id,{time_out:new Date().toTimeString().slice(0,5),signout_signature:sig});
       setStep('done');
     }catch(e){alert('Error: '+e.message);}
     setSaving(false);
@@ -11268,7 +11237,20 @@ function App(){
   if(urlParams.get('kiosk')==='visitor') return el(VisitorKiosk,null);
   if(urlParams.get('kiosk')==='sanitation') return el(SanitationKiosk,null);
 
-  const[cu,setCu]=useState(()=>{try{const s=localStorage.getItem('pf_session');return s?JSON.parse(s):null;}catch{return null;}});
+  const[cu,setCu]=useState(()=>{
+    try{
+      const s=localStorage.getItem('pf_session');
+      if(!s) return null;
+      // A cached session from before Phase 2 security won't have a token —
+      // writes will fail for these users until they log in again, so force
+      // it now with a clear one-time message instead of a confusing failure later.
+      if(!localStorage.getItem('pf_token')){
+        localStorage.removeItem('pf_session');
+        return null;
+      }
+      return JSON.parse(s);
+    }catch{return null;}
+  });
   const[tasks,setTasks]=useState([]);
   const[salesTasks,setSalesTasks]=useState([]);
   const[events,setEvents]=useState([]);
@@ -11354,7 +11336,7 @@ function App(){
     let timer;
     const reset=()=>{
       clearTimeout(timer);
-      timer=setTimeout(()=>{localStorage.removeItem('pf_session');setCu(null);alert('You have been signed out due to inactivity.');},30*60*1000);
+      timer=setTimeout(()=>{localStorage.removeItem('pf_session');localStorage.removeItem('pf_token');setCu(null);alert('You have been signed out due to inactivity.');},30*60*1000);
     };
     const evts=['mousemove','keydown','click','touchstart','scroll'];
     evts.forEach(e=>window.addEventListener(e,reset,{passive:true}));
@@ -11510,7 +11492,7 @@ function App(){
         },'\uD83D\uDCE7 Test Email & Push'),
         el(SidebarChangePw,{cu,SUPA_URL,SUPA_KEY}),
         el('button',{
-          onClick:()=>{localStorage.removeItem('pf_session');setCu(null);},
+          onClick:()=>{localStorage.removeItem('pf_session');localStorage.removeItem('pf_token');setCu(null);},
           style:{marginTop:6,width:'100%',background:'rgba(239,68,68,.08)',border:'1px solid rgba(239,68,68,.2)',borderRadius:'var(--rs)',padding:'8px',color:'var(--red)',fontFamily:'inherit',fontSize:12,fontWeight:600,cursor:'pointer',transition:'all .15s',letterSpacing:'.3px'}
         },'\u23FB  Sign Out'),
       )
@@ -11632,7 +11614,7 @@ function App(){
       canAccessQms&&el('button',{className:`mnav-btn${page==='qms'?' on':''}`,onClick:()=>setPage('qms')},el('span',{className:'mnav-ico'},'\uD83D\uDEE1\uFE0F'),'QMS'),
       el('button',{className:`mnav-btn${page==='logs'?' on':''}`,onClick:()=>setPage('logs')},el('span',{className:'mnav-ico'},'\uD83D\uDCCB'),'Logs'),
       el('button',{className:`mnav-btn${page==='scores'?' on':''}`,onClick:()=>setPage('scores')},el('span',{className:'mnav-ico'},'\uD83C\uDFC6'),'Scores'),
-      el('button',{className:'mnav-btn',onClick:()=>{if(window.confirm('Sign out?')){localStorage.removeItem('pf_session');window.location.reload();}}},el('span',{className:'mnav-ico'},'\u23FB'),'Sign Out'),
+      el('button',{className:'mnav-btn',onClick:()=>{if(window.confirm('Sign out?')){localStorage.removeItem('pf_session');localStorage.removeItem('pf_token');window.location.reload();}}},el('span',{className:'mnav-ico'},'\u23FB'),'Sign Out'),
     ),
     el('div',{className:'main'},
       page==='board'&&el(Board,{tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setPage,SUPA_URL,SUPA_KEY,H}),
