@@ -3473,9 +3473,39 @@ function recalcCartridge(logType,f){
     primed_check_status:directCheck(ingredientsSum,primedActual,CART_TOLERANCE),
   };
 }
+// Ethanol Extraction: Total Biomass Used = sum of every Biomass Tag's weight
+// (unlimited tags). Ethanol Crude Weight / Decarbed Crude Weight / Total
+// Distillate Produced stay manually entered (actual measured weight can
+// differ from target), but each shows a live suggested target: 77% / 20% /
+// 16% of Total Biomass Used respectively. Batch Yield Quality Check compares
+// actual distillate-to-biomass % against fixed bands.
+function recalcEthanol(logType,f){
+  if(logType!=='ethanol_extraction') return f;
+  const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
+  const tags=Array.isArray(f.biomass_tags)?f.biomass_tags:[];
+  const totalBiomass=tags.reduce((sum,row)=>sum+num(row&&row.weight),0);
+  const distillate=num(f.total_distillate_produced);
+  const yieldPct=totalBiomass>0?(distillate/totalBiomass)*100:0;
+  let band='none';
+  if(totalBiomass>0&&distillate>0){
+    if(yieldPct>=16&&yieldPct<=19) band='very_good';
+    else if(yieldPct>=13&&yieldPct<16) band='good';
+    else if(yieldPct>=10&&yieldPct<13) band='bad';
+    else if(yieldPct>=7&&yieldPct<10) band='very_bad';
+    else band='out_of_range';
+  }
+  return{...f,
+    total_biomass_used:String(Math.round(totalBiomass*100)/100),
+    ethanol_crude_suggested:String(Math.round(totalBiomass*0.77*100)/100),
+    decarbed_crude_suggested:String(Math.round(totalBiomass*0.20*100)/100),
+    distillate_suggested:String(Math.round(totalBiomass*0.16*100)/100),
+    yield_quality_pct:String(Math.round(yieldPct*100)/100),
+    yield_quality_band:band,
+  };
+}
 // Runs every batch-type auto-calculation; each one is a no-op for the wrong logType.
 function recalcBatch(logType,f){
-  return recalcPreRoll(logType,recalcCartridge(logType,recalcGummy(logType,f)));
+  return recalcEthanol(logType,recalcPreRoll(logType,recalcCartridge(logType,recalcGummy(logType,f))));
 }
 // Pre-Rolls has TWO System Check checkpoints against the same Infused Flower
 // Used figure, at different grams-per-joint targets for each production stage:
@@ -3688,13 +3718,24 @@ const LOG_TYPES={
     {key:'batch_number',label:'Batch / Lot Number',type:'text',placeholder:'e.g. ETH-2026-014'},
     {key:'date',label:'Date',type:'date'},
     {key:'operator',label:'Operator / Personnel',type:'text',placeholder:'Who performed the extraction'},
-    {key:'strain_input',label:'Strain(s) / Input Material',type:'text',placeholder:'Strain name(s) used'},
-    {key:'input_weight',label:'Input Weight',type:'text',placeholder:'e.g. 10 lbs biomass'},
-    {key:'ethanol_volume',label:'Ethanol Volume Used',type:'text',placeholder:'e.g. 15 gallons'},
-    {key:'extraction_temp',label:'Extraction Temp / Method',type:'text',placeholder:'e.g. -40\u00B0F cold ethanol'},
-    {key:'output_weight',label:'Output Weight (Crude Oil)',type:'text',placeholder:'e.g. 1,120g'},
-    {key:'yield_percent',label:'Yield %',type:'text',placeholder:'e.g. 12.4%'},
-    {key:'metrc_tag',label:'METRC Tag #(s)',type:'text',placeholder:'Source and/or output tags'},
+    {key:'_s_extraction',label:'--- EXTRACTION ---',type:'section'},
+    {key:'biomass_tags',label:'Biomass Tags',type:'text'},
+    {key:'total_biomass_used',label:'Total Biomass Used',type:'text'},
+    {key:'ethanol_crude_metrc',label:'Ethanol Crude METRC #',type:'text',placeholder:'METRC tag for the crude oil'},
+    {key:'ethanol_crude_weight',label:'Ethanol Crude Weight',type:'text',placeholder:'Actual measured weight'},
+    {key:'extraction_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'_s_recovery',label:'--- RECOVERY AND DECARBING ---',type:'section'},
+    {key:'decarbed_crude_tag',label:'Decarbed Crude Tag',type:'text',placeholder:'METRC tag for the decarbed crude'},
+    {key:'decarbed_crude_weight',label:'Decarbed Crude Weight Produced',type:'text',placeholder:'Actual measured weight'},
+    {key:'recovery_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'_s_distillation',label:'--- DISTILLATION ---',type:'section'},
+    {key:'total_decarbed_crude_used',label:'Total Decarbed Crude Used',type:'text',placeholder:''},
+    {key:'total_decarbed_crude_waste',label:'Total Decarbed Crude Waste',type:'text',placeholder:''},
+    {key:'decarbed_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'total_distillate_produced',label:'Total Distillate Produced',type:'text',placeholder:'Actual measured weight'},
+    {key:'distillation_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'_s_yield_quality',label:'--- BATCH YIELD QUALITY CHECK ---',type:'section'},
+    {key:'yield_quality_result',label:'Yield Quality',type:'text'},
     {key:'status',label:'Status',type:'select',options:['In Progress','Winterization','Filtration','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
@@ -4003,6 +4044,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
       else if(fl.type==='checkbox')f[fl.key]=false;
       else if(SKU_FLAVOR_CONFIG[logType]&&fl.key==='sku')f[fl.key]=SKU_FLAVOR_CONFIG[logType].skus[0];
       else if(SKU_FLAVOR_CONFIG[logType]&&fl.key==='flavor')f[fl.key]=(SKU_FLAVOR_CONFIG[logType].flavors[SKU_FLAVOR_CONFIG[logType].skus[0]]||[])[0]||'';
+      else if(logType==='ethanol_extraction'&&fl.key==='biomass_tags')f[fl.key]=[];
       else if(fl.type==='select')f[fl.key]=fl.options[0];
       else f[fl.key]='';
     });
@@ -4176,6 +4218,61 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
       return el('div',{key:f.key,className:'fg'},
         el('label',null,f.label+' (auto-calculated)'),
         el('div',{style:{width:'100%',background:'var(--surface2)',border:'1px dashed var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,fontWeight:700,boxSizing:'border-box'}},form[f.key]||'0'),
+      );
+    }
+    if(logType==='ethanol_extraction'&&f.key==='biomass_tags'){
+      const tags=Array.isArray(form.biomass_tags)?form.biomass_tags:[];
+      const rowStyle={flex:1,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 12px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'};
+      return el('div',{key:f.key,className:'fg'},
+        el('label',null,f.label+' \u2014 add as many as you need'),
+        el('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+          tags.map((row,i)=>el('div',{key:i,style:{display:'flex',gap:8,alignItems:'center'}},
+            el('input',{type:'text',value:(row&&row.tag)||'',placeholder:'Biomass METRC Tag #',onChange:ev=>{
+              const next=tags.map((r,idx)=>idx===i?{...r,tag:ev.target.value}:r);
+              setF('biomass_tags',next);
+            },style:{...rowStyle,flex:2}}),
+            el('input',{type:'text',value:(row&&row.weight)||'',placeholder:'Weight',onChange:ev=>{
+              const next=tags.map((r,idx)=>idx===i?{...r,weight:ev.target.value}:r);
+              setF('biomass_tags',next);
+            },style:rowStyle}),
+            el('button',{type:'button',onClick:()=>setF('biomass_tags',tags.filter((_,idx)=>idx!==i)),
+              style:{background:'#fee2e2',color:'#dc2626',border:'none',borderRadius:6,padding:'8px 12px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',flexShrink:0}},'\u2715'),
+          )),
+          el('button',{type:'button',onClick:()=>setF('biomass_tags',[...tags,{tag:'',weight:''}]),
+            style:{background:'var(--accent)',color:'#fff',border:'none',borderRadius:8,padding:'9px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',alignSelf:'flex-start'}},'+ Add Biomass Tag'),
+        ),
+      );
+    }
+    if(logType==='ethanol_extraction'&&f.key==='total_biomass_used'){
+      return el('div',{key:f.key,className:'fg'},
+        el('label',null,f.label+' (auto-calculated)'),
+        el('div',{style:{width:'100%',background:'var(--surface2)',border:'1px dashed var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,fontWeight:700,boxSizing:'border-box'}},form.total_biomass_used||'0'),
+      );
+    }
+    if(logType==='ethanol_extraction'&&['ethanol_crude_weight','decarbed_crude_weight','total_distillate_produced'].includes(f.key)){
+      const suggestion={ethanol_crude_weight:['ethanol_crude_suggested','77%'],decarbed_crude_weight:['decarbed_crude_suggested','20%'],total_distillate_produced:['distillate_suggested','16%']}[f.key];
+      return el('div',{key:f.key,className:'fg'},
+        el('label',null,f.label),
+        el('input',{type:'text',value:form[f.key]||'',onChange:ev=>setF(f.key,ev.target.value),placeholder:f.placeholder||'',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
+        el('div',{style:{fontSize:11,color:'var(--accent)',marginTop:4,fontWeight:600}},'\uD83D\uDCA1 Suggested: '+(form[suggestion[0]]||'0')+' ('+suggestion[1]+' of Total Biomass Used)'),
+      );
+    }
+    if(logType==='ethanol_extraction'&&f.key==='yield_quality_result'){
+      const band=form.yield_quality_band||'none';
+      const pct=form.yield_quality_pct||'0';
+      const cfg={
+        very_good:{bg:'#16a34a',text:'\u2713 VERY GOOD',sub:'16\u201319% distillate-to-biomass yield'},
+        good:{bg:'#0891b2',text:'\u2713 GOOD',sub:'13\u201316% distillate-to-biomass yield'},
+        bad:{bg:'#f59e0b',text:'\u26A0 BAD',sub:'10\u201313% distillate-to-biomass yield'},
+        very_bad:{bg:'#dc2626',text:'\u26A0 VERY BAD',sub:'7\u201310% distillate-to-biomass yield'},
+        out_of_range:{bg:'#6b7280',text:'\u2014 OUT OF RANGE',sub:'Outside the 7\u201319% expected range'},
+        none:{bg:'#94a3b8',text:'AWAITING DATA',sub:'Enter biomass and distillate weights to see yield quality'},
+      }[band];
+      return el('div',{key:f.key,className:'fg'},
+        el('div',{style:{background:cfg.bg,color:'#fff',borderRadius:10,padding:'14px 18px',textAlign:'center'}},
+          el('div',{style:{fontSize:16,fontWeight:800}},cfg.text),
+          el('div',{style:{fontSize:12,opacity:.9,marginTop:4}},cfg.sub+' \u2014 Actual yield: '+pct+'%'),
+        ),
       );
     }
     if(logType==='pre_rolls'&&PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS.includes(f.key)){
