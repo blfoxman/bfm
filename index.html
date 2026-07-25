@@ -4060,8 +4060,13 @@ function exportLogPdf(logType,entries,dateFrom,dateTo){
   doc.save('BlackFox_'+lt.label.replace(/[^a-z0-9]/gi,'_')+'_'+new Date().toISOString().slice(0,10)+'.pdf');
 }
 
-function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
+function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lockFilledFields}){
   const lt=LOG_TYPES[logType];
+  // Snapshot the ORIGINAL values once at open, independent of live form state,
+  // so we know which fields were already filled in when a restricted opener
+  // (Production Lead) re-opens a batch to continue it — those stay locked
+  // read-only regardless of what gets typed into the still-empty ones.
+  const originalRef=React.useRef(editData?{...editData}:null);
   const init=()=>{
     const f={submitted_by:cu.name,created_at:new Date().toISOString()};
     lt.fields.forEach(fl=>{
@@ -4086,11 +4091,22 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
   const[attachments,setAttachments]=React.useState([]);
   const[saving,setSaving]=React.useState(false);
   const[editNote,setEditNote]=React.useState('');
-  const setF=(k,v)=>setForm(p=>recalcBatch(logType,{...p,[k]:v}));
+  const setF=(k,v)=>{
+    // Locked opener (Lead continuing a batch): never allow changing a field
+    // that already had a value when the form was opened.
+    if(lockFilledFields){
+      const orig=originalRef.current&&originalRef.current[k];
+      if(typeof orig==='string'&&orig.trim()) return;
+    }
+    setForm(p=>recalcBatch(logType,{...p,[k]:v}));
+  };
   // Batch Tracker records require a mandatory reason whenever an existing
   // entry is edited — logged permanently to that entry's edit history so
-  // anyone reviewing it can see exactly what changed and why.
-  const requiresEditNote=!!editData&&lt.category==='batch';
+  // anyone reviewing it can see exactly what changed and why. Doesn't apply
+  // to a locked "continue filling" open (nothing existing can change, so
+  // there's nothing to explain).
+
+  const requiresEditNote=!!editData&&lt.category==='batch'&&!lockFilledFields;
 
   function handleFiles(files){
     Array.from(files).forEach(file=>{
@@ -4338,6 +4354,17 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
       const rdPassed=form.rd1_result==='Passed'||form.rd2_result==='Passed';
       if(!rdPassed) return null;
       // fall through to generic select renderer below
+    }
+    const origVal=originalRef.current&&originalRef.current[f.key];
+    const isLocked=lockFilledFields&&(f.type==='text'||f.type==='textarea'||!f.type)&&typeof origVal==='string'&&origVal.trim();
+    if(isLocked){
+      return el('div',{key:f.key,className:'fg'},
+        el('label',null,f.label+' \uD83D\uDD12'),
+        f.type==='textarea'
+          ?el('textarea',{value:form[f.key]||'',disabled:true,rows:2,style:{width:'100%',background:'var(--surface2)',border:'1px dashed var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text2)',fontFamily:'inherit',fontSize:13,resize:'none',boxSizing:'border-box',cursor:'not-allowed'}})
+          :el('input',{type:'text',value:form[f.key]||'',disabled:true,style:{width:'100%',background:'var(--surface2)',border:'1px dashed var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text2)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box',cursor:'not-allowed'}}),
+        el('div',{style:{fontSize:10,color:'var(--text3)',marginTop:3}},'Already entered \u2014 locked'),
+      );
     }
     return el('div',{key:f.key,className:'fg'},
     el('label',null,f.label),
@@ -4780,9 +4807,13 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
   const lt=LOG_TYPES[activeType];
   // Production Manager can edit batch records (with a mandatory note logged
   // to that entry's history) but NOT delete them — only isElevated/isAdmin
-  // can delete. Production Lead can create but neither edit nor delete.
+  // can delete. Production Lead can create, and can re-open an entry to fill
+  // in fields still blank — but any field that already has a value is locked
+  // read-only for them (they cannot go back and change what's already there;
+  // only a full editor with a logged reason can do that).
   const canEdit=isElevated||isAdmin||hasRole(cu,'production_manager');
   const canDelete=isElevated||isAdmin;
+  const canOpen=restricted==='lead';
 
   React.useEffect(()=>{
     setLoading(true);setEntries([]);
@@ -4855,6 +4886,7 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
             el('div',{style:{display:'flex',gap:6,flexShrink:0,flexWrap:'wrap'}},
               el('button',{onClick:()=>exportLogPdf(activeType,[entry],'',''),className:'btn b-ghost btn-sm'},'PDF'),
               canEdit&&el('button',{onClick:()=>{setEditEntry(entry);setShowForm(true);},className:'btn b-ghost btn-sm'},'Edit'),
+              !canEdit&&canOpen&&el('button',{onClick:()=>{setEditEntry(entry);setShowForm(true);},className:'btn b-ghost btn-sm'},'\uD83D\uDD13 Open'),
               canDelete&&el('button',{onClick:async()=>{if(!confirm('Delete this batch record?'))return;await db.remove(lt.table,entry.id);setEntries(p=>p.filter(e=>e.id!==entry.id));},className:'btn b-red btn-sm'},'Delete'),
             ),
           ),
@@ -4862,6 +4894,7 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
       ),
     (showForm||editEntry)&&el(LogEntryForm,{logType:activeType,cu,SUPA_URL,SUPA_KEY,H,
       editData:editEntry,
+      lockFilledFields:!canEdit&&canOpen,
       onClose:()=>{setShowForm(false);setEditEntry(null);},
       onSave:(rec)=>{
         if(editEntry){setEntries(p=>p.map(e=>e.id===rec.id?rec:e));}
@@ -11471,6 +11504,7 @@ function App(){
   const nav=(restricted?[
     {id:'sops',ico:'\uD83D\uDCCB',label:'SOPs'},
     {id:'mydocs',ico:'\uD83D\uDCC1',label:'My Documents'},
+    {id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
     (restricted==='lead'||restricted==='pm')&&{id:'board',ico:'\u2B1B',label:'Task Board'},
     (restricted==='lead'||restricted==='pm')&&{id:'batch',ico:'\uD83E\uDDEA',label:'Batch Tracker'},
   ]:[
@@ -11665,7 +11699,7 @@ function App(){
       !restricted&&el('button',{className:`mnav-btn${page==='board'?' on':''}`,onClick:()=>setPage('board')},el('span',{className:'mnav-ico'},'\u2B1B'),'Board'),
       (restricted==='lead'||restricted==='pm')&&el('button',{className:`mnav-btn${page==='board'?' on':''}`,onClick:()=>setPage('board')},el('span',{className:'mnav-ico'},'\u2B1B'),'Board'),
       !restricted&&el('button',{className:`mnav-btn${page==='sales'?' on':''}`,onClick:()=>setPage('sales')},el('span',{className:'mnav-ico'},'\uD83C\uDFEA'),'Sales'),
-      !restricted&&el('button',{className:`mnav-btn${page==='calendar'?' on':''}`,onClick:()=>setPage('calendar')},el('span',{className:'mnav-ico'},'\uD83D\uDCC5'),'Calendar'),
+      el('button',{className:`mnav-btn${page==='calendar'?' on':''}`,onClick:()=>setPage('calendar')},el('span',{className:'mnav-ico'},'\uD83D\uDCC5'),'Calendar'),
       cu.role==='admin'&&el('button',{className:`mnav-btn${page==='team'?' on':''}`,onClick:()=>setPage('team')},
         el('div',{style:{position:'relative',display:'inline-block'}},el('span',{className:'mnav-ico'},'\uD83D\uDC65'),pending>0&&el('span',{className:'mnav-dot'},pending)),'Team'
       ),
@@ -11688,7 +11722,7 @@ function App(){
     ),
     el('div',{className:'main'},
       page==='board'&&(!restricted||restricted==='lead'||restricted==='pm')&&el(Board,{tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setPage,SUPA_URL,SUPA_KEY,H,restricted}),
-      page==='calendar'&&!restricted&&el(Calendar,{events,setEvents,tasks,cu,users,locFilter,meetingNotes,setMeetingNotes,onJoinCall:(room,title,meetLink)=>setActiveCall({room,title,meetLink})}),
+      page==='calendar'&&el(Calendar,{events,setEvents,tasks,cu,users,locFilter,meetingNotes,setMeetingNotes,onJoinCall:(room,title,meetLink)=>setActiveCall({room,title,meetLink})}),
       page==='sales'&&!restricted&&el(SalesMarketing,{salesTasks,setSalesTasks,cu,users,locFilter}),
       page==='sops'&&el(SOPs,{sops,setSops,cu,users}),
       page==='compliance'&&!restricted&&canAccessQms&&el(ComplianceModule,{cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db}),
