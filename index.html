@@ -3762,7 +3762,7 @@ const LOG_TYPES={
     {key:'total_distillate_produced',label:'Total Distillate Produced',type:'text',placeholder:'Actual measured weight'},
     {key:'distillation_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_yield_quality',label:'--- BATCH YIELD QUALITY CHECK ---',type:'section'},
-    {key:'yield_quality_result',label:'Yield Quality',type:'text'},
+    {key:'yield_quality_result',label:'Yield Quality',type:'display'},
     {key:'status',label:'Status',type:'select',options:['In Progress','Winterization','Filtration','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
@@ -3802,7 +3802,7 @@ const LOG_TYPES={
     {key:'infused_flower_total_wt',label:'Infused Flower Total WT',type:'text',placeholder:'e.g. 1,240g'},
     {key:'flower_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_flower_system_check',label:'--- SYSTEM CHECK ---',type:'section'},
-    {key:'flower_check_result',label:'System Check',type:'text'},
+    {key:'flower_check_result',label:'System Check',type:'display'},
     {key:'_s_infused_joints',label:'--- INFUSED JOINTS ---',type:'section'},
     {key:'infused_flower_used',label:'Infused Flower Used',type:'text',placeholder:'Amount used for this run'},
     {key:'infused_flower_waste',label:'Infused Flower Waste',type:'text',placeholder:'Amount wasted'},
@@ -3811,7 +3811,7 @@ const LOG_TYPES={
     {key:'infused_preroll_metrc',label:'Infused Pre Roll METRC Tag',type:'text',placeholder:'METRC tag for the infused joints'},
     {key:'joints_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_joints_system_check',label:'--- SYSTEM CHECK ---',type:'section'},
-    {key:'joints_check_result',label:'System Check',type:'text'},
+    {key:'joints_check_result',label:'System Check',type:'display'},
     {key:'_s_kiefed',label:'--- INFUSED KIEFED PREROLL ---',type:'section'},
     {key:'total_infused_preroll_used',label:'Total Infused Pre Roll Used',type:'text',placeholder:'Joints used for kiefing'},
     {key:'total_infused_preroll_waste',label:'Total Infused Pre Roll Waste',type:'text',placeholder:'Joints wasted'},
@@ -3822,7 +3822,7 @@ const LOG_TYPES={
     {key:'kiefed_infused_preroll_metrc',label:'Kiefed Infused Preroll METRC #',type:'text',placeholder:'METRC tag for the kiefed joints'},
     {key:'kiefed_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_kiefed_system_check',label:'--- SYSTEM CHECK ---',type:'section'},
-    {key:'kiefed_check_result',label:'System Check',type:'text'},
+    {key:'kiefed_check_result',label:'System Check',type:'display'},
     {key:'_s_final_packaging',label:'--- FINAL PACKAGING ---',type:'section'},
     {key:'kiefed_infused_joints_used',label:'Kiefed Infused Joints Used',type:'text',placeholder:'Joints used for packaging'},
     {key:'kief_infused_joints_waste',label:'Kief Infused Joints Waste',type:'text',placeholder:'Joints wasted during packaging'},
@@ -3855,7 +3855,7 @@ const LOG_TYPES={
     {key:'primed_rd2',label:'R&D Test 2',type:'text'},
     {key:'primed_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_primed_system_check',label:'--- SYSTEM CHECK ---',type:'section'},
-    {key:'primed_check_result',label:'System Check',type:'text'},
+    {key:'primed_check_result',label:'System Check',type:'display'},
     {key:'_s_filled',label:'--- FILLED HARDWARE ---',type:'section'},
     {key:'units_produced',label:'Cartridges Filled',type:'text',placeholder:'e.g. 800 units'},
     {key:'filled_hardware_metrc',label:'Filled Hardware METRC Tag',type:'text',placeholder:'METRC tag for the filled hardware'},
@@ -3871,7 +3871,7 @@ const LOG_TYPES={
     {key:'filled_rd2',label:'R&D Test 2',type:'text'},
     {key:'filled_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_cart_system_check',label:'--- SYSTEM CHECK ---',type:'section'},
-    {key:'cart_system_check_result',label:'System Check',type:'text'},
+    {key:'cart_system_check_result',label:'System Check',type:'display'},
     {key:'_s_packaged',label:'--- PACKAGED ---',type:'section'},
     {key:'cart_packaged',label:'Total Cart Packaged',type:'text',placeholder:'Final packaged unit count'},
     {key:'cart_packaged_metrc',label:'Total Cart Packaged METRC#',type:'text',placeholder:'METRC tag for packaged units'},
@@ -3916,7 +3916,7 @@ const LOG_TYPES={
     {key:'gummy_mandatory_test',label:'Mandatory Testing',type:'select',options:['Not Submitted','Submitted','Passed','Failed']},
     {key:'packaging_metrc_confirmed_gummy',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_system_check',label:'--- SYSTEM CHECK ---',type:'section'},
-    {key:'system_check_result',label:'System Check',type:'text'},
+    {key:'system_check_result',label:'System Check',type:'display'},
     {key:'status',label:'Status',type:'select',options:['In Progress','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
@@ -4070,7 +4070,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
   const init=()=>{
     const f={submitted_by:cu.name,created_at:new Date().toISOString()};
     lt.fields.forEach(fl=>{
-      if(fl.type==='section')return;
+      if(fl.type==='section'||fl.type==='display')return;
       else if(fl.type==='date')f[fl.key]=new Date().toISOString().slice(0,10);
       else if(fl.type==='time')f[fl.key]=new Date().toTimeString().slice(0,5);
       else if(fl.type==='checkbox')f[fl.key]=false;
