@@ -3437,6 +3437,17 @@ function recalcGummy(logType,f){
 // Cartridges Filled count. Shown right after the Filled Hardware section.
 const CART_TOLERANCE=0.10; // \u00B110%
 function cartOilDivisor(sku){return String(sku||'').includes('2G')?2:1;}
+// Direct mass-balance check (NOT inverted like the count-vs-weight checks
+// above): actual below the tolerance band is genuinely under target, actual
+// above is genuinely over target \u2014 this compares a sum of ingredient
+// weights against a resulting total weight, not a derived unit count.
+function directCheck(expected,actual,tolerance){
+  const lower=expected*(1-tolerance);
+  const upper=expected*(1+tolerance);
+  if(actual<lower) return 'under';
+  if(actual>upper) return 'over';
+  return 'pass';
+}
 function recalcCartridge(logType,f){
   if(logType!=='cartridges') return f;
   const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
@@ -3451,9 +3462,15 @@ function recalcCartridge(logType,f){
   // target (more oil went into each one, so fewer cartridges got filled).
   if(actual>upper) status='under';
   else if(actual<lower) status='over';
+  // Primed Oil check: Input Oil Weight + Amount Terpene Added should roughly
+  // equal the resulting Primed Oil Total Weight, \u00B110%.
+  const ingredientsSum=num(f.input_weight)+num(f.terpene_added);
+  const primedActual=num(f.primed_oil_total_weight);
   return{...f,
     cart_system_check_expected:String(Math.round(expected*100)/100),
     cart_system_check_status:status,
+    primed_check_expected:String(Math.round(ingredientsSum*100)/100),
+    primed_check_status:directCheck(ingredientsSum,primedActual,CART_TOLERANCE),
   };
 }
 // Runs every batch-type auto-calculation; each one is a no-op for the wrong logType.
@@ -3484,11 +3501,18 @@ function recalcPreRoll(logType,f){
   const flowerUsed=num(f.infused_flower_used);
   const expected1=flowerUsed/PRE_ROLL_JOINT_WEIGHT_1;
   const expected2=flowerUsed/PRE_ROLL_JOINT_WEIGHT_2;
+  // Infused Flower check: sum of all ingredients that went into the flower
+  // (Flower + THCA + Terpene, plus Live Resin/Decarbed Cured Resin/Distillate
+  // for SKUs that use them) should roughly equal Infused Flower Total WT, \u00B110%.
+  const ingredientsSum=num(f.flower_qty)+num(f.thca_qty)+num(f.terp_qty)+num(f.live_resin_qty)+num(f.decarbed_resin_qty)+num(f.distillate_qty);
+  const flowerActual=num(f.infused_flower_total_wt);
   return{...f,
     joints_check_expected:String(Math.round(expected1*100)/100),
     joints_check_status:preRollCheck(expected1,num(f.total_joint_filled)),
     kiefed_check_expected:String(Math.round(expected2*100)/100),
     kiefed_check_status:preRollCheck(expected2,num(f.total_kiefed_infused_joints)),
+    flower_check_expected:String(Math.round(ingredientsSum*100)/100),
+    flower_check_status:directCheck(ingredientsSum,flowerActual,PRE_ROLL_TOLERANCE),
   };
 }
 // Generalized SKU\u2192Flavor cascading dropdown config, keyed by batch log type.
@@ -3709,6 +3733,8 @@ const LOG_TYPES={
     {key:'infused_flower_number',label:'Infused Flower #',type:'text',placeholder:'Infused flower batch/lot #'},
     {key:'infused_flower_total_wt',label:'Infused Flower Total WT',type:'text',placeholder:'e.g. 1,240g'},
     {key:'flower_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'_s_flower_system_check',label:'--- SYSTEM CHECK ---',type:'section'},
+    {key:'flower_check_result',label:'System Check',type:'text'},
     {key:'_s_infused_joints',label:'--- INFUSED JOINTS ---',type:'section'},
     {key:'infused_flower_used',label:'Infused Flower Used',type:'text',placeholder:'Amount used for this run'},
     {key:'infused_flower_waste',label:'Infused Flower Waste',type:'text',placeholder:'Amount wasted'},
@@ -3760,6 +3786,8 @@ const LOG_TYPES={
     {key:'primed_rd1',label:'R&D Test',type:'text'},
     {key:'primed_rd2',label:'R&D Test 2',type:'text'},
     {key:'primed_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'_s_primed_system_check',label:'--- SYSTEM CHECK ---',type:'section'},
+    {key:'primed_check_result',label:'System Check',type:'text'},
     {key:'_s_filled',label:'--- FILLED HARDWARE ---',type:'section'},
     {key:'units_produced',label:'Cartridges Filled',type:'text',placeholder:'e.g. 800 units'},
     {key:'filled_hardware_metrc',label:'Filled Hardware METRC Tag',type:'text',placeholder:'METRC tag for the filled hardware'},
@@ -4068,6 +4096,34 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
       return el('div',{key:f.key,className:'fg'},
         el('label',null,f.label),
         el('input',{type:'text',value:form.flavor||'',onChange:ev=>setF('flavor',ev.target.value),placeholder:'No flavor list yet for this SKU \u2014 type it in',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
+      );
+    }
+    if(logType==='cartridges'&&f.key==='primed_check_result'){
+      const status=form.primed_check_status||'pass';
+      const cfg={
+        pass:{bg:'#16a34a',text:'\u2713 PASS',sub:'Primed oil weight matches ingredients'},
+        under:{bg:'#dc2626',text:'\u26A0 UNDER WEIGHT',sub:'Primed oil weighs less than the ingredients that went in'},
+        over:{bg:'#f59e0b',text:'\u26A0 OVER WEIGHT',sub:'Primed oil weighs more than the ingredients that went in'},
+      }[status];
+      return el('div',{key:f.key,className:'fg'},
+        el('div',{style:{background:cfg.bg,color:'#fff',borderRadius:10,padding:'14px 18px',textAlign:'center'}},
+          el('div',{style:{fontSize:16,fontWeight:800}},cfg.text),
+          el('div',{style:{fontSize:12,opacity:.9,marginTop:4}},cfg.sub+' \u2014 Ingredients \u2248 '+(form.primed_check_expected||'0')+' \u00B110%, Actual: '+(form.primed_oil_total_weight||'0')),
+        ),
+      );
+    }
+    if(logType==='pre_rolls'&&f.key==='flower_check_result'){
+      const status=form.flower_check_status||'pass';
+      const cfg={
+        pass:{bg:'#16a34a',text:'\u2713 PASS',sub:'Infused flower weight matches ingredients'},
+        under:{bg:'#dc2626',text:'\u26A0 UNDER WEIGHT',sub:'Infused flower weighs less than the ingredients that went in'},
+        over:{bg:'#f59e0b',text:'\u26A0 OVER WEIGHT',sub:'Infused flower weighs more than the ingredients that went in'},
+      }[status];
+      return el('div',{key:f.key,className:'fg'},
+        el('div',{style:{background:cfg.bg,color:'#fff',borderRadius:10,padding:'14px 18px',textAlign:'center'}},
+          el('div',{style:{fontSize:16,fontWeight:800}},cfg.text),
+          el('div',{style:{fontSize:12,opacity:.9,marginTop:4}},cfg.sub+' \u2014 Ingredients \u2248 '+(form.flower_check_expected||'0')+' \u00B110%, Actual: '+(form.infused_flower_total_wt||'0')),
+        ),
       );
     }
     if(logType==='pre_rolls'&&(f.key==='joints_check_result'||f.key==='kiefed_check_result')){
