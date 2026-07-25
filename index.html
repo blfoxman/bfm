@@ -3417,14 +3417,78 @@ function recalcGummy(logType,f){
   const lower=expectedPackaged*(1-GUMMY_TOLERANCE);
   const upper=expectedPackaged*(1+GUMMY_TOLERANCE);
   let status='pass';
-  if(packaged<lower) status='under';
-  else if(packaged>upper) status='over';
+  // More packaged than expected \u2192 each gummy got LESS mix than the 4.6g
+  // target (under weight). Fewer packaged than expected \u2192 each gummy got
+  // MORE mix than target (over weight). The label describes per-unit weight,
+  // not which direction the count moved.
+  if(packaged>upper) status='under';
+  else if(packaged<lower) status='over';
   return{...f,
     gummy_mixture_used:String(Math.round(mixtureUsed*100)/100),
     total_sugar_coated_gummies:String(Math.round(sugarCoated*100)/100),
     total_packaged_gummies:String(Math.round(packaged*100)/100),
     system_check_expected:String(Math.round(expectedPackaged*100)/100),
     system_check_status:status,
+  };
+}
+// Cartridges System Check: expected hardware filled count = Primed Oil Used
+// divided by the per-cartridge oil amount for that SKU (2G AIO carts use 2,
+// every 1G-style cart uses 1), \u00B110% tolerance against the actual
+// Cartridges Filled count. Shown right after the Filled Hardware section.
+const CART_TOLERANCE=0.10; // \u00B110%
+function cartOilDivisor(sku){return String(sku||'').includes('2G')?2:1;}
+function recalcCartridge(logType,f){
+  if(logType!=='cartridges') return f;
+  const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
+  const divisor=cartOilDivisor(f.sku);
+  const expected=num(f.primed_oil_used)/divisor;
+  const actual=num(f.units_produced);
+  const lower=expected*(1-CART_TOLERANCE);
+  const upper=expected*(1+CART_TOLERANCE);
+  let status='pass';
+  // More cartridges filled than expected \u2192 oil per cartridge is UNDER the
+  // target weight. Fewer filled than expected \u2192 oil per cartridge is OVER
+  // target (more oil went into each one, so fewer cartridges got filled).
+  if(actual>upper) status='under';
+  else if(actual<lower) status='over';
+  return{...f,
+    cart_system_check_expected:String(Math.round(expected*100)/100),
+    cart_system_check_status:status,
+  };
+}
+// Runs every batch-type auto-calculation; each one is a no-op for the wrong logType.
+function recalcBatch(logType,f){
+  return recalcPreRoll(logType,recalcCartridge(logType,recalcGummy(logType,f)));
+}
+// Pre-Rolls has TWO System Check checkpoints against the same Infused Flower
+// Used figure, at different grams-per-joint targets for each production stage:
+//   After Infused Joints:        Infused Flower Used / 0.55g = expected Total Joint Filled
+//   After Infused Kiefed Preroll: Infused Flower Used / 0.60g = expected Total Kiefed Infused Joints
+// (kiefed joints weigh more per unit since kief adds weight). Both use the
+// same \u00B110% tolerance and the same under/over-weight direction logic as
+// Cartridges/Gummies: more joints than expected \u2192 under target weight each;
+// fewer joints than expected \u2192 over target weight each.
+const PRE_ROLL_TOLERANCE=0.10; // \u00B110%
+const PRE_ROLL_JOINT_WEIGHT_1=0.55; // grams per joint, Infused Joints stage
+const PRE_ROLL_JOINT_WEIGHT_2=0.60; // grams per joint, Kiefed Preroll stage
+function preRollCheck(expectedCount,actualCount){
+  const lower=expectedCount*(1-PRE_ROLL_TOLERANCE);
+  const upper=expectedCount*(1+PRE_ROLL_TOLERANCE);
+  if(actualCount>upper) return 'under';
+  if(actualCount<lower) return 'over';
+  return 'pass';
+}
+function recalcPreRoll(logType,f){
+  if(logType!=='pre_rolls') return f;
+  const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
+  const flowerUsed=num(f.infused_flower_used);
+  const expected1=flowerUsed/PRE_ROLL_JOINT_WEIGHT_1;
+  const expected2=flowerUsed/PRE_ROLL_JOINT_WEIGHT_2;
+  return{...f,
+    joints_check_expected:String(Math.round(expected1*100)/100),
+    joints_check_status:preRollCheck(expected1,num(f.total_joint_filled)),
+    kiefed_check_expected:String(Math.round(expected2*100)/100),
+    kiefed_check_status:preRollCheck(expected2,num(f.total_kiefed_infused_joints)),
   };
 }
 // Generalized SKU\u2192Flavor cascading dropdown config, keyed by batch log type.
@@ -3652,6 +3716,8 @@ const LOG_TYPES={
     {key:'total_joint_filled',label:'Total Joint Filled',type:'text',placeholder:'e.g. 1,500 joints'},
     {key:'infused_preroll_metrc',label:'Infused Pre Roll METRC Tag',type:'text',placeholder:'METRC tag for the infused joints'},
     {key:'joints_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'_s_joints_system_check',label:'--- SYSTEM CHECK ---',type:'section'},
+    {key:'joints_check_result',label:'System Check',type:'text'},
     {key:'_s_kiefed',label:'--- INFUSED KIEFED PREROLL ---',type:'section'},
     {key:'total_infused_preroll_used',label:'Total Infused Pre Roll Used',type:'text',placeholder:'Joints used for kiefing'},
     {key:'total_infused_preroll_waste',label:'Total Infused Pre Roll Waste',type:'text',placeholder:'Joints wasted'},
@@ -3661,6 +3727,8 @@ const LOG_TYPES={
     {key:'total_kiefed_infused_joints',label:'Total Kiefed Infused Joints',type:'text',placeholder:'e.g. 1,480 joints'},
     {key:'kiefed_infused_preroll_metrc',label:'Kiefed Infused Preroll METRC #',type:'text',placeholder:'METRC tag for the kiefed joints'},
     {key:'kiefed_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'_s_kiefed_system_check',label:'--- SYSTEM CHECK ---',type:'section'},
+    {key:'kiefed_check_result',label:'System Check',type:'text'},
     {key:'_s_final_packaging',label:'--- FINAL PACKAGING ---',type:'section'},
     {key:'kiefed_infused_joints_used',label:'Kiefed Infused Joints Used',type:'text',placeholder:'Joints used for packaging'},
     {key:'kief_infused_joints_waste',label:'Kief Infused Joints Waste',type:'text',placeholder:'Joints wasted during packaging'},
@@ -3706,6 +3774,8 @@ const LOG_TYPES={
     {key:'filled_rd1',label:'R&D Test',type:'text'},
     {key:'filled_rd2',label:'R&D Test 2',type:'text'},
     {key:'filled_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'_s_cart_system_check',label:'--- SYSTEM CHECK ---',type:'section'},
+    {key:'cart_system_check_result',label:'System Check',type:'text'},
     {key:'_s_packaged',label:'--- PACKAGED ---',type:'section'},
     {key:'cart_packaged',label:'Total Cart Packaged',type:'text',placeholder:'Final packaged unit count'},
     {key:'cart_packaged_metrc',label:'Total Cart Packaged METRC#',type:'text',placeholder:'METRC tag for packaged units'},
@@ -3911,14 +3981,14 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
     // Prefill from the existing record when editing (fresh defaults above cover
     // any newer fields the saved record predates), so reopening a saved batch
     // shows what was already entered instead of a blank form.
-    if(editData) return recalcGummy(logType,{...f,...editData});
-    return recalcGummy(logType,f);
+    if(editData) return recalcBatch(logType,{...f,...editData});
+    return recalcBatch(logType,f);
   };
   const[form,setForm]=React.useState(init);
   const[sig,setSig]=React.useState(null);
   const[attachments,setAttachments]=React.useState([]);
   const[saving,setSaving]=React.useState(false);
-  const setF=(k,v)=>setForm(p=>recalcGummy(logType,{...p,[k]:v}));
+  const setF=(k,v)=>setForm(p=>recalcBatch(logType,{...p,[k]:v}));
 
   function handleFiles(files){
     Array.from(files).forEach(file=>{
@@ -4000,12 +4070,44 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData}){
         el('input',{type:'text',value:form.flavor||'',onChange:ev=>setF('flavor',ev.target.value),placeholder:'No flavor list yet for this SKU \u2014 type it in',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
       );
     }
+    if(logType==='pre_rolls'&&(f.key==='joints_check_result'||f.key==='kiefed_check_result')){
+      const isJoints=f.key==='joints_check_result';
+      const status=(isJoints?form.joints_check_status:form.kiefed_check_status)||'pass';
+      const expected=(isJoints?form.joints_check_expected:form.kiefed_check_expected)||'0';
+      const actual=(isJoints?form.total_joint_filled:form.total_kiefed_infused_joints)||'0';
+      const noun=isJoints?'joint':'kiefed joint';
+      const cfg={
+        pass:{bg:'#16a34a',text:'\u2713 PASS',sub:'Weight per '+noun+' is on target'},
+        under:{bg:'#dc2626',text:'\u26A0 UNDER WEIGHT',sub:'More '+noun+'s than expected \u2014 weight per '+noun+' is under target'},
+        over:{bg:'#f59e0b',text:'\u26A0 OVER WEIGHT',sub:'Fewer '+noun+'s than expected \u2014 weight per '+noun+' is over target'},
+      }[status];
+      return el('div',{key:f.key,className:'fg'},
+        el('div',{style:{background:cfg.bg,color:'#fff',borderRadius:10,padding:'14px 18px',textAlign:'center'}},
+          el('div',{style:{fontSize:16,fontWeight:800}},cfg.text),
+          el('div',{style:{fontSize:12,opacity:.9,marginTop:4}},cfg.sub+' \u2014 Expected \u2248 '+expected+' \u00B110%, Actual: '+actual),
+        ),
+      );
+    }
+    if(logType==='cartridges'&&f.key==='cart_system_check_result'){
+      const status=form.cart_system_check_status||'pass';
+      const cfg={
+        pass:{bg:'#16a34a',text:'\u2713 PASS',sub:'Oil per cartridge is on target'},
+        under:{bg:'#dc2626',text:'\u26A0 UNDER WEIGHT',sub:'More cartridges filled than expected \u2014 oil per cartridge is under target'},
+        over:{bg:'#f59e0b',text:'\u26A0 OVER WEIGHT',sub:'Fewer cartridges filled than expected \u2014 oil per cartridge is over target'},
+      }[status];
+      return el('div',{key:f.key,className:'fg'},
+        el('div',{style:{background:cfg.bg,color:'#fff',borderRadius:10,padding:'14px 18px',textAlign:'center'}},
+          el('div',{style:{fontSize:16,fontWeight:800}},cfg.text),
+          el('div',{style:{fontSize:12,opacity:.9,marginTop:4}},cfg.sub+' \u2014 Expected \u2248 '+(form.cart_system_check_expected||'0')+' \u00B110%, Actual: '+(form.units_produced||'0')),
+        ),
+      );
+    }
     if(logType==='gummies'&&f.key==='system_check_result'){
       const status=form.system_check_status||'pass';
       const cfg={
-        pass:{bg:'#16a34a',text:'\u2713 PASS',sub:'Packaged count is within the expected range'},
-        under:{bg:'#dc2626',text:'\u26A0 UNDER WEIGHT',sub:'Packaged count is below the expected range'},
-        over:{bg:'#f59e0b',text:'\u26A0 OVER WEIGHT',sub:'Packaged count is above the expected range'},
+        pass:{bg:'#16a34a',text:'\u2713 PASS',sub:'Weight per gummy is on target'},
+        under:{bg:'#dc2626',text:'\u26A0 UNDER WEIGHT',sub:'More gummies packaged than expected \u2014 weight per gummy is under target'},
+        over:{bg:'#f59e0b',text:'\u26A0 OVER WEIGHT',sub:'Fewer gummies packaged than expected \u2014 weight per gummy is over target'},
       }[status];
       return el('div',{key:f.key,className:'fg'},
         el('div',{style:{background:cfg.bg,color:'#fff',borderRadius:10,padding:'14px 18px',textAlign:'center'}},
