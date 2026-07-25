@@ -452,6 +452,20 @@ function userRoles(u){
 }
 function hasRole(u,r){return userRoles(u).includes(r);}
 function hasAnyRole(u,arr){return userRoles(u).some(r=>arr.includes(r));}
+// Returns 'lead' | 'member' | null. Team Member and Production Lead get a
+// deliberately narrow nav (SOPs + My Documents, plus Production Lead gets
+// their own tasks + a limited Batch Tracker). This ONLY applies if the user
+// doesn't ALSO hold any broader role (admin, isElevated tier, or any
+// MID_MANAGERS/sales_manager role) — holding any of those always wins and
+// restores full normal access, even if the person also has team_member or
+// production_lead in their role list.
+function restrictedTier(u,isAdmin,isElevated){
+  if(isAdmin||isElevated) return null;
+  if(hasAnyRole(u,MID_MANAGERS)||hasRole(u,'sales_manager')) return null;
+  if(hasRole(u,'production_lead')) return 'lead';
+  if(hasRole(u,'team_member')) return 'member';
+  return null;
+}
 // The user's highest-priority ROLE_GROUPS label across all of their roles —
 // used wherever code used to do a single ROLE_GROUPS.find(...).label lookup.
 function topRoleGroup(u){
@@ -1963,7 +1977,7 @@ function ComplianceSummaryWidget({cu,setPage,SUPA_URL,SUPA_KEY,H}){
   );
 }
 
-function Board({tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setPage,SUPA_URL,SUPA_KEY,H}){
+function Board({tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setPage,SUPA_URL,SUPA_KEY,H,restricted}){
   const[view,setView]=useState('board');
   const[section,setSection]=useState('All');
   const[showNew,setNew]=useState(false);
@@ -1981,7 +1995,10 @@ function Board({tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setP
     let list=tasks;
     // Single location: Missouri only — no loc filtering needed
     if(section!=='All') list=list.filter(t=>t.section===section);
-    if(cu.role!=='admin'){
+    if(restricted==='lead'){
+      // Production Lead: strictly tasks assigned to them — not created-by or cc.
+      list=list.filter(t=>(t.assignees||[]).some(a=>a.id===cu.id));
+    } else if(cu.role!=='admin'){
       list=list.filter(t=>{
         if(t.created_by_id===cu.id) return true;
         if((t.assignees||[]).some(a=>a.id===cu.id)) return true;
@@ -1990,7 +2007,7 @@ function Board({tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setP
       });
     }
     return list;
-  },[tasks,locFilter,section,cu,users]);
+  },[tasks,locFilter,section,cu,users,restricted]);
 
   async function createTask(){
     if(!f.title||f.assignees.length===0)return;
@@ -4722,8 +4739,9 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
 // ══════════════════════════════════════════════════════════════════════════════
 // BATCH TRACKER \u2014 dropdown-selected batch type, list + create/edit/PDF, one shared table
 // ══════════════════════════════════════════════════════════════════════════════
-function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
-  const[activeType,setActiveType]=React.useState('ethanol_extraction');
+function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
+  const visibleBatchTypes=restricted==='lead'?['cartridges','gummies','pre_rolls']:BATCH_TYPE_IDS;
+  const[activeType,setActiveType]=React.useState(visibleBatchTypes[0]);
   const[entries,setEntries]=React.useState([]);
   const[loading,setLoading]=React.useState(false);
   const[showForm,setShowForm]=React.useState(false);
@@ -4754,7 +4772,7 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
           el('div',{style:{fontSize:20,fontWeight:800,marginBottom:8}},'\uD83E\uDDEA Batch Tracker'),
           el('select',{value:activeType,onChange:ev=>{setActiveType(ev.target.value);setSearch('');setDateFrom('');setDateTo('');},
             style:{background:'rgba(255,255,255,.15)',color:'#fff',border:'1px solid rgba(255,255,255,.4)',borderRadius:8,padding:'8px 14px',fontFamily:'inherit',fontSize:14,fontWeight:700,cursor:'pointer'}},
-            BATCH_TYPE_IDS.map(id=>el('option',{key:id,value:id,style:{color:'#0f172a'}},LOG_TYPES[id].icon+' '+LOG_TYPES[id].label))
+            BATCH_TYPE_IDS.filter(id=>visibleBatchTypes.includes(id)).map(id=>el('option',{key:id,value:id,style:{color:'#0f172a'}},LOG_TYPES[id].icon+' '+LOG_TYPES[id].label))
           ),
           el('div',{style:{fontSize:12,opacity:.8,marginTop:6}},lt.dcr+' \u00B7 '+lt.freq),
         ),
@@ -11266,7 +11284,13 @@ function App(){
   const[qmsCorrective,setQmsCorrective]=useState([]);
   const[loading,setLoading]=useState(false);
   const[dbReady,setDbReady]=useState(null);
-  const[page,setPage]=useState('board');
+  const[page,setPage]=useState(()=>{
+    if(cu&&cu.role!=='admin'){
+      const elevated=hasAnyRole(cu,['general_manager','assistant_general_manager','compliance_officer','security_manager']);
+      if(restrictedTier(cu,false,elevated)) return 'sops';
+    }
+    return 'board';
+  });
   const[holdAlert,setHoldAlert]=useState(null);
   const[inviteAlert,setInviteAlert]=useState(null);
   const[activeCall,setActiveCall]=useState(null);
@@ -11402,11 +11426,17 @@ function App(){
   // get SOPs only (per Black Fox QMS QMS RBAC policy).
   const qmsRoleGroup=topRoleGroup(cu);
   const canAccessQms=isAdmin||['Leadership','Compliance & Security','Operations'].includes(qmsRoleGroup);
+  const restricted=restrictedTier(cu,isAdmin,isElevated);
   const today=new Date().toISOString().slice(0,10);
   const myTasks=tasks.filter(t=>(t.assignees||[]).some(a=>a.id===cu.id)&&!['archived'].includes(t.status));
   const overdueCt=tasks.filter(t=>!['done','archived'].includes(t.status)&&t.due_date&&t.due_date<today).length;
 
-  const nav=[
+  const nav=(restricted?[
+    {id:'sops',ico:'\uD83D\uDCCB',label:'SOPs'},
+    {id:'mydocs',ico:'\uD83D\uDCC1',label:'My Documents'},
+    restricted==='lead'&&{id:'board',ico:'\u2B1B',label:'Task Board'},
+    restricted==='lead'&&{id:'batch',ico:'\uD83E\uDDEA',label:'Batch Tracker'},
+  ]:[
     {id:'board',ico:'\u2B1B',label:'Task Board'},
     {id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
     (cu.role==='admin'||hasRole(cu,'sales_manager')||cu.dept==='Sales'||cu.dept==='Marketing')&&{id:'sales',ico:'\uD83C\uDFEA',label:'Sales & Marketing'},
@@ -11419,7 +11449,7 @@ function App(){
     {id:'mydocs',ico:'\uD83D\uDCC1',label:'My Documents'},
     {id:'scores',ico:'\uD83C\uDFC6',label:'Scoreboard'},
     isAdmin&&{id:'team',ico:'\uD83D\uDC65',label:'Team & Access',badge:pending||null},
-  ].filter(Boolean);
+  ]).filter(Boolean);
 
   return el('div',{className:'app'},
     el('div',{className:'sb'},
@@ -11595,9 +11625,10 @@ function App(){
     ),
 
     el('div',{className:'mobile-nav'},
-      el('button',{className:`mnav-btn${page==='board'?' on':''}`,onClick:()=>setPage('board')},el('span',{className:'mnav-ico'},'\u2B1B'),'Board'),
-      el('button',{className:`mnav-btn${page==='sales'?' on':''}`,onClick:()=>setPage('sales')},el('span',{className:'mnav-ico'},'\uD83C\uDFEA'),'Sales'),
-      el('button',{className:`mnav-btn${page==='calendar'?' on':''}`,onClick:()=>setPage('calendar')},el('span',{className:'mnav-ico'},'\uD83D\uDCC5'),'Calendar'),
+      !restricted&&el('button',{className:`mnav-btn${page==='board'?' on':''}`,onClick:()=>setPage('board')},el('span',{className:'mnav-ico'},'\u2B1B'),'Board'),
+      restricted==='lead'&&el('button',{className:`mnav-btn${page==='board'?' on':''}`,onClick:()=>setPage('board')},el('span',{className:'mnav-ico'},'\u2B1B'),'Board'),
+      !restricted&&el('button',{className:`mnav-btn${page==='sales'?' on':''}`,onClick:()=>setPage('sales')},el('span',{className:'mnav-ico'},'\uD83C\uDFEA'),'Sales'),
+      !restricted&&el('button',{className:`mnav-btn${page==='calendar'?' on':''}`,onClick:()=>setPage('calendar')},el('span',{className:'mnav-ico'},'\uD83D\uDCC5'),'Calendar'),
       cu.role==='admin'&&el('button',{className:`mnav-btn${page==='team'?' on':''}`,onClick:()=>setPage('team')},
         el('div',{style:{position:'relative',display:'inline-block'}},el('span',{className:'mnav-ico'},'\uD83D\uDC65'),pending>0&&el('span',{className:'mnav-dot'},pending)),'Team'
       ),
@@ -11611,21 +11642,23 @@ function App(){
         el('span',{className:'mnav-ico'},typeof Notification!=='undefined'&&Notification.permission==='granted'?'\uD83D\uDD14':'\uD83D\uDD15'),'Alerts'
       ),
       el('button',{className:`mnav-btn${page==='sops'?' on':''}`,onClick:()=>setPage('sops')},el('span',{className:'mnav-ico'},'\uD83D\uDCCB'),'SOPs'),
-      canAccessQms&&el('button',{className:`mnav-btn${page==='qms'?' on':''}`,onClick:()=>setPage('qms')},el('span',{className:'mnav-ico'},'\uD83D\uDEE1\uFE0F'),'QMS'),
-      el('button',{className:`mnav-btn${page==='logs'?' on':''}`,onClick:()=>setPage('logs')},el('span',{className:'mnav-ico'},'\uD83D\uDCCB'),'Logs'),
-      el('button',{className:`mnav-btn${page==='scores'?' on':''}`,onClick:()=>setPage('scores')},el('span',{className:'mnav-ico'},'\uD83C\uDFC6'),'Scores'),
+      el('button',{className:`mnav-btn${page==='mydocs'?' on':''}`,onClick:()=>setPage('mydocs')},el('span',{className:'mnav-ico'},'\uD83D\uDCC1'),'My Docs'),
+      !restricted&&canAccessQms&&el('button',{className:`mnav-btn${page==='qms'?' on':''}`,onClick:()=>setPage('qms')},el('span',{className:'mnav-ico'},'\uD83D\uDEE1\uFE0F'),'QMS'),
+      !restricted&&el('button',{className:`mnav-btn${page==='logs'?' on':''}`,onClick:()=>setPage('logs')},el('span',{className:'mnav-ico'},'\uD83D\uDCCB'),'Logs'),
+      restricted==='lead'&&el('button',{className:`mnav-btn${page==='batch'?' on':''}`,onClick:()=>setPage('batch')},el('span',{className:'mnav-ico'},'\uD83E\uDDEA'),'Batch'),
+      !restricted&&el('button',{className:`mnav-btn${page==='scores'?' on':''}`,onClick:()=>setPage('scores')},el('span',{className:'mnav-ico'},'\uD83C\uDFC6'),'Scores'),
       el('button',{className:'mnav-btn',onClick:()=>{if(window.confirm('Sign out?')){localStorage.removeItem('pf_session');localStorage.removeItem('pf_token');window.location.reload();}}},el('span',{className:'mnav-ico'},'\u23FB'),'Sign Out'),
     ),
     el('div',{className:'main'},
-      page==='board'&&el(Board,{tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setPage,SUPA_URL,SUPA_KEY,H}),
-      page==='calendar'&&el(Calendar,{events,setEvents,tasks,cu,users,locFilter,meetingNotes,setMeetingNotes,onJoinCall:(room,title,meetLink)=>setActiveCall({room,title,meetLink})}),
-      page==='sales'&&el(SalesMarketing,{salesTasks,setSalesTasks,cu,users,locFilter}),
+      page==='board'&&(!restricted||restricted==='lead')&&el(Board,{tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setPage,SUPA_URL,SUPA_KEY,H,restricted}),
+      page==='calendar'&&!restricted&&el(Calendar,{events,setEvents,tasks,cu,users,locFilter,meetingNotes,setMeetingNotes,onJoinCall:(room,title,meetLink)=>setActiveCall({room,title,meetLink})}),
+      page==='sales'&&!restricted&&el(SalesMarketing,{salesTasks,setSalesTasks,cu,users,locFilter}),
       page==='sops'&&el(SOPs,{sops,setSops,cu,users}),
-      page==='compliance'&&canAccessQms&&el(ComplianceModule,{cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db}),
-      page==='risks'&&canAccessQms&&el(RiskRegister,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
-      page==='logs'&&el(FacilityLogs,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
-      page==='batch'&&el(BatchTracker,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
-      page==='qms'&&canAccessQms&&el(QMS,{cu,users,tasks,sops,
+      page==='compliance'&&!restricted&&canAccessQms&&el(ComplianceModule,{cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db}),
+      page==='risks'&&!restricted&&canAccessQms&&el(RiskRegister,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
+      page==='logs'&&!restricted&&el(FacilityLogs,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
+      page==='batch'&&(!restricted||restricted==='lead')&&el(BatchTracker,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}),
+      page==='qms'&&!restricted&&canAccessQms&&el(QMS,{cu,users,tasks,sops,
         deviations:qmsDeviations,setDeviations:setQmsDeviations,
         capas:qmsCAPAs,setCapas:setQmsCAPAs,
         audits:qmsAudits,setAudits:setQmsAudits,
@@ -11635,7 +11668,7 @@ function App(){
         corrective:qmsCorrective,setCorrective:setQmsCorrective,
       }),
       page==='mydocs'&&el(MyDocuments,{cu,corrective:qmsCorrective,setCorrective:setQmsCorrective}),
-      page==='scores'&&el(Scoreboard,{tasks,cu,users}),
+      page==='scores'&&!restricted&&el(Scoreboard,{tasks,cu,users}),
       page==='team'&&isAdmin&&el(Team,{users,setUsers,cu}),
     )
   );
