@@ -3410,8 +3410,8 @@ const PRE_ROLL_SKUS=[
   'Muha Meds - Mates - THCA Infused 5 x 0.6g',
   'Muha Meds - Mates Reserve - 5 x 0.6g',
   'Bodega Boyz - Shorties',
-  '2G Infused Pre Roll',
-  '1G Plain Pre Roll',
+  'Muha Meds 2G Infused Pre Roll',
+  'Muha Meds 1G Plain Pre Roll',
 ];
 // Flavors cascade off the SKU chosen above. SKUs with no flavor list yet fall
 // back to a free-text flavor field so new batches aren't blocked. 1G Plain
@@ -3421,10 +3421,10 @@ const PRE_ROLL_FLAVORS={
   'Muha Meds - Mates - THCA Infused 5 x 0.6g':['Berry Blast','Honey Melon','Agave Sunrise','Mango Peach Fusion','Frosty Mint Blueberry','Strawberry Ice Cream','Caramel Apple Gelato','Winter Cookie Crumble','Purple Punch','Biscotti Bomb'],
   'Muha Meds - Mates Reserve - 5 x 0.6g':['Presidential OG','Muha OG','STL Gas','Kush Widow','Super Lemon'],
   'Bodega Boyz - Shorties':[],
-  '2G Infused Pre Roll':['Banana Pie','Blue Slushie','Cinnamon Cream OG','Desert Gold Chocolate','Grape Stomper','Honey Melon','Lemon Cheesecake','Matcha Gold','Midnight Espresso','PB Jelly','Peaches & Cream','Pineapple Poison','Pumpkin Bliss','Strawberry Lava','Watermelon Punch'],
-  '1G Plain Pre Roll':[],
+  'Muha Meds 2G Infused Pre Roll':['Banana Pie','Blue Slushie','Cinnamon Cream OG','Desert Gold Chocolate','Grape Stomper','Honey Melon','Lemon Cheesecake','Matcha Gold','Midnight Espresso','PB Jelly','Peaches & Cream','Pineapple Poison','Pumpkin Bliss','Strawberry Lava','Watermelon Punch'],
+  'Muha Meds 1G Plain Pre Roll':[],
 };
-const PRE_ROLL_NO_FLAVOR_SKUS=['1G Plain Pre Roll'];
+const PRE_ROLL_NO_FLAVOR_SKUS=['Muha Meds 1G Plain Pre Roll'];
 // Gummies SKU/Flavor dropdown (Batch Tracker \u2014 New Batch)
 const GUMMY_SKUS=['Muha Meds Distillate Gummies'];
 const GUMMY_FLAVORS={
@@ -3551,8 +3551,8 @@ const PRE_ROLL_TOLERANCE=0.10; // \u00B110%
 const PRE_ROLL_JOINT_WEIGHT_1=0.55; // fallback default, grams/joint, Infused Joints stage
 const PRE_ROLL_JOINT_WEIGHT_2=0.60; // fallback default, grams/joint, Kiefed Preroll stage
 const PRE_ROLL_JOINT_WEIGHTS={
-  '2G Infused Pre Roll':{filled:1.9,kief:2.0},
-  '1G Plain Pre Roll':{filled:1.0,kief:null},
+  'Muha Meds 2G Infused Pre Roll':{filled:1.9,kief:2.0},
+  'Muha Meds 1G Plain Pre Roll':{filled:1.0,kief:null},
 };
 function preRollJointWeight(sku){
   return PRE_ROLL_JOINT_WEIGHTS[sku]||{filled:PRE_ROLL_JOINT_WEIGHT_1,kief:PRE_ROLL_JOINT_WEIGHT_2};
@@ -3576,6 +3576,20 @@ function recalcPreRoll(logType,f){
   // for SKUs that use them) should roughly equal Infused Flower Total WT, \u00B110%.
   const ingredientsSum=num(f.flower_qty)+num(f.thca_qty)+num(f.terp_qty)+num(f.live_resin_qty)+num(f.decarbed_resin_qty)+num(f.distillate_qty);
   const flowerActual=num(f.infused_flower_total_wt);
+  // Final Packaging check: for SKUs with a known units-per-package ratio,
+  // Total Jar Packaged should roughly equal (joints available for packaging)
+  // / units-per-package. Uses the kiefed count for SKUs that kief, the
+  // filled-joint count for SKUs that don't (1G Plain has no kiefing step).
+  const packUnits=PRE_ROLL_UNITS_PER_PACKAGE[f.sku];
+  let packagingExtra={};
+  if(packUnits){
+    const joinSource=w.kief?num(f.kiefed_infused_joints_used):num(f.total_joint_filled);
+    const expectedPack=joinSource/packUnits;
+    packagingExtra={
+      packaging_check_expected:String(Math.round(expectedPack*100)/100),
+      packaging_check_status:preRollCheck(expectedPack,num(f.total_jar_packaged)),
+    };
+  }
   return{...f,
     joints_check_expected:String(Math.round(expected1*100)/100),
     joints_check_status:preRollCheck(expected1,num(f.total_joint_filled)),
@@ -3583,8 +3597,16 @@ function recalcPreRoll(logType,f){
     kiefed_check_status:preRollCheck(expected2,num(f.total_kiefed_infused_joints)),
     flower_check_expected:String(Math.round(ingredientsSum*100)/100),
     flower_check_status:directCheck(ingredientsSum,flowerActual,PRE_ROLL_TOLERANCE),
+    ...packagingExtra,
   };
 }
+// Units-per-package for the Final Packaging System Check \u2014 only defined for
+// SKUs Sam has given a ratio for; others get no packaging check (not enough
+// info yet, e.g. the 5x0.6g Mates SKUs likely package multiple joints together).
+const PRE_ROLL_UNITS_PER_PACKAGE={
+  'Muha Meds 1G Plain Pre Roll':1,
+  'Muha Meds 2G Infused Pre Roll':1,
+};
 // Generalized SKU\u2192Flavor cascading dropdown config, keyed by batch log type.
 // Any batch type listed here gets the SKU/Flavor special-case rendering in
 // LogEntryForm below (SKU select \u2192 Flavor select scoped to that SKU, or a
@@ -3605,13 +3627,13 @@ const PRE_ROLL_SKU_INGREDIENTS={
   'Muha Meds - Mates - THCA Infused 5 x 0.6g':['thca_metrc','thca_qty','terp_qty'],
   'Muha Meds - Mates Reserve - 5 x 0.6g':['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'],
   'Bodega Boyz - Shorties':[],
-  '2G Infused Pre Roll':['thca_metrc','thca_qty','terp_qty'],
-  '1G Plain Pre Roll':[],
+  'Muha Meds 2G Infused Pre Roll':['thca_metrc','thca_qty','terp_qty'],
+  'Muha Meds 1G Plain Pre Roll':[],
 };
 const PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS=['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'];
 // 1G Plain Pre Roll has no kiefing step at all \u2014 the entire Kiefed Preroll
 // section (and its System Check) is hidden for it, not just individual fields.
-const PRE_ROLL_NO_KIEF_SKUS=['1G Plain Pre Roll'];
+const PRE_ROLL_NO_KIEF_SKUS=['Muha Meds 1G Plain Pre Roll'];
 const PRE_ROLL_KIEF_SECTION_KEYS=['_s_kiefed','total_infused_preroll_used','total_infused_preroll_waste','preroll_waste_metrc_confirmed','kief_metrc','kief_qty_used','total_kiefed_infused_joints','kiefed_infused_preroll_metrc','kiefed_metrc_confirmed','_s_kiefed_system_check','kiefed_check_result','kiefed_infused_joints_used','kief_infused_joints_waste','kief_waste_metrc_confirmed'];
 // R&D test checkpoints, keyed by batch logType. Each pair is [rd1_key,rd2_key];
 // rd2 only appears once rd1 has been marked Failed. A batch type can have more
@@ -3849,6 +3871,7 @@ const LOG_TYPES={
     {key:'kief_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'total_jar_packaged',label:'Total Jar Packaged',type:'text',placeholder:'Final packaged jar count'},
     {key:'final_packaged_tag',label:'Final Packaged Tag #',type:'text',placeholder:'METRC tag for packaged units'},
+    {key:'packaging_check_result',label:'System Check',type:'display'},
     {key:'rd1_result',label:'R&D 1',type:'text'},
     {key:'rd2_result',label:'R&D 2',type:'text'},
     {key:'mandatory_testing',label:'Mandatory Testing',type:'select',options:['Not Submitted','Submitted','Passed','Failed']},
@@ -3944,7 +3967,7 @@ const LOG_TYPES={
     {key:'batch_number',label:'Batch / Lot Number',type:'text',placeholder:'e.g. IF-2026-014'},
     {key:'date',label:'Date',type:'date'},
     {key:'operator',label:'Operator / Personnel',type:'text',placeholder:'Who ran this batch'},
-    {key:'sku',label:'SKU',type:'select',options:['3.5g','7g']},
+    {key:'sku',label:'SKU',type:'select',options:['Muha Meds 3.5g','Muha Meds 7g']},
     {key:'flavor',label:'Flavor',type:'select',options:['Banana Pie','Cinnamon Cream OG','Cotton Candy','Irish Cream','Lemon Tart','Matcha OG','Maui Wowie','Peaches & Cream','Pina Colada','Pineapple Poison','Purple Crush','Raspberry Kush','Strawberry Lava','Vanilla Cream','Watermelon Punch']},
     {key:'oil_source_batch',label:'Source Flower METRC#',type:'text',placeholder:'METRC tag for the source flower'},
     {key:'input_weight',label:'Source Flower Weight',type:'text',placeholder:'e.g. 1,000g'},
@@ -3959,7 +3982,7 @@ const LOG_TYPES={
     {key:'batch_number',label:'Batch / Lot Number',type:'text',placeholder:'e.g. MR-2026-014'},
     {key:'date',label:'Date',type:'date'},
     {key:'operator',label:'Operator / Personnel',type:'text',placeholder:'Who ran this batch'},
-    {key:'sku',label:'SKU',type:'select',options:['3.5g','7g']},
+    {key:'sku',label:'SKU',type:'select',options:['Muha Meds 3.5g','Muha Meds 7g']},
     {key:'flavor',label:'Flavor',type:'text',placeholder:'Strain / flavor name'},
     {key:'oil_source_batch',label:'Base Flower METRC#',type:'text',placeholder:'METRC tag for the base flower'},
     {key:'input_weight',label:'Base Flower Weight',type:'text',placeholder:'e.g. 500g'},
@@ -3976,7 +3999,7 @@ const LOG_TYPES={
     {key:'batch_number',label:'Batch / Lot Number',type:'text',placeholder:'e.g. SC-2026-014'},
     {key:'date',label:'Date',type:'date'},
     {key:'operator',label:'Operator / Personnel',type:'text',placeholder:'Who ran this batch'},
-    {key:'sku',label:'SKU',type:'select',options:['3.5g','7g']},
+    {key:'sku',label:'SKU',type:'select',options:['Muha Meds 3.5g','Muha Meds 7g']},
     {key:'flavor',label:'Flavor',type:'text',placeholder:'Strain / flavor name'},
     {key:'oil_source_batch',label:'Base Flower METRC#',type:'text',placeholder:'METRC tag for the base flower'},
     {key:'input_weight',label:'Base Flower Weight',type:'text',placeholder:'e.g. 500g'},
@@ -4237,7 +4260,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         el('select',{value:form.sku||cfg.skus[0],onChange:ev=>{
           const newSku=ev.target.value;
           const flavors=cfg.flavors[newSku]||[];
-          setForm(p=>({...p,sku:newSku,flavor:flavors[0]||''}));
+          setForm(p=>recalcBatch(logType,{...p,sku:newSku,flavor:flavors[0]||''}));
         },style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13}},
           cfg.skus.map(o=>el('option',{key:o,value:o},o))
         ),
@@ -4269,6 +4292,21 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         el('div',{style:{background:cfg.bg,color:'#fff',borderRadius:10,padding:'14px 18px',textAlign:'center'}},
           el('div',{style:{fontSize:16,fontWeight:800}},cfg.text),
           el('div',{style:{fontSize:12,opacity:.9,marginTop:4}},cfg.sub+' \u2014 Ingredients \u2248 '+(form.primed_check_expected||'0')+' \u00B110%, Actual: '+(form.primed_oil_total_weight||'0')),
+        ),
+      );
+    }
+    if(logType==='pre_rolls'&&f.key==='packaging_check_result'){
+      if(!PRE_ROLL_UNITS_PER_PACKAGE[form.sku]) return null;
+      const status=form.packaging_check_status||'pass';
+      const cfg={
+        pass:{bg:'#16a34a',text:'\u2713 PASS',sub:'Joints per package is on target'},
+        under:{bg:'#dc2626',text:'\u26A0 UNDER WEIGHT',sub:'More packages than expected \u2014 fewer joints made it into each package'},
+        over:{bg:'#f59e0b',text:'\u26A0 OVER WEIGHT',sub:'Fewer packages than expected \u2014 more joints went into each package'},
+      }[status];
+      return el('div',{key:f.key,className:'fg'},
+        el('div',{style:{background:cfg.bg,color:'#fff',borderRadius:10,padding:'14px 18px',textAlign:'center'}},
+          el('div',{style:{fontSize:16,fontWeight:800}},cfg.text),
+          el('div',{style:{fontSize:12,opacity:.9,marginTop:4}},cfg.sub+' \u2014 Expected \u2248 '+(form.packaging_check_expected||'0')+' \u00B110%, Actual: '+(form.total_jar_packaged||'0')),
         ),
       );
     }
