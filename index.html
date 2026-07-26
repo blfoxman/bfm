@@ -3537,9 +3537,27 @@ function recalcEthanol(logType,f){
     yield_quality_band:band,
   };
 }
+// Infused Flower packaging validation: (Infused Flower Bulk Weight \u2212
+// Material Waste) / package size (3.5g or 7g, from the SKU) should roughly
+// equal Total Packaged Infused Flower, \u00B110%. Same inverted count-vs-weight
+// direction as the rest of the app: more packages than expected \u2192 under
+// target weight each; fewer \u2192 over target weight each.
+function recalcInfusedFlower(logType,f){
+  if(logType!=='infused_flower') return f;
+  const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
+  const bulkWeight=num(f.infused_flower_total_wt);
+  const waste=num(f.cart_waste);
+  const pkgSize=String(f.sku||'').includes('7g')?7:3.5;
+  const expected=(bulkWeight-waste)/pkgSize;
+  const actual=num(f.units_produced);
+  return{...f,
+    packaging_check_expected:String(Math.round(expected*100)/100),
+    packaging_check_status:preRollCheck(expected,actual),
+  };
+}
 // Runs every batch-type auto-calculation; each one is a no-op for the wrong logType.
 function recalcBatch(logType,f){
-  return recalcEthanol(logType,recalcPreRoll(logType,recalcCartridge(logType,recalcGummy(logType,f))));
+  return recalcInfusedFlower(logType,recalcEthanol(logType,recalcPreRoll(logType,recalcCartridge(logType,recalcGummy(logType,f)))));
 }
 // Pre-Rolls has TWO System Check checkpoints against the same Infused Flower
 // Used figure, at different grams-per-joint targets for each production stage.
@@ -3645,6 +3663,7 @@ const RD_TEST_PAIRS={
   pre_rolls:[['rd1_result','rd2_result']],
   cartridges:[['primed_rd1','primed_rd2'],['filled_rd1','filled_rd2']],
   gummies:[['gummy_rd1','gummy_rd2']],
+  infused_flower:[['rd1_result','rd2_result']],
 };
 function slug(s){return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
 // Turns a plain list of names into an array of checkbox field definitions
@@ -3969,12 +3988,29 @@ const LOG_TYPES={
     {key:'operator',label:'Operator / Personnel',type:'text',placeholder:'Who ran this batch'},
     {key:'sku',label:'SKU',type:'select',options:['Muha Meds 3.5g','Muha Meds 7g']},
     {key:'flavor',label:'Flavor',type:'select',options:['Banana Pie','Cinnamon Cream OG','Cotton Candy','Irish Cream','Lemon Tart','Matcha OG','Maui Wowie','Peaches & Cream','Pina Colada','Pineapple Poison','Purple Crush','Raspberry Kush','Strawberry Lava','Vanilla Cream','Watermelon Punch']},
-    {key:'oil_source_batch',label:'Source Flower METRC#',type:'text',placeholder:'METRC tag for the source flower'},
-    {key:'input_weight',label:'Source Flower Weight',type:'text',placeholder:'e.g. 1,000g'},
-    {key:'distillate_metrc',label:'Infusion Oil METRC#',type:'text',placeholder:'METRC tag for the oil/distillate used'},
-    {key:'distillate_qty',label:'Infusion Oil Used',type:'text',placeholder:'e.g. 200g'},
-    {key:'units_produced',label:'Total Infused Flower Produced',type:'text',placeholder:'e.g. 1,150g'},
-    {key:'metrc_tag',label:'Final METRC Tag#',type:'text',placeholder:'METRC tag for the finished product'},
+    {key:'_s_infused_flower',label:'--- INFUSED FLOWER ---',type:'section'},
+    {key:'flower_metrc',label:'Flower METRC #',type:'text',placeholder:'METRC tag for the source flower'},
+    {key:'flower_qty',label:'Flower Used',type:'text',placeholder:'e.g. 1,000g'},
+    {key:'thca_metrc',label:'THCA #',type:'text',placeholder:'METRC tag for the THCA used'},
+    {key:'thca_qty',label:'THCA Used',type:'text',placeholder:'e.g. 200g'},
+    {key:'terp_qty',label:'Terpene Used',type:'text',placeholder:'e.g. 40g'},
+    {key:'live_resin_metrc',label:'Live Resin METRC #',type:'text',placeholder:'METRC tag for the live resin used'},
+    {key:'live_resin_qty',label:'Live Resin Used',type:'text',placeholder:'e.g. 150g'},
+    {key:'decarbed_resin_metrc',label:'Decarbed Cured Resin METRC #',type:'text',placeholder:'METRC tag for the decarbed cured resin'},
+    {key:'decarbed_resin_qty',label:'Decarbed Cured Resin Used',type:'text',placeholder:'e.g. 100g'},
+    {key:'distillate_metrc',label:'Distillate METRC #',type:'text',placeholder:'METRC tag for the distillate used'},
+    {key:'distillate_qty',label:'Distillate Used',type:'text',placeholder:'e.g. 80g'},
+    {key:'infused_flower_total_wt',label:'Infused Flower Bulk Weight',type:'text',placeholder:'e.g. 1,240g'},
+    {key:'flower_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'rd1_result',label:'R&D Test',type:'text'},
+    {key:'rd2_result',label:'R&D Test 2',type:'text'},
+    {key:'_s_packaging',label:'--- PACKAGING ---',type:'section'},
+    {key:'cart_waste',label:'Infused Flower Material Waste',type:'text',placeholder:'Amount wasted'},
+    {key:'units_produced',label:'Total Packaged Infused Flower',type:'text',placeholder:'e.g. 300 units'},
+    {key:'metrc_tag',label:'Infused Flower Packaged METRC Tag',type:'text',placeholder:'METRC tag for the packaged product'},
+    {key:'packaging_check_result',label:'Validation',type:'display'},
+    {key:'packaging_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'mandatory_testing',label:'Mandatory Testing',type:'select',options:['Not Submitted','Submitted','Passed','Failed']},
     {key:'status',label:'Status',type:'select',options:['In Progress','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
@@ -4295,6 +4331,20 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         ),
       );
     }
+    if(logType==='infused_flower'&&f.key==='packaging_check_result'){
+      const status=form.packaging_check_status||'pass';
+      const cfg={
+        pass:{bg:'#16a34a',text:'\u2713 PASS',sub:'Weight per package is on target'},
+        under:{bg:'#dc2626',text:'\u26A0 UNDER WEIGHT',sub:'More packages than expected \u2014 weight per package is under target'},
+        over:{bg:'#f59e0b',text:'\u26A0 OVER WEIGHT',sub:'Fewer packages than expected \u2014 weight per package is over target'},
+      }[status];
+      return el('div',{key:f.key,className:'fg'},
+        el('div',{style:{background:cfg.bg,color:'#fff',borderRadius:10,padding:'14px 18px',textAlign:'center'}},
+          el('div',{style:{fontSize:16,fontWeight:800}},cfg.text),
+          el('div',{style:{fontSize:12,opacity:.9,marginTop:4}},cfg.sub+' \u2014 Expected \u2248 '+(form.packaging_check_expected||'0')+' \u00B110%, Actual: '+(form.units_produced||'0')),
+        ),
+      );
+    }
     if(logType==='pre_rolls'&&f.key==='packaging_check_result'){
       if(!PRE_ROLL_UNITS_PER_PACKAGE[form.sku]) return null;
       const status=form.packaging_check_status||'pass';
@@ -4456,7 +4506,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         );
       }
     }
-    if(logType==='pre_rolls'&&f.key==='mandatory_testing'){
+    if((logType==='pre_rolls'||logType==='infused_flower')&&f.key==='mandatory_testing'){
       const rdPassed=form.rd1_result==='Passed'||form.rd2_result==='Passed';
       if(!rdPassed) return null;
       // fall through to generic select renderer below
