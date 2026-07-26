@@ -3410,14 +3410,21 @@ const PRE_ROLL_SKUS=[
   'Muha Meds - Mates - THCA Infused 5 x 0.6g',
   'Muha Meds - Mates Reserve - 5 x 0.6g',
   'Bodega Boyz - Shorties',
+  '2G Infused Pre Roll',
+  '1G Plain Pre Roll',
 ];
 // Flavors cascade off the SKU chosen above. SKUs with no flavor list yet fall
-// back to a free-text flavor field so new batches aren't blocked.
+// back to a free-text flavor field so new batches aren't blocked. 1G Plain
+// Pre Roll has no flavor concept at all \u2014 the field is hidden entirely for
+// it (see PRE_ROLL_NO_FLAVOR_SKUS), not just given an empty list.
 const PRE_ROLL_FLAVORS={
   'Muha Meds - Mates - THCA Infused 5 x 0.6g':['Berry Blast','Honey Melon','Agave Sunrise','Mango Peach Fusion','Frosty Mint Blueberry','Strawberry Ice Cream','Caramel Apple Gelato','Winter Cookie Crumble','Purple Punch','Biscotti Bomb'],
   'Muha Meds - Mates Reserve - 5 x 0.6g':['Presidential OG','Muha OG','STL Gas','Kush Widow','Super Lemon'],
   'Bodega Boyz - Shorties':[],
+  '2G Infused Pre Roll':['Banana Pie','Blue Slushie','Cinnamon Cream OG','Desert Gold Chocolate','Grape Stomper','Honey Melon','Lemon Cheesecake','Matcha Gold','Midnight Espresso','PB Jelly','Peaches & Cream','Pineapple Poison','Pumpkin Bliss','Strawberry Lava','Watermelon Punch'],
+  '1G Plain Pre Roll':[],
 };
+const PRE_ROLL_NO_FLAVOR_SKUS=['1G Plain Pre Roll'];
 // Gummies SKU/Flavor dropdown (Batch Tracker \u2014 New Batch)
 const GUMMY_SKUS=['Muha Meds Distillate Gummies'];
 const GUMMY_FLAVORS={
@@ -3535,16 +3542,21 @@ function recalcBatch(logType,f){
   return recalcEthanol(logType,recalcPreRoll(logType,recalcCartridge(logType,recalcGummy(logType,f))));
 }
 // Pre-Rolls has TWO System Check checkpoints against the same Infused Flower
-// Used figure, at different grams-per-joint targets for each production stage:
-//   After Infused Joints:        Infused Flower Used / 0.55g = expected Total Joint Filled
-//   After Infused Kiefed Preroll: Infused Flower Used / 0.60g = expected Total Kiefed Infused Joints
-// (kiefed joints weigh more per unit since kief adds weight). Both use the
-// same \u00B110% tolerance and the same under/over-weight direction logic as
-// Cartridges/Gummies: more joints than expected \u2192 under target weight each;
-// fewer joints than expected \u2192 over target weight each.
+// Used figure, at different grams-per-joint targets for each production stage.
+// The target weights are SKU-specific (e.g. 2G Infused Pre Roll fills much
+// heavier than the 0.6g Mates line) \u2014 unlisted SKUs fall back to the
+// original 0.55g/0.60g defaults. kief:null means that SKU has no kiefing
+// step at all (its 2nd checkpoint/section is skipped entirely).
 const PRE_ROLL_TOLERANCE=0.10; // \u00B110%
-const PRE_ROLL_JOINT_WEIGHT_1=0.55; // grams per joint, Infused Joints stage
-const PRE_ROLL_JOINT_WEIGHT_2=0.60; // grams per joint, Kiefed Preroll stage
+const PRE_ROLL_JOINT_WEIGHT_1=0.55; // fallback default, grams/joint, Infused Joints stage
+const PRE_ROLL_JOINT_WEIGHT_2=0.60; // fallback default, grams/joint, Kiefed Preroll stage
+const PRE_ROLL_JOINT_WEIGHTS={
+  '2G Infused Pre Roll':{filled:1.9,kief:2.0},
+  '1G Plain Pre Roll':{filled:1.0,kief:null},
+};
+function preRollJointWeight(sku){
+  return PRE_ROLL_JOINT_WEIGHTS[sku]||{filled:PRE_ROLL_JOINT_WEIGHT_1,kief:PRE_ROLL_JOINT_WEIGHT_2};
+}
 function preRollCheck(expectedCount,actualCount){
   const lower=expectedCount*(1-PRE_ROLL_TOLERANCE);
   const upper=expectedCount*(1+PRE_ROLL_TOLERANCE);
@@ -3556,8 +3568,9 @@ function recalcPreRoll(logType,f){
   if(logType!=='pre_rolls') return f;
   const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
   const flowerUsed=num(f.infused_flower_used);
-  const expected1=flowerUsed/PRE_ROLL_JOINT_WEIGHT_1;
-  const expected2=flowerUsed/PRE_ROLL_JOINT_WEIGHT_2;
+  const w=preRollJointWeight(f.sku);
+  const expected1=flowerUsed/w.filled;
+  const expected2=w.kief?flowerUsed/w.kief:0;
   // Infused Flower check: sum of all ingredients that went into the flower
   // (Flower + THCA + Terpene, plus Live Resin/Decarbed Cured Resin/Distillate
   // for SKUs that use them) should roughly equal Infused Flower Total WT, \u00B110%.
@@ -3584,15 +3597,22 @@ const SKU_FLAVOR_CONFIG={
 // Which ingredient fields (in the Pre-Rolls "Infused Flower" section) apply
 // to each SKU. THCA Infused uses Flower+Terp+THCA; Mates Reserve uses those
 // same three PLUS Live Resin, Decarbed Cured Resin, and Distillate; Shorties
-// isn't an infused product so none of these apply. Flower/Terp/the infused-
-// flower totals stay visible for every SKU (not listed here \u2014 only the
-// SKU-specific ingredient fields need gating).
+// isn't an infused product so none of these apply. 2G Infused Pre Roll uses
+// the same ingredients/process as THCA Infused. 1G Plain Pre Roll uses ONLY
+// flower \u2014 no THCA, no Terpene, nothing else. Flower and the infused-flower
+// totals stay visible for every SKU (not listed here, unconditional).
 const PRE_ROLL_SKU_INGREDIENTS={
-  'Muha Meds - Mates - THCA Infused 5 x 0.6g':['thca_metrc','thca_qty'],
-  'Muha Meds - Mates Reserve - 5 x 0.6g':['thca_metrc','thca_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'],
+  'Muha Meds - Mates - THCA Infused 5 x 0.6g':['thca_metrc','thca_qty','terp_qty'],
+  'Muha Meds - Mates Reserve - 5 x 0.6g':['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'],
   'Bodega Boyz - Shorties':[],
+  '2G Infused Pre Roll':['thca_metrc','thca_qty','terp_qty'],
+  '1G Plain Pre Roll':[],
 };
-const PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS=['thca_metrc','thca_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'];
+const PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS=['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'];
+// 1G Plain Pre Roll has no kiefing step at all \u2014 the entire Kiefed Preroll
+// section (and its System Check) is hidden for it, not just individual fields.
+const PRE_ROLL_NO_KIEF_SKUS=['1G Plain Pre Roll'];
+const PRE_ROLL_KIEF_SECTION_KEYS=['_s_kiefed','total_infused_preroll_used','total_infused_preroll_waste','preroll_waste_metrc_confirmed','kief_metrc','kief_qty_used','total_kiefed_infused_joints','kiefed_infused_preroll_metrc','kiefed_metrc_confirmed','_s_kiefed_system_check','kiefed_check_result','kiefed_infused_joints_used','kief_infused_joints_waste','kief_waste_metrc_confirmed'];
 // R&D test checkpoints, keyed by batch logType. Each pair is [rd1_key,rd2_key];
 // rd2 only appears once rd1 has been marked Failed. A batch type can have more
 // than one checkpoint (Cartridges has one at Primed Oil and one at Filled
@@ -3920,9 +3940,56 @@ const LOG_TYPES={
     {key:'status',label:'Status',type:'select',options:['In Progress','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
+  infused_flower:{id:'infused_flower',category:'batch',label:'Infused Flower',icon:'\uD83C\uDF3F',color:'#7c3aed',bg:'#f5f3ff',table:'pf_batch_tracker',dcr:'Missouri DCR / METRC \u2014 Batch Production Record',freq:'Per batch',fields:[
+    {key:'batch_number',label:'Batch / Lot Number',type:'text',placeholder:'e.g. IF-2026-014'},
+    {key:'date',label:'Date',type:'date'},
+    {key:'operator',label:'Operator / Personnel',type:'text',placeholder:'Who ran this batch'},
+    {key:'sku',label:'SKU',type:'select',options:['3.5g','7g']},
+    {key:'flavor',label:'Flavor',type:'select',options:['Banana Pie','Cinnamon Cream OG','Cotton Candy','Irish Cream','Lemon Tart','Matcha OG','Maui Wowie','Peaches & Cream','Pina Colada','Pineapple Poison','Purple Crush','Raspberry Kush','Strawberry Lava','Vanilla Cream','Watermelon Punch']},
+    {key:'oil_source_batch',label:'Source Flower METRC#',type:'text',placeholder:'METRC tag for the source flower'},
+    {key:'input_weight',label:'Source Flower Weight',type:'text',placeholder:'e.g. 1,000g'},
+    {key:'distillate_metrc',label:'Infusion Oil METRC#',type:'text',placeholder:'METRC tag for the oil/distillate used'},
+    {key:'distillate_qty',label:'Infusion Oil Used',type:'text',placeholder:'e.g. 200g'},
+    {key:'units_produced',label:'Total Infused Flower Produced',type:'text',placeholder:'e.g. 1,150g'},
+    {key:'metrc_tag',label:'Final METRC Tag#',type:'text',placeholder:'METRC tag for the finished product'},
+    {key:'status',label:'Status',type:'select',options:['In Progress','QC Hold','Passed','Failed','Completed']},
+    {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
+  ]},
+  moon_rocks:{id:'moon_rocks',category:'batch',label:'Moon Rocks',icon:'\uD83C\uDF11',color:'#4338ca',bg:'#eef2ff',table:'pf_batch_tracker',dcr:'Missouri DCR / METRC \u2014 Batch Production Record',freq:'Per batch',fields:[
+    {key:'batch_number',label:'Batch / Lot Number',type:'text',placeholder:'e.g. MR-2026-014'},
+    {key:'date',label:'Date',type:'date'},
+    {key:'operator',label:'Operator / Personnel',type:'text',placeholder:'Who ran this batch'},
+    {key:'sku',label:'SKU',type:'select',options:['3.5g','7g']},
+    {key:'flavor',label:'Flavor',type:'text',placeholder:'Strain / flavor name'},
+    {key:'oil_source_batch',label:'Base Flower METRC#',type:'text',placeholder:'METRC tag for the base flower'},
+    {key:'input_weight',label:'Base Flower Weight',type:'text',placeholder:'e.g. 500g'},
+    {key:'distillate_metrc',label:'Hash Oil METRC#',type:'text',placeholder:'METRC tag for the hash oil used'},
+    {key:'distillate_qty',label:'Hash Oil Used',type:'text',placeholder:'e.g. 150g'},
+    {key:'kief_metrc',label:'Kief METRC#',type:'text',placeholder:'METRC tag for the kief used'},
+    {key:'kief_qty_used',label:'Kief Used',type:'text',placeholder:'e.g. 100g'},
+    {key:'units_produced',label:'Total Moon Rocks Produced',type:'text',placeholder:'e.g. 750g'},
+    {key:'metrc_tag',label:'Final METRC Tag#',type:'text',placeholder:'METRC tag for the finished product'},
+    {key:'status',label:'Status',type:'select',options:['In Progress','QC Hold','Passed','Failed','Completed']},
+    {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
+  ]},
+  snow_caps:{id:'snow_caps',category:'batch',label:'Snow Caps',icon:'\u2744\uFE0F',color:'#0891b2',bg:'#ecfeff',table:'pf_batch_tracker',dcr:'Missouri DCR / METRC \u2014 Batch Production Record',freq:'Per batch',fields:[
+    {key:'batch_number',label:'Batch / Lot Number',type:'text',placeholder:'e.g. SC-2026-014'},
+    {key:'date',label:'Date',type:'date'},
+    {key:'operator',label:'Operator / Personnel',type:'text',placeholder:'Who ran this batch'},
+    {key:'sku',label:'SKU',type:'select',options:['3.5g','7g']},
+    {key:'flavor',label:'Flavor',type:'text',placeholder:'Strain / flavor name'},
+    {key:'oil_source_batch',label:'Base Flower METRC#',type:'text',placeholder:'METRC tag for the base flower'},
+    {key:'input_weight',label:'Base Flower Weight',type:'text',placeholder:'e.g. 500g'},
+    {key:'kief_metrc',label:'Kief METRC#',type:'text',placeholder:'METRC tag for the kief used'},
+    {key:'kief_qty_used',label:'Kief Used',type:'text',placeholder:'e.g. 120g'},
+    {key:'units_produced',label:'Total Snow Caps Produced',type:'text',placeholder:'e.g. 620g'},
+    {key:'metrc_tag',label:'Final METRC Tag#',type:'text',placeholder:'METRC tag for the finished product'},
+    {key:'status',label:'Status',type:'select',options:['In Progress','QC Hold','Passed','Failed','Completed']},
+    {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
+  ]},
 };
 
-const BATCH_TYPE_IDS=['ethanol_extraction','butane_extraction','pre_rolls','cartridges','gummies'];
+const BATCH_TYPE_IDS=['ethanol_extraction','butane_extraction','pre_rolls','cartridges','gummies','infused_flower','moon_rocks','snow_caps'];
 
 function exportLogPdf(logType,entries,dateFrom,dateTo){
   const{jsPDF}=window.jspdf;
@@ -4177,6 +4244,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       );
     }
     if(SKU_FLAVOR_CONFIG[logType]&&f.key==='flavor'){
+      if(logType==='pre_rolls'&&PRE_ROLL_NO_FLAVOR_SKUS.includes(form.sku)) return null;
       const cfg=SKU_FLAVOR_CONFIG[logType];
       const flavors=cfg.flavors[form.sku]||[];
       if(flavors.length>0) return el('div',{key:f.key,className:'fg'},
@@ -4381,7 +4449,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       ),
       el('div',{className:'mbd'},
         el('div',{style:{background:'rgba(30,58,95,.04)',border:'1px solid rgba(30,58,95,.1)',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:'var(--text2)'}},'\uD83D\uDCCB Fields marked * are required. This record is timestamped and signed \u2014 legally valid for DCR inspections.'),
-        lt.fields.map(f=>INP(f)),
+        lt.fields.filter(f=>!(logType==='pre_rolls'&&PRE_ROLL_NO_KIEF_SKUS.includes(form.sku)&&PRE_ROLL_KIEF_SECTION_KEYS.includes(f.key))).map(f=>INP(f)),
         // File attachments
         el('div',{style:{borderTop:'1px solid var(--border)',paddingTop:16,marginTop:8,marginBottom:16}},
           el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
@@ -4793,7 +4861,7 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
 // BATCH TRACKER \u2014 dropdown-selected batch type, list + create/edit/PDF, one shared table
 // ══════════════════════════════════════════════════════════════════════════════
 function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
-  const visibleBatchTypes=(restricted==='lead'||restricted==='pm')?['cartridges','gummies','pre_rolls']:BATCH_TYPE_IDS;
+  const visibleBatchTypes=(restricted==='lead'||restricted==='pm')?['cartridges','gummies','pre_rolls','infused_flower','moon_rocks','snow_caps']:BATCH_TYPE_IDS;
   const[activeType,setActiveType]=React.useState(visibleBatchTypes[0]);
   const[entries,setEntries]=React.useState([]);
   const[loading,setLoading]=React.useState(false);
