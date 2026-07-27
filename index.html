@@ -4156,10 +4156,24 @@ function exportLogPdf(logType,entries,dateFrom,dateTo){
       }
       const val=entry[f.key];if(!val||!String(val).trim())return;
       checkPage(22);
-      doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...SUBTEXT);doc.text(f.label.replace(' *','').toUpperCase(),margin+8,y);
-      doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...TEXT);
-      const lines=doc.splitTextToSize(String(val),W-margin*2-130);
-      lines.forEach((l,li)=>{if(li>0){y+=14;checkPage(14);}doc.text(l,margin+155,y);});y+=20;
+      const label=f.label.replace(' *','').toUpperCase();
+      doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...SUBTEXT);
+      const labelWidth=doc.getTextWidth(label);
+      const labelMaxWidth=125; // available width from margin+8 before the value column at margin+155
+      if(labelWidth>labelMaxWidth){
+        // Label too wide to sit beside the value without overlapping it \u2014
+        // stack the value on its own line below instead of squeezing it in.
+        doc.text(label,margin+8,y);y+=13;
+        checkPage(14);
+        doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...TEXT);
+        const lines=doc.splitTextToSize(String(val),W-margin*2-16);
+        lines.forEach((l,li)=>{if(li>0){y+=14;checkPage(14);}doc.text(l,margin+8,y);});y+=20;
+      } else {
+        doc.text(label,margin+8,y);
+        doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...TEXT);
+        const lines=doc.splitTextToSize(String(val),W-margin*2-130);
+        lines.forEach((l,li)=>{if(li>0){y+=14;checkPage(14);}doc.text(l,margin+155,y);});y+=20;
+      }
     });
     }
     if(entry.signature_image){checkPage(50);doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...SUBTEXT);doc.text('SIGNATURE',margin+8,y);try{doc.addImage(entry.signature_image,'PNG',margin+155,y-14,110,30);}catch(e){}y+=36;}
