@@ -8900,6 +8900,50 @@ function EmployeeProfileModal({employee,cu,users,publishedSOPs,corrective,showCo
 }
 
 // \u2500\u2500 MY DOCUMENTS (personal view \u2014 employee sees only their own corrective actions) \u2500\u2500
+// License & Designated Responsible Parties chart. Visible to every approved
+// user regardless of role/tier (unlike the Compliance Center itself, which is
+// manager+ only) — this is a simple reference page, not an editable module.
+// Grounded in actual Missouri DCR requirements: 19 CSR 100-1.090(7)-(8)
+// requires a designated Security Manager; 19 CSR 100-1.130(1)(A) requires a
+// designated facility agent responsible for inventory control. Reviewed and
+// approved by Sam before being added here.
+const LICENSE_CHART_TIERS=[
+  {label:'Facility leadership',color:'#7c3aed',bg:'#f5f3ff',roles:[
+    {title:'General Manager',name:'Saman Salari'},
+    {title:'Assistant General Manager',name:'Liisa Pembroke'},
+  ]},
+  {label:'DCR-designated compliance roles',color:'#0891b2',bg:'#ecfeff',roles:[
+    {title:'Compliance Officer',name:'Micah Heppermann',note:'ISO 9001 / QMS oversight'},
+    {title:'Security Manager',name:'Micah Heppermann',note:'19 CSR 100-1.090(7)\u2013(8) \u2014 security audits, training, contractor credential review'},
+    {title:'Inventory Control',name:'Saman Salari',note:'19 CSR 100-1.130(1)(A) \u2014 designated agent for inventory control systems/procedures'},
+  ]},
+  {label:'Production & operations',color:'#be185d',bg:'#fdf2f8',roles:[
+    {title:'Production Manager',name:'Zak Knowles'},
+    {title:'Extraction Manager',name:'Juan Marmolejo'},
+  ]},
+];
+function LicenseChart(){
+  return el('div',null,
+    el('div',{className:'ph'},
+      el('div',null,
+        el('div',{className:'pt'},'License Chart'),
+        el('div',{className:'ps'},'Designated responsible parties \u2014 Missouri DCR (19 CSR 100) \u00B7 ISO 9001 / QMS'),
+      ),
+    ),
+    el('div',{style:{display:'flex',flexDirection:'column',gap:20,padding:'0 4px 20px'}},
+      LICENSE_CHART_TIERS.map(tier=>el('div',{key:tier.label},
+        el('div',{style:{background:'var(--surface2)',borderRadius:8,padding:'8px 14px',fontSize:11,fontWeight:800,color:'var(--accent)',textTransform:'uppercase',letterSpacing:'.6px',marginBottom:10}},tier.label),
+        el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:12}},
+          tier.roles.map((r,i)=>el('div',{key:r.title+i,style:{background:'#fff',border:'1px solid var(--border)',borderLeft:'4px solid '+tier.color,borderRadius:8,padding:'14px 16px'}},
+            el('div',{style:{fontSize:13,fontWeight:700,color:'var(--text)'}},r.title),
+            el('div',{style:{fontSize:14,fontWeight:600,color:tier.color,marginTop:4}},r.name),
+            r.note&&el('div',{style:{fontSize:11,color:'var(--text2)',marginTop:8,lineHeight:1.4}},r.note),
+          )),
+        ),
+      )),
+    ),
+  );
+}
 function MyDocuments({cu,corrective,setCorrective}){
   const[sel,setSel]=useState(null);
   const[showSignModal,setShowSignModal]=useState(false);
@@ -11673,12 +11717,14 @@ function App(){
   const overdueCt=tasks.filter(t=>!['done','archived'].includes(t.status)&&t.due_date&&t.due_date<today).length;
 
   const nav=(restricted?[
+    {id:'license',ico:'\uD83D\uDCDC',label:'License Chart'},
     {id:'sops',ico:'\uD83D\uDCCB',label:'SOPs'},
     {id:'mydocs',ico:'\uD83D\uDCC1',label:'My Documents'},
     {id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
     (restricted==='lead'||restricted==='pm')&&{id:'board',ico:'\u2B1B',label:'Task Board'},
     (restricted==='lead'||restricted==='pm')&&{id:'batch',ico:'\uD83E\uDDEA',label:'Batch Tracker'},
   ]:[
+    {id:'license',ico:'\uD83D\uDCDC',label:'License Chart'},
     {id:'board',ico:'\u2B1B',label:'Task Board'},
     {id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
     (cu.role==='admin'||hasRole(cu,'sales_manager')||cu.dept==='Sales'||cu.dept==='Marketing')&&{id:'sales',ico:'\uD83C\uDFEA',label:'Sales & Marketing'},
@@ -11867,6 +11913,7 @@ function App(){
     ),
 
     el('div',{className:'mobile-nav'},
+      el('button',{className:`mnav-btn${page==='license'?' on':''}`,onClick:()=>setPage('license')},el('span',{className:'mnav-ico'},'\uD83D\uDCDC'),'License'),
       !restricted&&el('button',{className:`mnav-btn${page==='board'?' on':''}`,onClick:()=>setPage('board')},el('span',{className:'mnav-ico'},'\u2B1B'),'Board'),
       (restricted==='lead'||restricted==='pm')&&el('button',{className:`mnav-btn${page==='board'?' on':''}`,onClick:()=>setPage('board')},el('span',{className:'mnav-ico'},'\u2B1B'),'Board'),
       !restricted&&el('button',{className:`mnav-btn${page==='sales'?' on':''}`,onClick:()=>setPage('sales')},el('span',{className:'mnav-ico'},'\uD83C\uDFEA'),'Sales'),
@@ -11895,6 +11942,7 @@ function App(){
       page==='board'&&(!restricted||restricted==='lead'||restricted==='pm')&&el(Board,{tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setPage,SUPA_URL,SUPA_KEY,H,restricted}),
       page==='calendar'&&el(Calendar,{events,setEvents,tasks,cu,users,locFilter,meetingNotes,setMeetingNotes,onJoinCall:(room,title,meetLink)=>setActiveCall({room,title,meetLink})}),
       page==='sales'&&!restricted&&el(SalesMarketing,{salesTasks,setSalesTasks,cu,users,locFilter}),
+      page==='license'&&el(LicenseChart,{}),
       page==='sops'&&el(SOPs,{sops,setSops,cu,users}),
       page==='compliance'&&!restricted&&canAccessQms&&el(ComplianceModule,{cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db}),
       page==='risks'&&!restricted&&canAccessQms&&el(RiskRegister,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
