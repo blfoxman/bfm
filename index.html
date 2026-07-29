@@ -4051,9 +4051,37 @@ const LOG_TYPES={
 
 const BATCH_TYPE_IDS=['ethanol_extraction','butane_extraction','pre_rolls','cartridges','gummies','infused_flower','moon_rocks','snow_caps'];
 
+// jsPDF's built-in fonts (helvetica/times/courier) only support WinAnsi/Latin-1
+// encoding. Any character outside that range (emoji, checkmarks \u2713, warning
+// signs \u26A0, scales \u2696, arrows \u2192, etc.) doesn't just fail to render \u2014 it
+// corrupts the byte stream and produces garbled stray characters (stray "&"
+// symbols scattered through otherwise-correct text) for the rest of that
+// string. This sanitizes any text before it reaches doc.text()/
+// splitTextToSize(), so this can't happen even if AI-generated SOP content
+// spontaneously includes an emoji or symbol Claude chose to add.
+function pdfSafe(s){
+  if(s==null) return s;
+  if(Array.isArray(s)) return s.map(pdfSafe);
+  return String(s)
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu,'')   // emoji (misc symbols/pictographs, supplemental, transport, etc.)
+    .replace(/[\u2600-\u27BF]/g,'')          // misc symbols & dingbats (checkmarks, warning signs, scales, stars...)
+    .replace(/\uFE0F/g,'')                    // variation selector that often trails emoji
+    .replace(/\u2192/g,'->').replace(/\u2190/g,'<-').replace(/\u2194/g,'<->')
+    .replace(/[\u200B-\u200D]/g,'');          // zero-width joiners/spaces sometimes present in AI output
+}
+// Wraps a fresh jsPDF instance so every .text()/.splitTextToSize() call is
+// automatically sanitized \u2014 call once right after `new jsPDF(...)` in each
+// export function below, instead of remembering to sanitize every call site.
+function pdfSafeDoc(doc){
+  const _text=doc.text.bind(doc);
+  doc.text=(txt,...rest)=>_text(pdfSafe(txt),...rest);
+  const _split=doc.splitTextToSize.bind(doc);
+  doc.splitTextToSize=(txt,...rest)=>_split(pdfSafe(txt),...rest);
+  return doc;
+}
 function exportLogPdf(logType,entries,dateFrom,dateTo){
   const{jsPDF}=window.jspdf;
-  const doc=new jsPDF({unit:'pt',format:'letter'});
+  const doc=pdfSafeDoc(new jsPDF({unit:'pt',format:'letter'}));
   const W=612,H=792,margin=48;
   const NAVY=[30,58,95],TEXT=[15,15,15],SUBTEXT=[75,85,99],LIGHT=[245,247,252],BORDER=[203,213,225];
   const lt=LOG_TYPES[logType];
@@ -7913,7 +7941,7 @@ Generate a professional SOP in this EXACT JSON format (respond with JSON only, n
 // \u2500\u2500 SOP PDF EXPORT \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 function exportSopPdf(sop){
   const{jsPDF}=window.jspdf;
-  const doc=new jsPDF({unit:'pt',format:'letter'});
+  const doc=pdfSafeDoc(new jsPDF({unit:'pt',format:'letter'}));
   const W=612,H=792;
   const margin=48;
   let y=0;
@@ -8204,7 +8232,7 @@ function exportSopPdf(sop){
     doc.line(margin+270,y,margin+380,y);
     y+=12;
     doc.setFontSize(8);
-    doc.setTextColor(...TEXT2);
+    doc.setTextColor(...SUBTEXT);
     doc.text('Employee Signature',margin,y);
     doc.text('Date',margin+260,y);
   }
@@ -8338,7 +8366,7 @@ function SOPEditModal({sop,cu,onClose,onSave}){
 // \u2500\u2500 CORRECTIVE ACTION PDF EXPORT \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 function exportCorrectiveActionPdf(ca){
   const{jsPDF}=window.jspdf;
-  const doc=new jsPDF({unit:'pt',format:'letter'});
+  const doc=pdfSafeDoc(new jsPDF({unit:'pt',format:'letter'}));
   const W=612,H=792;
   const margin=48;
   let y=0;
@@ -8562,7 +8590,7 @@ function exportCorrectiveActionPdf(ca){
 // \u2500\u2500 EMPLOYEE TRAINING REPORT PDF EXPORT \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 function exportEmployeeTrainingPdf(employee,applicableSOPs){
   const{jsPDF}=window.jspdf;
-  const doc=new jsPDF({unit:'pt',format:'letter'});
+  const doc=pdfSafeDoc(new jsPDF({unit:'pt',format:'letter'}));
   const W=612,H=792;
   const margin=50;
   let y=0;
@@ -9096,7 +9124,7 @@ function MyDocuments({cu,corrective,setCorrective}){
 // This is the document you hand an inspector who walks in unannounced.
 function exportComplianceSnapshotPdf(license,publishedSOPs,scopeUsers,targetUsersForSop){
   const{jsPDF}=window.jspdf;
-  const doc=new jsPDF({unit:'pt',format:'letter'});
+  const doc=pdfSafeDoc(new jsPDF({unit:'pt',format:'letter'}));
   const W=612,H=792;
   const margin=50;
   let y=0;
@@ -9462,6 +9490,7 @@ function SOPGenerator({cu,onClose,onSave}){
   const[category,setCategory]=useState('Production \u2014 Cart Department');
   const[uploadedText,setUploadedText]=useState('');
   const[uploadedFileName,setUploadedFileName]=useState('');
+  const[customInstructions,setCustomInstructions]=useState('');
   const[generating,setGenerating]=useState(false);
   const[generatedSOP,setGeneratedSOP]=useState(null);
   const[error,setError]=useState('');
@@ -9501,6 +9530,27 @@ function SOPGenerator({cu,onClose,onSave}){
     }
   }
 
+  // Accepts the JSON exported by the standalone Black Fox SOP Generator tool
+  // (same field shape as generateSOP() below produces) and jumps straight to
+  // the review/save screen \u2014 so an imported SOP is saved through the exact
+  // same saveSOP() path as one generated inside QMS itself.
+  async function handleImportJSON(ev){
+    const file=ev.target.files[0];
+    if(!file) return;
+    setError('');
+    try{
+      const text=await file.text();
+      const parsed=JSON.parse(text);
+      if(!parsed||!parsed.title){throw new Error('This file doesn\u2019t look like a Black Fox SOP export.');}
+      if(parsed.title) setTitle(parsed.title);
+      setGeneratedSOP(parsed);
+      setEditedSOP(parsed);
+      setStep(3);
+    }catch(e){
+      setError('Import failed: '+e.message);
+    }
+  }
+
   async function generateSOP(){
     if(!title.trim()){setError('Please enter an SOP title.');return;}
     setGenerating(true);setError('');setStep(2);
@@ -9535,6 +9585,7 @@ Key regulations: ${STATE_REGS[state].key_rules.slice(0,6).join('; ')}
 SOP Title: ${title}
 Category: ${category}
 ${refText?'Reference material: '+refText:''}
+${customInstructions.trim()?'\nIMPORTANT \u2014 follow these instructions from the facility, they take priority over your own judgment on formatting/content choices:\n'+customInstructions.trim()+'\n':''}
 
 Respond with ONLY this JSON (no markdown, be concise):
 {
@@ -9568,6 +9619,7 @@ Title: ${title}
 Purpose: ${metaParsed.purpose}
 Department: ${metaParsed.department}
 ${refText?'Reference material: '+refText:''}
+${customInstructions.trim()?'\nIMPORTANT \u2014 follow these instructions from the facility, they take priority over your own judgment:\n'+customInstructions.trim()+'\n':''}
 
 Write 6-10 clear procedure steps. Keep each instruction to 1-2 sentences. Flag CRITICAL steps where a regulatory violation or product risk exists.
 
@@ -9753,6 +9805,29 @@ Respond with ONLY this JSON (no markdown, be concise, this must NOT be truncated
             ),
           ),
 
+          // Custom instructions for the AI
+          el('div',{className:'fg'},
+            el('label',null,'Instructions for the AI (optional)'),
+            el('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:6}},'Tell it what to do differently \u2014 e.g. "don\u2019t change the safety warnings, just clean up the formatting" or "keep this section word-for-word."'),
+            el('textarea',{value:customInstructions,onChange:ev=>setCustomInstructions(ev.target.value),rows:3,placeholder:'e.g. Leave the weight tolerances exactly as written, just reorganize into our standard sections.',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'10px 14px',color:'var(--text)',fontFamily:'inherit',fontSize:13,resize:'vertical',boxSizing:'border-box'}}),
+          ),
+
+          // Import from the standalone SOP Generator tool
+          el('div',{className:'fg'},
+            el('label',null,'Or Import a Generated SOP (from the Black Fox SOP Generator tool)'),
+            el('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:6}},'Already ran a draft through the standalone SOP Generator? Upload the JSON it downloaded \u2014 this skips AI generation and takes you straight to review, saved exactly like any SOP created here.'),
+            el('label',{style:{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',background:'var(--surface2)',border:'1px dashed var(--border)',borderRadius:'var(--rs)',cursor:'pointer',transition:'all .15s'},
+              onMouseEnter:ev=>{ev.currentTarget.style.borderColor='var(--accent)';},
+              onMouseLeave:ev=>{ev.currentTarget.style.borderColor='var(--border)';}},
+              el('input',{type:'file',accept:'.json',onChange:handleImportJSON,style:{display:'none'}}),
+              el('span',{style:{fontSize:18}},'\u2B07\uFE0F'),
+              el('div',null,
+                el('div',{style:{fontSize:13,fontWeight:600,color:'var(--text)'}},'Click to import a .json SOP file'),
+                el('div',{style:{fontSize:11,color:'var(--text3)'}},'Jumps straight to Review & Save'),
+              ),
+            ),
+          ),
+
           error&&el('div',{style:{background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.3)',borderRadius:8,padding:'10px 14px',fontSize:13,color:'var(--red)',marginBottom:8}},error),
 
           el('div',{className:'mf'},
@@ -9900,7 +9975,7 @@ Respond with ONLY this JSON (no markdown, be concise, this must NOT be truncated
               el('button',{
                 className:'btn b-ghost',
                 onClick:()=>exportSopPdf({...editedSOP,generated_content:JSON.stringify(editedSOP),title:editedSOP.title,version:editedSOP.revision,license_name:editedSOP.license_name,state:editedSOP.state,sop_number:editedSOP.sop_number,created_by:cu.name}),
-              },'\uD83D\uDCC4 Preview PDF'),
+              },'\uD83D\uDCC4 Download PDF'),
               el('button',{
                 onClick:saveSOP,
                 disabled:saving,
