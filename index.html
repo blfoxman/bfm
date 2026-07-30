@@ -3836,48 +3836,57 @@ const LOG_TYPES={
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
   butane_extraction:{id:'butane_extraction',category:'batch',label:'BHO Extraction',icon:'\uD83D\uDD25',color:'#ea580c',bg:'#fff7ed',table:'pf_batch_tracker',dcr:'Missouri DCR / METRC \u2014 BHO Batch Production Record',freq:'Per batch',bho:true,fields:[
-    // SKU selection (drives which Section 2 variant appears)
+    // SKU at top \u2014 drives Section 2 & 3 variant
     {key:'sku',label:'Product Type *',type:'select',options:['Live Resin','THCA Isolate & HTE','Shatter','Sugar','Crumble','Cured Resin']},
     {key:'date',label:'Date',type:'date'},
     {key:'operator',label:'Operator / Personnel',type:'text',placeholder:'Who performed the extraction'},
-    // ── SECTION 1: BHO Production Batch (all SKUs) ───────────────────────────
+    // \u2550\u2550 SECTION 1 (all SKUs) \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
     {key:'_s1',label:'--- SECTION 1: BHO PRODUCTION BATCH ---',type:'section'},
     {key:'bho_batch_metrc',label:'BHO Production Batch METRC Tag *',type:'text',placeholder:'24-digit METRC production batch tag'},
     {key:'bho_batch_total_weight',label:'Total Weight of BHO Production Batch',type:'text',placeholder:'e.g. 2,400g'},
     {key:'_s1_biomass',label:'--- BIOMASS USED ---',type:'section'},
-    {key:'biomass_tags',label:'Biomass Tags',type:'text'}, // handled specially via BHO biomass UI
+    {key:'biomass_tags',label:'Biomass Tags',type:'text'},
     {key:'total_biomass_used',label:'Total Biomass Used',type:'display'},
-    {key:'s1_metrc_confirmed',label:'Section 1 Recorded on METRC?',type:'checkbox'},
-    // ── SECTION 2A: Live Resin / Shatter / Crumble / Sugar / Cured Resin ────
-    {key:'_s2a',label:'--- SECTION 2: BHO IN-PROGRESS ---',type:'section'},
-    {key:'bho_batch_used',label:'BHO Production Batch Used',type:'text',placeholder:'Weight used from the production batch'},
-    {key:'bho_batch_waste',label:'BHO Production Batch Waste',type:'text',placeholder:'Waste weight from production batch'},
-    {key:'bho_waste_metrc_confirmed',label:'BHO Batch Waste Recorded on METRC?',type:'checkbox'},
-    {key:'product_in_progress_metrc',label:'Product (In Progress) METRC #',type:'text',placeholder:'METRC tag for in-progress concentrate'},
-    {key:'product_in_progress_weight',label:'Product (In Progress) Weight',type:'text',placeholder:'e.g. 1,850g'},
-    {key:'s2_metrc_confirmed',label:'Section 2 Recorded on METRC?',type:'checkbox'},
-    // ── SECTION 2B: THCA / HTE specific fields ───────────────────────────────
-    {key:'_s2b',label:'--- SECTION 2: THCA / HTE IN-PROGRESS ---',type:'section'},
-    {key:'bho_batch_used_thca',label:'BHO Production Batch Used',type:'text',placeholder:'Weight used from the production batch'},
-    {key:'bho_batch_waste_thca',label:'BHO Production Batch Waste',type:'text',placeholder:'Waste weight from production batch'},
-    {key:'bho_waste_thca_metrc_confirmed',label:'BHO Batch Waste Recorded on METRC?',type:'checkbox'},
-    {key:'thca_in_progress_metrc',label:'THCA (In Progress) METRC #',type:'text',placeholder:'METRC tag for in-progress THCA isolate'},
-    {key:'thca_in_progress_weight',label:'THCA (In Progress) Weight',type:'text',placeholder:'e.g. 800g'},
-    {key:'hte_in_progress_metrc',label:'HTE (In Progress) METRC #',type:'text',placeholder:'METRC tag for in-progress HTE'},
-    {key:'hte_in_progress_weight',label:'HTE (In Progress) Weight',type:'text',placeholder:'e.g. 1,000g'},
-    {key:'s2b_metrc_confirmed',label:'Section 2 Recorded on METRC?',type:'checkbox'},
-    // ── SECTION 3: Final Batches (THCA/HTE only) ─────────────────────────────
-    {key:'_s3',label:'--- SECTION 3: FINAL BATCH ---',type:'section'},
-    {key:'thca_final_batch_tag',label:'THCA Final Batch Tag #',type:'text',placeholder:'METRC final batch tag for THCA isolate'},
-    {key:'thca_final_weight',label:'THCA Final Weight',type:'text',placeholder:'e.g. 780g'},
-    {key:'thca_final_waste',label:'THCA Final Waste',type:'text',placeholder:'Waste from THCA finalization'},
-    {key:'thca_final_waste_metrc_confirmed',label:'THCA Waste Recorded on METRC?',type:'checkbox'},
-    {key:'thca_final_metrc_confirmed',label:'THCA Final Batch Recorded on METRC?',type:'checkbox'},
-    {key:'hte_final_batch_tag',label:'HTE Final Batch Tag #',type:'text',placeholder:'METRC final batch tag for HTE'},
-    {key:'hte_final_weight',label:'HTE Final Weight',type:'text',placeholder:'e.g. 960g'},
-    {key:'hte_final_waste',label:'HTE Final Waste',type:'text',placeholder:'Waste from HTE finalization'},
-    {key:'hte_final_waste_metrc_confirmed',label:'HTE Waste Recorded on METRC?',type:'checkbox'},
-    {key:'hte_final_metrc_confirmed',label:'HTE Final Batch Recorded on METRC?',type:'checkbox'},
+    {key:'s1_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    // \u2550\u2550 SECTION 2: Standard SKUs (Live Resin / Shatter / Sugar / Crumble / Cured Resin) \u2550\u2550
+    {key:'_s2std',label:'--- SECTION 2 ---',type:'section'},
+    {key:'s2_bho_used',label:'BHO Production Batch Used',type:'text',placeholder:'Weight pulled from production batch'},
+    {key:'s2_bho_waste',label:'BHO Production Batch Waste',type:'text',placeholder:'Waste weight'},
+    {key:'s2_bho_waste_metrc',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'s2_prod_ip_metrc',label:'[SKU] (In Progress) METRC #',type:'text',placeholder:'METRC tag for in-progress concentrate'},
+    {key:'s2_prod_ip_weight',label:'[SKU] (In Progress) Weight',type:'text',placeholder:'e.g. 1,850g'},
+    {key:'s2_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    // \u2550\u2550 SECTION 3: Standard SKU Final Batch \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+    {key:'_s3std',label:'--- SECTION 3 ---',type:'section'},
+    {key:'s3_final_metrc',label:'[SKU] Final Batch METRC Tag #',type:'text',placeholder:'METRC final batch tag'},
+    {key:'s3_final_weight',label:'[SKU] Total Weight After Off-Gassing',type:'text',placeholder:'e.g. 1,780g'},
+    {key:'s3_final_waste',label:'[SKU] (In Progress) Waste',type:'text',placeholder:'Waste during finalization'},
+    {key:'s3_waste_metrc',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'s3_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    // \u2550\u2550 SECTION 2: THCA / HTE \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+    {key:'_s2thca',label:'--- SECTION 2 ---',type:'section'},
+    {key:'s2t_bho_used',label:'BHO Production Batch Used',type:'text',placeholder:'Weight pulled from production batch'},
+    {key:'s2t_bho_waste',label:'BHO Production Batch Waste',type:'text',placeholder:'Waste weight'},
+    {key:'s2t_bho_waste_metrc',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'s2t_thca_ip_metrc',label:'THCA (In Progress) METRC #',type:'text',placeholder:'METRC tag for in-progress THCA isolate'},
+    {key:'s2t_thca_ip_weight',label:'THCA (In Progress) Weight',type:'text',placeholder:'e.g. 800g'},
+    {key:'s2t_hte_ip_metrc',label:'HTE (In Progress) METRC #',type:'text',placeholder:'METRC tag for in-progress HTE'},
+    {key:'s2t_hte_ip_weight',label:'HTE (In Progress) Weight',type:'text',placeholder:'e.g. 1,000g'},
+    {key:'s2t_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    // \u2550\u2550 SECTION 3: THCA Final \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+    {key:'_s3thca',label:'--- SECTION 3: THCA FINAL BATCH ---',type:'section'},
+    {key:'s3t_thca_tag',label:'THCA Final Batch METRC Tag #',type:'text',placeholder:'METRC final batch tag for THCA isolate'},
+    {key:'s3t_thca_weight',label:'THCA Total Weight After Off-Gassing',type:'text',placeholder:'e.g. 780g'},
+    {key:'s3t_thca_waste',label:'THCA (In Progress) Waste',type:'text',placeholder:'Waste during THCA finalization'},
+    {key:'s3t_thca_waste_metrc',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'s3t_thca_metrc',label:'Recorded on METRC?',type:'checkbox'},
+    // \u2550\u2550 SECTION 3: HTE Final \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+    {key:'_s3hte',label:'--- SECTION 3: HTE FINAL BATCH ---',type:'section'},
+    {key:'s3t_hte_tag',label:'HTE Final Batch METRC Tag #',type:'text',placeholder:'METRC final batch tag for HTE'},
+    {key:'s3t_hte_weight',label:'HTE Total Weight After Off-Gassing',type:'text',placeholder:'e.g. 960g'},
+    {key:'s3t_hte_waste',label:'HTE (In Progress) Waste',type:'text',placeholder:'Waste during HTE finalization'},
+    {key:'s3t_hte_waste_metrc',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'s3t_hte_metrc',label:'Recorded on METRC?',type:'checkbox'},
     {key:'status',label:'Status',type:'select',options:['In Progress','Purging','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
@@ -4542,91 +4551,86 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
     }
     // ── BHO Extraction: hide sections/fields that don't apply to the selected SKU ──
     if(logType==='butane_extraction'){
-      const isTHCA=form.sku==='THCA Isolate & HTE';
-      // Section 2A fields (non-THCA/HTE products)
-      const s2aKeys=['_s2a','bho_batch_used','bho_batch_waste','bho_waste_metrc_confirmed','product_in_progress_metrc','product_in_progress_weight','s2_metrc_confirmed'];
-      // Section 2B fields (THCA/HTE only)
-      const s2bKeys=['_s2b','bho_batch_used_thca','bho_batch_waste_thca','bho_waste_thca_metrc_confirmed','thca_in_progress_metrc','thca_in_progress_weight','hte_in_progress_metrc','hte_in_progress_weight','s2b_metrc_confirmed'];
-      // Section 3 fields (THCA/HTE only)
-      const s3Keys=['_s3','thca_final_batch_tag','thca_final_weight','thca_final_waste','thca_final_waste_metrc_confirmed','thca_final_metrc_confirmed','hte_final_batch_tag','hte_final_weight','hte_final_waste','hte_final_waste_metrc_confirmed','hte_final_metrc_confirmed'];
-      if(!isTHCA&&s2bKeys.includes(f.key)) return null;
-      if(!isTHCA&&s3Keys.includes(f.key)) return null;
-      if(isTHCA&&s2aKeys.includes(f.key)) return null;
-      // SKU dropdown for BHO (not in SKU_FLAVOR_CONFIG so handle it here)
+      const sku=form.sku||'Live Resin';
+      const isTHCA=sku==='THCA Isolate & HTE';
+      // Fields that only appear for standard SKUs (not THCA/HTE)
+      const STD_KEYS=['_s2std','s2_bho_used','s2_bho_waste','s2_bho_waste_metrc','s2_prod_ip_metrc','s2_prod_ip_weight','s2_metrc_confirmed','_s3std','s3_final_metrc','s3_final_weight','s3_final_waste','s3_waste_metrc','s3_metrc_confirmed'];
+      // Fields that only appear for THCA/HTE
+      const THCA_KEYS=['_s2thca','s2t_bho_used','s2t_bho_waste','s2t_bho_waste_metrc','s2t_thca_ip_metrc','s2t_thca_ip_weight','s2t_hte_ip_metrc','s2t_hte_ip_weight','s2t_metrc_confirmed','_s3thca','s3t_thca_tag','s3t_thca_weight','s3t_thca_waste','s3t_thca_waste_metrc','s3t_thca_metrc','_s3hte','s3t_hte_tag','s3t_hte_weight','s3t_hte_waste','s3t_hte_waste_metrc','s3t_hte_metrc'];
+      if(isTHCA&&STD_KEYS.includes(f.key)) return null;
+      if(!isTHCA&&THCA_KEYS.includes(f.key)) return null;
+
+      // ── SKU dropdown ───────────────────────────────────────────────────────
       if(f.key==='sku'){
         return el('div',{key:f.key,className:'fg'},
           el('label',null,f.label),
-          el('select',{value:form.sku||'Live Resin',onChange:ev=>setForm(p=>({...p,sku:ev.target.value})),
-            style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:14,fontWeight:700}},
+          el('select',{value:sku,onChange:ev=>setForm(p=>recalcBatch(logType,{...p,sku:ev.target.value})),
+            style:{width:'100%',background:'var(--bg)',border:'2px solid #ea580c',borderRadius:'var(--rs)',padding:'10px 14px',color:'var(--text)',fontFamily:'inherit',fontSize:14,fontWeight:700}},
             ['Live Resin','THCA Isolate & HTE','Shatter','Sugar','Crumble','Cured Resin'].map(o=>el('option',{key:o,value:o},o))
           ),
         );
       }
-      // Biomass tags (unlimited) for BHO
+
+      // ── Section headers ────────────────────────────────────────────────────
+      const secStyle=(bg)=>({background:bg,color:'#fff',borderRadius:8,padding:'9px 14px',marginBottom:12,marginTop:8,fontSize:12,fontWeight:800,letterSpacing:'.5px',textTransform:'uppercase'});
+      if(f.key==='_s2std') return el('div',{key:f.key,style:secStyle('#ea580c')},'Section 2: '+sku+' \u2014 In Progress');
+      if(f.key==='_s3std') return el('div',{key:f.key,style:secStyle('#ea580c')},'Section 3: '+sku+' \u2014 Final Batch');
+      if(f.key==='_s2thca') return el('div',{key:f.key,style:secStyle('#ea580c')},'Section 2: THCA / HTE \u2014 In Progress');
+      if(f.key==='_s3thca') return el('div',{key:f.key,style:secStyle('#7c3aed')},'Section 3: THCA \u2014 Final Batch');
+      if(f.key==='_s3hte') return el('div',{key:f.key,style:secStyle('#0891b2')},'Section 3: HTE \u2014 Final Batch');
+
+      // ── Biomass tags: weight FIRST, then METRC tag ─────────────────────────
       if(f.key==='biomass_tags'){
         const tags=Array.isArray(form.biomass_tags)?form.biomass_tags:[];
-        const rowStyle={flex:1,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 12px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'};
+        const base={background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 12px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'};
         return el('div',{key:f.key,className:'fg'},
-          el('label',null,'Biomass Used \u2014 METRC Tags (add as many as needed)'),
+          el('label',null,'Biomass Used \u2014 add as many METRC tags as needed'),
           el('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+            tags.length===0&&el('div',{style:{fontSize:12,color:'var(--text3)',padding:'4px 0'}},'No biomass tags yet \u2014 click below to add.'),
             tags.map((row,i)=>el('div',{key:i,style:{display:'flex',gap:8,alignItems:'center'}},
-              el('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',background:'var(--accent)',color:'#fff',borderRadius:6,width:26,height:26,flexShrink:0,fontSize:11,fontWeight:800}},i+1),
-              el('input',{type:'text',value:(row&&row.tag)||'',placeholder:'Biomass METRC Tag #',onChange:ev=>{
-                const next=tags.map((r,idx)=>idx===i?{...r,tag:ev.target.value}:r);
-                setF('biomass_tags',next);
-              },style:{...rowStyle,flex:2}}),
-              el('input',{type:'text',value:(row&&row.weight)||'',placeholder:'Weight (g)',onChange:ev=>{
-                const next=tags.map((r,idx)=>idx===i?{...r,weight:ev.target.value}:r);
-                setF('biomass_tags',next);
-              },style:rowStyle}),
-              el('button',{type:'button',onClick:()=>setF('biomass_tags',tags.filter((_,idx)=>idx!==i)),
-                style:{background:'#fee2e2',color:'#dc2626',border:'none',borderRadius:6,padding:'8px 12px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',flexShrink:0}},'\u2715'),
+              el('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',background:'#ea580c',color:'#fff',borderRadius:6,width:28,height:28,fontSize:11,fontWeight:800,flexShrink:0}},i+1),
+              // weight left, METRC tag right (weight in front per spec)
+              el('input',{type:'text',value:(row&&row.weight)||'',placeholder:'Weight (g)',
+                onChange:ev=>{const t=tags.map((r,j)=>j===i?{...r,weight:ev.target.value}:r);setF('biomass_tags',t);},
+                style:{...base,width:110,flexShrink:0}}),
+              el('input',{type:'text',value:(row&&row.tag)||'',placeholder:'Biomass METRC Tag #',
+                onChange:ev=>{const t=tags.map((r,j)=>j===i?{...r,tag:ev.target.value}:r);setF('biomass_tags',t);},
+                style:{...base,flex:1}}),
+              el('button',{type:'button',onClick:()=>setF('biomass_tags',tags.filter((_,j)=>j!==i)),
+                style:{background:'#fee2e2',color:'#dc2626',border:'none',borderRadius:6,padding:'7px 11px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',flexShrink:0}},'\u2715'),
             )),
             el('button',{type:'button',onClick:()=>setF('biomass_tags',[...tags,{tag:'',weight:''}]),
-              style:{background:'var(--accent)',color:'#fff',border:'none',borderRadius:8,padding:'9px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',alignSelf:'flex-start'}},'+ Add Biomass Tag'),
+              style:{background:'#ea580c',color:'#fff',border:'none',borderRadius:8,padding:'8px 16px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',alignSelf:'flex-start',marginTop:4}},'+ Add Biomass Tag'),
           ),
         );
       }
-      // Total Biomass Used (auto-sum for BHO)
+
+      // ── Total Biomass Used: auto-sum banner ────────────────────────────────
       if(f.key==='total_biomass_used'){
         const tags=Array.isArray(form.biomass_tags)?form.biomass_tags:[];
-        const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
-        const total=tags.reduce((s,r)=>s+num(r&&r.weight),0);
+        const nv=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
+        const total=tags.reduce((s,r)=>s+nv(r&&r.weight),0);
         return el('div',{key:f.key,className:'fg'},
-          el('label',null,'Total Biomass Used (auto-calculated)'),
-          el('div',{style:{width:'100%',background:'rgba(30,58,95,.06)',border:'2px solid var(--accent)',borderRadius:'var(--rs)',padding:'10px 14px',color:'var(--accent)',fontFamily:'inherit',fontSize:16,fontWeight:800,boxSizing:'border-box',display:'flex',alignItems:'center',gap:8}},
-            el('span',{style:{fontSize:20}},'\u2211'),
+          el('label',null,'Total Biomass Used'),
+          el('div',{style:{width:'100%',background:'rgba(234,88,12,.08)',border:'2px solid #ea580c',borderRadius:'var(--rs)',padding:'11px 16px',color:'#ea580c',fontFamily:'inherit',fontSize:18,fontWeight:800,boxSizing:'border-box',display:'flex',alignItems:'center',gap:10}},
+            el('span',{style:{fontSize:22}},'\u2211'),
             total.toFixed(2)+'g',
-            el('span',{style:{fontSize:12,fontWeight:400,color:'var(--text3)',marginLeft:4}},'sum of '+tags.length+' biomass tag'+(tags.length!==1?'s':'')),
+            el('span',{style:{fontSize:12,fontWeight:400,color:'var(--text3)',marginLeft:4}},'('+tags.length+' biomass tag'+(tags.length!==1?'s':'')+')'),
           ),
         );
       }
-      // Section 2A label: use product name
-      if(f.key==='_s2a'){
-        const productName=form.sku||'Product';
-        return el('div',{key:f.key,style:{background:'var(--accent)',color:'#fff',borderRadius:8,padding:'8px 14px',marginBottom:12,marginTop:8,fontSize:11,fontWeight:800,letterSpacing:'.5px'}},
-          'SECTION 2: '+productName.toUpperCase()+' IN-PROGRESS'
-        );
-      }
-      // Product label for section 2A fields
-      if(f.key==='product_in_progress_metrc'){
-        const productName=form.sku||'Product';
+
+      // ── Standard SKU: inject SKU name into Section 2 & 3 field labels ─────
+      const skuLabel={s2_prod_ip_metrc:sku+' (In Progress) METRC #',s2_prod_ip_weight:sku+' (In Progress) Weight',s3_final_metrc:sku+' Final Batch METRC Tag #',s3_final_weight:sku+' Total Weight After Off-Gassing',s3_final_waste:sku+' (In Progress) Waste'}[f.key];
+      if(skuLabel){
         return el('div',{key:f.key,className:'fg'},
-          el('label',null,productName+' (In Progress) METRC #'),
+          el('label',null,skuLabel),
           el('input',{type:'text',value:form[f.key]||'',onChange:ev=>setF(f.key,ev.target.value),
-            placeholder:'METRC tag for in-progress '+productName,
+            placeholder:f.placeholder||'',
             style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
         );
       }
-      if(f.key==='product_in_progress_weight'){
-        const productName=form.sku||'Product';
-        return el('div',{key:f.key,className:'fg'},
-          el('label',null,productName+' (In Progress) Weight'),
-          el('input',{type:'text',value:form[f.key]||'',onChange:ev=>setF(f.key,ev.target.value),
-            placeholder:'e.g. 1,850g',
-            style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
-        );
-      }
+      // all other BHO fields fall through to generic renderer
     }
     if(logType==='ethanol_extraction'&&['ethanol_crude_weight','decarbed_crude_weight','total_distillate_produced'].includes(f.key)){
       const suggestion={ethanol_crude_weight:['ethanol_crude_suggested','77%'],decarbed_crude_weight:['decarbed_crude_suggested','20%'],total_distillate_produced:['distillate_suggested','16%']}[f.key];
