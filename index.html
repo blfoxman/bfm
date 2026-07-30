@@ -3555,9 +3555,17 @@ function recalcInfusedFlower(logType,f){
     packaging_check_status:preRollCheck(expected,actual),
   };
 }
+// BHO biomass sum (mirrors ethanol recalc but for butane_extraction)
+function recalcBHO(logType,f){
+  if(logType!=='butane_extraction') return f;
+  const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
+  const tags=Array.isArray(f.biomass_tags)?f.biomass_tags:[];
+  const total=tags.reduce((s,r)=>s+num(r&&r.weight),0);
+  return{...f,total_biomass_used:String(Math.round(total*100)/100)};
+}
 // Runs every batch-type auto-calculation; each one is a no-op for the wrong logType.
 function recalcBatch(logType,f){
-  return recalcInfusedFlower(logType,recalcEthanol(logType,recalcPreRoll(logType,recalcCartridge(logType,recalcGummy(logType,f)))));
+  return recalcBHO(logType,recalcInfusedFlower(logType,recalcEthanol(logType,recalcPreRoll(logType,recalcCartridge(logType,recalcGummy(logType,f))))));
 }
 // Pre-Rolls has TWO System Check checkpoints against the same Infused Flower
 // Used figure, at different grams-per-joint targets for each production stage.
@@ -3827,17 +3835,49 @@ const LOG_TYPES={
     {key:'status',label:'Status',type:'select',options:['In Progress','Winterization','Filtration','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
-  butane_extraction:{id:'butane_extraction',category:'batch',label:'Butane Extraction',icon:'\uD83D\uDD25',color:'#ea580c',bg:'#fff7ed',table:'pf_batch_tracker',dcr:'Missouri DCR / METRC \u2014 Batch Production Record',freq:'Per batch',fields:[
-    {key:'batch_number',label:'Batch / Lot Number',type:'text',placeholder:'e.g. BHO-2026-014'},
+  butane_extraction:{id:'butane_extraction',category:'batch',label:'BHO Extraction',icon:'\uD83D\uDD25',color:'#ea580c',bg:'#fff7ed',table:'pf_batch_tracker',dcr:'Missouri DCR / METRC \u2014 BHO Batch Production Record',freq:'Per batch',bho:true,fields:[
+    // SKU selection (drives which Section 2 variant appears)
+    {key:'sku',label:'Product Type *',type:'select',options:['Live Resin','THCA Isolate & HTE','Shatter','Sugar','Crumble','Cured Resin']},
     {key:'date',label:'Date',type:'date'},
     {key:'operator',label:'Operator / Personnel',type:'text',placeholder:'Who performed the extraction'},
-    {key:'strain_input',label:'Strain(s) / Input Material',type:'text',placeholder:'Strain name(s) used'},
-    {key:'input_weight',label:'Input Weight',type:'text',placeholder:'e.g. 5 lbs flower/trim'},
-    {key:'butane_volume',label:'Butane Volume Used',type:'text',placeholder:'e.g. 8 lbs'},
-    {key:'purge_time_temp',label:'Purge Time / Temp',type:'text',placeholder:'e.g. 12 hrs at 90\u00B0F'},
-    {key:'output_weight',label:'Output Weight (Concentrate)',type:'text',placeholder:'e.g. 640g'},
-    {key:'yield_percent',label:'Yield %',type:'text',placeholder:'e.g. 14.1%'},
-    {key:'metrc_tag',label:'METRC Tag #(s)',type:'text',placeholder:'Source and/or output tags'},
+    // ── SECTION 1: BHO Production Batch (all SKUs) ───────────────────────────
+    {key:'_s1',label:'--- SECTION 1: BHO PRODUCTION BATCH ---',type:'section'},
+    {key:'bho_batch_metrc',label:'BHO Production Batch METRC Tag *',type:'text',placeholder:'24-digit METRC production batch tag'},
+    {key:'bho_batch_total_weight',label:'Total Weight of BHO Production Batch',type:'text',placeholder:'e.g. 2,400g'},
+    {key:'_s1_biomass',label:'--- BIOMASS USED ---',type:'section'},
+    {key:'biomass_tags',label:'Biomass Tags',type:'text'}, // handled specially via BHO biomass UI
+    {key:'total_biomass_used',label:'Total Biomass Used',type:'display'},
+    {key:'s1_metrc_confirmed',label:'Section 1 Recorded on METRC?',type:'checkbox'},
+    // ── SECTION 2A: Live Resin / Shatter / Crumble / Sugar / Cured Resin ────
+    {key:'_s2a',label:'--- SECTION 2: BHO IN-PROGRESS ---',type:'section'},
+    {key:'bho_batch_used',label:'BHO Production Batch Used',type:'text',placeholder:'Weight used from the production batch'},
+    {key:'bho_batch_waste',label:'BHO Production Batch Waste',type:'text',placeholder:'Waste weight from production batch'},
+    {key:'bho_waste_metrc_confirmed',label:'BHO Batch Waste Recorded on METRC?',type:'checkbox'},
+    {key:'product_in_progress_metrc',label:'Product (In Progress) METRC #',type:'text',placeholder:'METRC tag for in-progress concentrate'},
+    {key:'product_in_progress_weight',label:'Product (In Progress) Weight',type:'text',placeholder:'e.g. 1,850g'},
+    {key:'s2_metrc_confirmed',label:'Section 2 Recorded on METRC?',type:'checkbox'},
+    // ── SECTION 2B: THCA / HTE specific fields ───────────────────────────────
+    {key:'_s2b',label:'--- SECTION 2: THCA / HTE IN-PROGRESS ---',type:'section'},
+    {key:'bho_batch_used_thca',label:'BHO Production Batch Used',type:'text',placeholder:'Weight used from the production batch'},
+    {key:'bho_batch_waste_thca',label:'BHO Production Batch Waste',type:'text',placeholder:'Waste weight from production batch'},
+    {key:'bho_waste_thca_metrc_confirmed',label:'BHO Batch Waste Recorded on METRC?',type:'checkbox'},
+    {key:'thca_in_progress_metrc',label:'THCA (In Progress) METRC #',type:'text',placeholder:'METRC tag for in-progress THCA isolate'},
+    {key:'thca_in_progress_weight',label:'THCA (In Progress) Weight',type:'text',placeholder:'e.g. 800g'},
+    {key:'hte_in_progress_metrc',label:'HTE (In Progress) METRC #',type:'text',placeholder:'METRC tag for in-progress HTE'},
+    {key:'hte_in_progress_weight',label:'HTE (In Progress) Weight',type:'text',placeholder:'e.g. 1,000g'},
+    {key:'s2b_metrc_confirmed',label:'Section 2 Recorded on METRC?',type:'checkbox'},
+    // ── SECTION 3: Final Batches (THCA/HTE only) ─────────────────────────────
+    {key:'_s3',label:'--- SECTION 3: FINAL BATCH ---',type:'section'},
+    {key:'thca_final_batch_tag',label:'THCA Final Batch Tag #',type:'text',placeholder:'METRC final batch tag for THCA isolate'},
+    {key:'thca_final_weight',label:'THCA Final Weight',type:'text',placeholder:'e.g. 780g'},
+    {key:'thca_final_waste',label:'THCA Final Waste',type:'text',placeholder:'Waste from THCA finalization'},
+    {key:'thca_final_waste_metrc_confirmed',label:'THCA Waste Recorded on METRC?',type:'checkbox'},
+    {key:'thca_final_metrc_confirmed',label:'THCA Final Batch Recorded on METRC?',type:'checkbox'},
+    {key:'hte_final_batch_tag',label:'HTE Final Batch Tag #',type:'text',placeholder:'METRC final batch tag for HTE'},
+    {key:'hte_final_weight',label:'HTE Final Weight',type:'text',placeholder:'e.g. 960g'},
+    {key:'hte_final_waste',label:'HTE Final Waste',type:'text',placeholder:'Waste from HTE finalization'},
+    {key:'hte_final_waste_metrc_confirmed',label:'HTE Waste Recorded on METRC?',type:'checkbox'},
+    {key:'hte_final_metrc_confirmed',label:'HTE Final Batch Recorded on METRC?',type:'checkbox'},
     {key:'status',label:'Status',type:'select',options:['In Progress','Purging','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
@@ -4050,6 +4090,8 @@ const LOG_TYPES={
 };
 
 const BATCH_TYPE_IDS=['ethanol_extraction','butane_extraction','pre_rolls','cartridges','gummies','infused_flower','moon_rocks','snow_caps'];
+// BHO biomass tags init helper (used in LogEntryForm init)
+// butane_extraction uses biomass_tags array just like ethanol_extraction
 
 // jsPDF's built-in fonts (helvetica/times/courier) only support WinAnsi/Latin-1
 // encoding. Any character outside that range (emoji, checkmarks \u2713, warning
@@ -4245,7 +4287,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       else if(fl.type==='checkbox')f[fl.key]=false;
       else if(SKU_FLAVOR_CONFIG[logType]&&fl.key==='sku')f[fl.key]=SKU_FLAVOR_CONFIG[logType].skus[0];
       else if(SKU_FLAVOR_CONFIG[logType]&&fl.key==='flavor')f[fl.key]=(SKU_FLAVOR_CONFIG[logType].flavors[SKU_FLAVOR_CONFIG[logType].skus[0]]||[])[0]||'';
-      else if(logType==='ethanol_extraction'&&fl.key==='biomass_tags')f[fl.key]=[];
+      else if((logType==='ethanol_extraction'||logType==='butane_extraction')&&fl.key==='biomass_tags')f[fl.key]=[];
       else if(fl.type==='select')f[fl.key]=fl.options[0];
       else f[fl.key]='';
     });
@@ -4497,6 +4539,94 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         el('label',null,f.label+' (auto-calculated)'),
         el('div',{style:{width:'100%',background:'var(--surface2)',border:'1px dashed var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,fontWeight:700,boxSizing:'border-box'}},form.total_biomass_used||'0'),
       );
+    }
+    // ── BHO Extraction: hide sections/fields that don't apply to the selected SKU ──
+    if(logType==='butane_extraction'){
+      const isTHCA=form.sku==='THCA Isolate & HTE';
+      // Section 2A fields (non-THCA/HTE products)
+      const s2aKeys=['_s2a','bho_batch_used','bho_batch_waste','bho_waste_metrc_confirmed','product_in_progress_metrc','product_in_progress_weight','s2_metrc_confirmed'];
+      // Section 2B fields (THCA/HTE only)
+      const s2bKeys=['_s2b','bho_batch_used_thca','bho_batch_waste_thca','bho_waste_thca_metrc_confirmed','thca_in_progress_metrc','thca_in_progress_weight','hte_in_progress_metrc','hte_in_progress_weight','s2b_metrc_confirmed'];
+      // Section 3 fields (THCA/HTE only)
+      const s3Keys=['_s3','thca_final_batch_tag','thca_final_weight','thca_final_waste','thca_final_waste_metrc_confirmed','thca_final_metrc_confirmed','hte_final_batch_tag','hte_final_weight','hte_final_waste','hte_final_waste_metrc_confirmed','hte_final_metrc_confirmed'];
+      if(!isTHCA&&s2bKeys.includes(f.key)) return null;
+      if(!isTHCA&&s3Keys.includes(f.key)) return null;
+      if(isTHCA&&s2aKeys.includes(f.key)) return null;
+      // SKU dropdown for BHO (not in SKU_FLAVOR_CONFIG so handle it here)
+      if(f.key==='sku'){
+        return el('div',{key:f.key,className:'fg'},
+          el('label',null,f.label),
+          el('select',{value:form.sku||'Live Resin',onChange:ev=>setForm(p=>({...p,sku:ev.target.value})),
+            style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:14,fontWeight:700}},
+            ['Live Resin','THCA Isolate & HTE','Shatter','Sugar','Crumble','Cured Resin'].map(o=>el('option',{key:o,value:o},o))
+          ),
+        );
+      }
+      // Biomass tags (unlimited) for BHO
+      if(f.key==='biomass_tags'){
+        const tags=Array.isArray(form.biomass_tags)?form.biomass_tags:[];
+        const rowStyle={flex:1,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 12px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'};
+        return el('div',{key:f.key,className:'fg'},
+          el('label',null,'Biomass Used \u2014 METRC Tags (add as many as needed)'),
+          el('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+            tags.map((row,i)=>el('div',{key:i,style:{display:'flex',gap:8,alignItems:'center'}},
+              el('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',background:'var(--accent)',color:'#fff',borderRadius:6,width:26,height:26,flexShrink:0,fontSize:11,fontWeight:800}},i+1),
+              el('input',{type:'text',value:(row&&row.tag)||'',placeholder:'Biomass METRC Tag #',onChange:ev=>{
+                const next=tags.map((r,idx)=>idx===i?{...r,tag:ev.target.value}:r);
+                setF('biomass_tags',next);
+              },style:{...rowStyle,flex:2}}),
+              el('input',{type:'text',value:(row&&row.weight)||'',placeholder:'Weight (g)',onChange:ev=>{
+                const next=tags.map((r,idx)=>idx===i?{...r,weight:ev.target.value}:r);
+                setF('biomass_tags',next);
+              },style:rowStyle}),
+              el('button',{type:'button',onClick:()=>setF('biomass_tags',tags.filter((_,idx)=>idx!==i)),
+                style:{background:'#fee2e2',color:'#dc2626',border:'none',borderRadius:6,padding:'8px 12px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',flexShrink:0}},'\u2715'),
+            )),
+            el('button',{type:'button',onClick:()=>setF('biomass_tags',[...tags,{tag:'',weight:''}]),
+              style:{background:'var(--accent)',color:'#fff',border:'none',borderRadius:8,padding:'9px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',alignSelf:'flex-start'}},'+ Add Biomass Tag'),
+          ),
+        );
+      }
+      // Total Biomass Used (auto-sum for BHO)
+      if(f.key==='total_biomass_used'){
+        const tags=Array.isArray(form.biomass_tags)?form.biomass_tags:[];
+        const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
+        const total=tags.reduce((s,r)=>s+num(r&&r.weight),0);
+        return el('div',{key:f.key,className:'fg'},
+          el('label',null,'Total Biomass Used (auto-calculated)'),
+          el('div',{style:{width:'100%',background:'rgba(30,58,95,.06)',border:'2px solid var(--accent)',borderRadius:'var(--rs)',padding:'10px 14px',color:'var(--accent)',fontFamily:'inherit',fontSize:16,fontWeight:800,boxSizing:'border-box',display:'flex',alignItems:'center',gap:8}},
+            el('span',{style:{fontSize:20}},'\u2211'),
+            total.toFixed(2)+'g',
+            el('span',{style:{fontSize:12,fontWeight:400,color:'var(--text3)',marginLeft:4}},'sum of '+tags.length+' biomass tag'+(tags.length!==1?'s':'')),
+          ),
+        );
+      }
+      // Section 2A label: use product name
+      if(f.key==='_s2a'){
+        const productName=form.sku||'Product';
+        return el('div',{key:f.key,style:{background:'var(--accent)',color:'#fff',borderRadius:8,padding:'8px 14px',marginBottom:12,marginTop:8,fontSize:11,fontWeight:800,letterSpacing:'.5px'}},
+          'SECTION 2: '+productName.toUpperCase()+' IN-PROGRESS'
+        );
+      }
+      // Product label for section 2A fields
+      if(f.key==='product_in_progress_metrc'){
+        const productName=form.sku||'Product';
+        return el('div',{key:f.key,className:'fg'},
+          el('label',null,productName+' (In Progress) METRC #'),
+          el('input',{type:'text',value:form[f.key]||'',onChange:ev=>setF(f.key,ev.target.value),
+            placeholder:'METRC tag for in-progress '+productName,
+            style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
+        );
+      }
+      if(f.key==='product_in_progress_weight'){
+        const productName=form.sku||'Product';
+        return el('div',{key:f.key,className:'fg'},
+          el('label',null,productName+' (In Progress) Weight'),
+          el('input',{type:'text',value:form[f.key]||'',onChange:ev=>setF(f.key,ev.target.value),
+            placeholder:'e.g. 1,850g',
+            style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
+        );
+      }
     }
     if(logType==='ethanol_extraction'&&['ethanol_crude_weight','decarbed_crude_weight','total_distillate_produced'].includes(f.key)){
       const suggestion={ethanol_crude_weight:['ethanol_crude_suggested','77%'],decarbed_crude_weight:['decarbed_crude_suggested','20%'],total_distillate_produced:['distillate_suggested','16%']}[f.key];
@@ -8950,24 +9080,115 @@ const LICENSE_CHART_TIERS=[
     {title:'Extraction Manager',name:'Juan Marmolejo'},
   ]},
 ];
+// ── ORG CHART NODE ────────────────────────────────────────────────────────────
+function OrgNode({node,depth=0}){
+  const[expanded,setExpanded]=useState(true);
+  const hasChildren=node.children&&node.children.length>0;
+  const colors=['#1e3a5f','#2d5282','#0891b2','#7c3aed','#be185d','#ea580c','#065f46'];
+  const color=colors[depth%colors.length];
+  return el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',position:'relative'}},
+    // Connector line from parent
+    depth>0&&el('div',{style:{width:2,height:24,background:'var(--border)',flexShrink:0}}),
+    // Node card
+    el('div',{
+      onClick:()=>hasChildren&&setExpanded(e=>!e),
+      style:{
+        background:'#fff',border:'2px solid '+color,borderRadius:12,padding:'12px 18px',
+        minWidth:180,maxWidth:220,textAlign:'center',position:'relative',
+        cursor:hasChildren?'pointer':'default',
+        boxShadow:'0 2px 8px rgba(15,23,42,.1)',transition:'all .15s',
+        userSelect:'none',
+      },
+      onMouseEnter:hasChildren?ev=>{ev.currentTarget.style.transform='translateY(-2px)';ev.currentTarget.style.boxShadow='0 6px 20px rgba(15,23,42,.15)';ev.currentTarget.style.borderColor=color;}:undefined,
+      onMouseLeave:hasChildren?ev=>{ev.currentTarget.style.transform='translateY(0)';ev.currentTarget.style.boxShadow='0 2px 8px rgba(15,23,42,.1)';}:undefined,
+    },
+      el('div',{style:{fontSize:9,fontWeight:800,color:color,textTransform:'uppercase',letterSpacing:'.8px',marginBottom:4}},node.dept||''),
+      el('div',{style:{fontSize:13,fontWeight:800,color:'#0f172a',lineHeight:1.3,marginBottom:3}},node.title),
+      node.name&&el('div',{style:{fontSize:12,fontWeight:600,color:color,marginTop:4,padding:'3px 8px',background:color+'15',borderRadius:6,display:'inline-block'}},node.name),
+      node.note&&el('div',{style:{fontSize:10,color:'#64748b',marginTop:6,lineHeight:1.4}},node.note),
+      hasChildren&&el('div',{style:{position:'absolute',bottom:-12,left:'50%',transform:'translateX(-50%)',width:22,height:22,borderRadius:'50%',background:color,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:800,border:'2px solid #fff',zIndex:2,boxShadow:'0 1px 4px rgba(0,0,0,.2)'}},expanded?'\u2212':'+'),
+    ),
+    // Children
+    hasChildren&&expanded&&el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center'}},
+      el('div',{style:{width:2,height:12,background:'var(--border)'}}),
+      el('div',{style:{display:'flex',gap:0,alignItems:'flex-start',position:'relative'}},
+        // Horizontal connector bar
+        node.children.length>1&&el('div',{style:{
+          position:'absolute',top:0,left:'calc(50% - '+Math.floor((node.children.length-1)/2*100)+'%)',
+          height:2,background:'var(--border)',
+          width:(node.children.length-1)*100+'%',
+          minWidth:'100%',
+        }}),
+        node.children.map((child,ci)=>el('div',{key:ci,style:{display:'flex',flexDirection:'column',alignItems:'center',minWidth:220,padding:'0 8px'}},
+          el(OrgNode,{node:child,depth:depth+1}),
+        )),
+      ),
+    ),
+  );
+}
+
 function LicenseChart(){
+  const ORG_TREE={
+    title:'General Manager',name:'Saman Salari',dept:'Executive Leadership',
+    children:[
+      {
+        title:'Assistant General Manager',name:'Liisa Pembroke',dept:'Leadership',
+        children:[
+          {
+            title:'Compliance Officer',name:'Micah Heppermann',dept:'Compliance & Security',
+            note:'ISO 9001 / QMS oversight \u2014 19 CSR 100',
+            children:[
+              {title:'Security Manager',name:'Micah Heppermann',dept:'Security',note:'19 CSR 100-1.090(7)\u2013(8)'},
+              {title:'Inventory Control',name:'Saman Salari',dept:'Warehouse',note:'19 CSR 100-1.130(1)(A)'},
+            ],
+          },
+          {
+            title:'Production Manager',name:'Zak Knowles',dept:'Production',
+            children:[
+              {title:'Extraction Manager',name:'Juan Marmolejo',dept:'Extraction'},
+              {title:'Production Lead',name:'',dept:'Production'},
+              {title:'Team Members',name:'',dept:'Production'},
+            ],
+          },
+          {
+            title:'Sales Manager',name:'',dept:'Sales',
+            children:[],
+          },
+        ],
+      },
+    ],
+  };
+
   return el('div',null,
     el('div',{className:'ph'},
       el('div',null,
-        el('div',{className:'pt'},'License Chart'),
-        el('div',{className:'ps'},'Designated responsible parties \u2014 Missouri DCR (19 CSR 100) \u00B7 ISO 9001 / QMS'),
+        el('div',{className:'pt'},'\uD83C\uDF31 Org Chart'),
+        el('div',{className:'ps'},'Organizational structure \u2014 Missouri DCR (19 CSR 100) \u00B7 ISO 9001 / QMS'),
       ),
     ),
-    el('div',{style:{display:'flex',flexDirection:'column',gap:20,padding:'0 4px 20px'}},
-      LICENSE_CHART_TIERS.map(tier=>el('div',{key:tier.label},
-        el('div',{style:{background:'var(--surface2)',borderRadius:8,padding:'8px 14px',fontSize:11,fontWeight:800,color:'var(--accent)',textTransform:'uppercase',letterSpacing:'.6px',marginBottom:10}},tier.label),
-        el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:12}},
-          tier.roles.map((r,i)=>el('div',{key:r.title+i,style:{background:'#fff',border:'1px solid var(--border)',borderLeft:'4px solid '+tier.color,borderRadius:8,padding:'14px 16px'}},
-            el('div',{style:{fontSize:13,fontWeight:700,color:'var(--text)'}},r.title),
-            el('div',{style:{fontSize:14,fontWeight:600,color:tier.color,marginTop:4}},r.name),
-            r.note&&el('div',{style:{fontSize:11,color:'var(--text2)',marginTop:8,lineHeight:1.4}},r.note),
-          )),
-        ),
+    el('div',{style:{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:12,padding:'24px 16px',marginBottom:16,fontSize:12,color:'var(--text2)',display:'flex',gap:16,flexWrap:'wrap',alignItems:'center'}},
+      el('span',{style:{fontWeight:700,color:'var(--text)'}},'\uD83D\uDCA1 Click any node with a dot to expand / collapse its branch'),
+      ['Executive Leadership','Leadership','Compliance & Security','Production','Extraction','Sales','Warehouse'].map((dept,i)=>{
+        const colors=['#1e3a5f','#2d5282','#0891b2','#7c3aed','#be185d','#ea580c','#065f46'];
+        return el('span',{key:dept,style:{display:'flex',alignItems:'center',gap:4}},
+          el('span',{style:{width:10,height:10,borderRadius:'50%',background:colors[i%colors.length],display:'inline-block'}}),
+          dept,
+        );
+      }),
+    ),
+    el('div',{style:{overflowX:'auto',paddingBottom:32}},
+      el('div',{style:{minWidth:900,display:'flex',justifyContent:'center',padding:'20px 40px'}},
+        el(OrgNode,{node:ORG_TREE,depth:0}),
+      ),
+    ),
+    el('div',{style:{display:'flex',gap:12,flexWrap:'wrap',marginTop:8}},
+      LICENSE_CHART_TIERS.map(tier=>el('div',{key:tier.label,style:{flex:'1 1 280px',background:'#fff',border:'1px solid var(--border)',borderTop:'4px solid '+tier.color,borderRadius:10,padding:'14px 16px'}},
+        el('div',{style:{fontSize:10,fontWeight:800,color:tier.color,textTransform:'uppercase',letterSpacing:'.6px',marginBottom:10}},tier.label),
+        tier.roles.map((r,i)=>el('div',{key:i,style:{marginBottom:8,paddingBottom:8,borderBottom:i<tier.roles.length-1?'1px solid var(--border)':'none'}},
+          el('div',{style:{fontSize:12,fontWeight:700,color:'var(--text)'}},r.title),
+          el('div',{style:{fontSize:13,fontWeight:600,color:tier.color,marginTop:2}},r.name),
+          r.note&&el('div',{style:{fontSize:10,color:'var(--text2)',marginTop:4,lineHeight:1.4}},r.note),
+        )),
       )),
     ),
   );
@@ -11409,7 +11630,7 @@ function VisitorKiosk(){
   const[cameraActive,setCameraActive]=React.useState(false);
   const setF=(k,v)=>setForm(p=>({...p,[k]:v}));
 
-  const PURPOSES=['Vendor / delivery','Maintenance / repair','Regulatory inspection (DCR)','Regulatory inspection (other)','Audit','Business meeting','Prospective employee','Other'];
+  const PURPOSES=['Vendor / delivery','Maintenance / repair','Regulatory inspection (DCR)','Regulatory inspection (other)','Audit','Business meeting','Prospective employee','Testing / Lab','Waste Company','Other'];
 
   // Camera for selfie
   async function startCamera(){
