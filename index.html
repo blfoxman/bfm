@@ -3446,7 +3446,7 @@ function recalcGummy(logType,f){
   const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
   const mixtureUsed=num(f.gummy_mixture_batch_weight)-num(f.gummy_mixture_waste);
   const sugarCoated=num(f.units_produced)-num(f.total_gummies_waste_presugar);
-  const packaged=(sugarCoated-num(f.sugar_coated_waste))/10;
+  const packaged=(sugarCoated-num(f.rd_testing)-num(f.sugar_coated_waste))/10;
   const expectedPackaged=(mixtureUsed/GUMMY_UNIT_WEIGHT)/10;
   const lower=expectedPackaged*(1-GUMMY_TOLERANCE);
   const upper=expectedPackaged*(1+GUMMY_TOLERANCE);
@@ -4021,9 +4021,10 @@ const LOG_TYPES={
     {key:'sugared_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_final_packaging',label:'--- FINAL PACKAGING ---',type:'section'},
     {key:'sugar_coated_used',label:'Total Sugar Coated Gummies Used',type:'text',placeholder:'Amount used for packaging'},
+    {key:'rd_testing',label:'Taken for R&D Testing',type:'text',placeholder:'Units pulled for R&D / QC testing'},
     {key:'sugar_coated_waste',label:'Total Sugar Coated Gummies Waste',type:'text',placeholder:'Amount wasted during packaging'},
     {key:'sugar_coated_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
-    {key:'total_packaged_gummies',label:'Total Packaged Gummies',type:'text',placeholder:'Final packaged unit count'},
+    {key:'total_packaged_gummies',label:'Total Packaged Gummies (auto-calculated)',type:'display'},
     {key:'final_packaged_gummies_metrc',label:'Final Packaged Gummies METRC#',type:'text',placeholder:'METRC tag for packaged units'},
     {key:'gummy_mandatory_test',label:'Mandatory Testing',type:'select',options:['Not Submitted','Submitted','Passed','Failed']},
     {key:'packaging_metrc_confirmed_gummy',label:'Recorded on METRC?',type:'checkbox'},
@@ -4497,6 +4498,25 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         el('div',{style:{background:cfg.bg,color:'#fff',borderRadius:10,padding:'14px 18px',textAlign:'center'}},
           el('div',{style:{fontSize:16,fontWeight:800}},cfg.text),
           el('div',{style:{fontSize:12,opacity:.9,marginTop:4}},cfg.sub+' \u2014 Expected \u2248 '+(form.cart_system_check_expected||'0')+' \u00B110%, Actual: '+(form.units_produced||'0')),
+        ),
+      );
+    }
+    if(logType==='gummies'&&f.key==='total_packaged_gummies'){
+      const nv=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
+      const sugarCoated=nv(form.total_sugar_coated_gummies);
+      const rdTesting=nv(form.rd_testing);
+      const waste=nv(form.sugar_coated_waste);
+      const packaged=Math.max(0,(sugarCoated-rdTesting-waste)/10);
+      return el('div',{key:f.key,className:'fg'},
+        el('label',null,'Total Packaged Gummies (auto-calculated)'),
+        el('div',{style:{width:'100%',background:'rgba(217,119,6,.08)',border:'2px solid #d97706',borderRadius:'var(--rs)',padding:'11px 16px',color:'#d97706',fontFamily:'inherit',fontWeight:800,fontSize:18,boxSizing:'border-box',display:'flex',alignItems:'center',gap:10}},
+          el('span',{style:{fontSize:22}},'🍬'),
+          packaged.toFixed(2)+' bags',
+        ),
+        el('div',{style:{fontSize:11,color:'var(--text3)',marginTop:5,lineHeight:1.5}},
+          '\u2211 Formula: (Total Sugar Coated \u2212 R&D Testing \u2212 Waste) \u00F7 10',
+          el('br'),
+          '= ('+sugarCoated.toFixed(2)+' \u2212 '+rdTesting.toFixed(2)+' \u2212 '+waste.toFixed(2)+') \u00F7 10 = '+packaged.toFixed(2),
         ),
       );
     }
