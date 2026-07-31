@@ -3420,7 +3420,7 @@ const PRE_ROLL_SKUS=[
 const PRE_ROLL_FLAVORS={
   'Muha Meds - Mates - THCA Infused 5 x 0.6g':['Berry Blast','Honey Melon','Agave Sunrise','Mango Peach Fusion','Frosty Mint Blueberry','Strawberry Ice Cream','Caramel Apple Gelato','Winter Cookie Crumble','Purple Punch','Biscotti Bomb'],
   'Muha Meds - Mates Reserve - 5 x 0.6g':['Presidential OG','Muha OG','STL Gas','Kush Widow','Super Lemon'],
-  'Bodega Boyz - Shorties':[],
+  'Bodega Boyz - Shorties':['Banana Honey','Sour Apple','Watermelon Zkittlez','Guava Zkittlez','OJ Hi-C','Pineapple Kush','Peach Kush','Strawberry Haze','Lemon OG','Mango Gelato'],
   'Muha Meds 2G Infused Pre Roll':['Banana Pie','Blue Slushie','Cinnamon Cream OG','Desert Gold Chocolate','Grape Stomper','Honey Melon','Lemon Cheesecake','Matcha Gold','Midnight Espresso','PB Jelly','Peaches & Cream','Pineapple Poison','Pumpkin Bliss','Strawberry Lava','Watermelon Punch'],
   'Muha Meds 1G Plain Pre Roll':[],
 };
@@ -3579,6 +3579,7 @@ const PRE_ROLL_JOINT_WEIGHT_2=0.60; // fallback default, grams/joint, Kiefed Pre
 const PRE_ROLL_JOINT_WEIGHTS={
   'Muha Meds 2G Infused Pre Roll':{filled:1.9,kief:2.0},
   'Muha Meds 1G Plain Pre Roll':{filled:1.0,kief:null},
+  'Bodega Boyz - Shorties':{filled:0.7,kief:null},
 };
 function preRollJointWeight(sku){
   return PRE_ROLL_JOINT_WEIGHTS[sku]||{filled:PRE_ROLL_JOINT_WEIGHT_1,kief:PRE_ROLL_JOINT_WEIGHT_2};
@@ -3632,6 +3633,7 @@ function recalcPreRoll(logType,f){
 const PRE_ROLL_UNITS_PER_PACKAGE={
   'Muha Meds 1G Plain Pre Roll':1,
   'Muha Meds 2G Infused Pre Roll':1,
+  'Bodega Boyz - Shorties':4,
 };
 // Generalized SKU\u2192Flavor cascading dropdown config, keyed by batch log type.
 // Any batch type listed here gets the SKU/Flavor special-case rendering in
@@ -3652,15 +3654,17 @@ const SKU_FLAVOR_CONFIG={
 const PRE_ROLL_SKU_INGREDIENTS={
   'Muha Meds - Mates - THCA Infused 5 x 0.6g':['thca_metrc','thca_qty','terp_qty'],
   'Muha Meds - Mates Reserve - 5 x 0.6g':['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'],
-  'Bodega Boyz - Shorties':[],
+  'Bodega Boyz - Shorties':[],  // plain pre-roll, no infused ingredients
   'Muha Meds 2G Infused Pre Roll':['thca_metrc','thca_qty','terp_qty'],
   'Muha Meds 1G Plain Pre Roll':[],
 };
 const PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS=['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'];
 // 1G Plain Pre Roll has no kiefing step at all \u2014 the entire Kiefed Preroll
 // section (and its System Check) is hidden for it, not just individual fields.
-const PRE_ROLL_NO_KIEF_SKUS=['Muha Meds 1G Plain Pre Roll'];
+const PRE_ROLL_NO_KIEF_SKUS=['Muha Meds 1G Plain Pre Roll','Bodega Boyz - Shorties'];
 const PRE_ROLL_KIEF_SECTION_KEYS=['_s_kiefed','total_infused_preroll_used','total_infused_preroll_waste','preroll_waste_metrc_confirmed','kief_metrc','kief_qty_used','total_kiefed_infused_joints','kiefed_infused_preroll_metrc','kiefed_metrc_confirmed','_s_kiefed_system_check','kiefed_check_result','kiefed_infused_joints_used','kief_infused_joints_waste','kief_waste_metrc_confirmed'];
+// R&D Testing section only shown for Bodega Boyz Shorties (before final packaging)
+const PRE_ROLL_BBS_RD_KEYS=['_s_bbs_rd','bbs_rd1_result','bbs_rd2_result'];
 // R&D test checkpoints, keyed by batch logType. Each pair is [rd1_key,rd2_key];
 // rd2 only appears once rd1 has been marked Failed. A batch type can have more
 // than one checkpoint (Cartridges has one at Primed Oil and one at Filled
@@ -3922,6 +3926,9 @@ const LOG_TYPES={
     {key:'joints_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_joints_system_check',label:'--- SYSTEM CHECK ---',type:'section'},
     {key:'joints_check_result',label:'System Check',type:'display'},
+    {key:'_s_bbs_rd',label:'--- R&D TESTING ---',type:'section'},
+    {key:'bbs_rd1_result',label:'R&D Test',type:'text'},
+    {key:'bbs_rd2_result',label:'R&D Re-Submit',type:'text'},
     {key:'_s_kiefed',label:'--- INFUSED KIEFED PREROLL ---',type:'section'},
     {key:'total_infused_preroll_used',label:'Total Infused Pre Roll Used',type:'text',placeholder:'Joints used for kiefing'},
     {key:'total_infused_preroll_waste',label:'Total Infused Pre Roll Waste',type:'text',placeholder:'Joints wasted'},
@@ -4683,6 +4690,44 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       if(!allowed.includes(f.key)) return null;
       // else fall through to the generic text-field renderer below
     }
+    // ── Bodega Boyz Shorties R&D Testing block (before final packaging) ───────
+    if(logType==='pre_rolls'&&form.sku==='Bodega Boyz - Shorties'){
+      if(f.key==='_s_bbs_rd'){
+        return el('div',{key:f.key,style:{background:'#0891b2',color:'#fff',borderRadius:8,padding:'9px 14px',marginBottom:12,marginTop:8,fontSize:12,fontWeight:800,letterSpacing:'.5px',textTransform:'uppercase'}},
+          '\uD83E\uDDEA R&D Testing'
+        );
+      }
+      const isBbsRd1=f.key==='bbs_rd1_result';
+      const isBbsRd2=f.key==='bbs_rd2_result';
+      if(isBbsRd1||isBbsRd2){
+        // rd2 only shows if rd1 === 'Failed'
+        if(isBbsRd2&&form.bbs_rd1_result!=='Failed') return null;
+        const passed=form.bbs_rd1_result==='Passed'||form.bbs_rd2_result==='Passed';
+        const color=opt=>opt==='Passed'?'#16a34a':'#dc2626';
+        const label=isBbsRd1?'R&D Test':'R&D Re-Submit';
+        return el('div',{key:f.key,className:'fg'},
+          el('label',null,label),
+          el('div',{style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
+            ['Passed','Failed'].map(opt=>el('button',{key:opt,type:'button',onClick:()=>setF(f.key,form[f.key]===opt?'':opt),
+              style:{padding:'9px 22px',borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',
+                background:form[f.key]===opt?color(opt):'var(--bg)',
+                color:form[f.key]===opt?'#fff':'var(--text2)',
+                border:'2px solid '+(form[f.key]===opt?color(opt):'var(--border)'),
+              }},(form[f.key]===opt?'\u2713 ':'')+opt)),
+            form[f.key]==='Passed'&&el('span',{style:{fontSize:12,color:'#16a34a',fontWeight:700}},'\u2713 Passed \u2014 proceed to Final Packaging'),
+            form[f.key]==='Failed'&&isBbsRd1&&el('span',{style:{fontSize:12,color:'#dc2626',fontWeight:700}},'\u26A0 Failed \u2014 re-submit below'),
+          ),
+          // show resubmit banner if this is rd1 and it failed
+          isBbsRd1&&form.bbs_rd1_result==='Failed'&&!form.bbs_rd2_result&&el('div',{style:{marginTop:8,background:'#fef2f2',border:'1px solid #fca5a5',borderRadius:8,padding:'8px 12px',fontSize:12,color:'#dc2626',fontWeight:600}},
+            '\u26A0 Re-submit required before proceeding to Final Packaging.'
+          ),
+        );
+      }
+      // Gate Final Packaging: hide if R&D not yet passed
+      const bbsRdPassed=form.bbs_rd1_result==='Passed'||form.bbs_rd2_result==='Passed';
+      const FINAL_PKG_KEYS=['_s_final_packaging','kiefed_infused_joints_used','kief_infused_joints_waste','kief_waste_metrc_confirmed','total_jar_packaged','final_packaged_tag','packaging_check_result','rd1_result','rd2_result','mandatory_testing','packaging_metrc_confirmed'];
+      if(!bbsRdPassed&&FINAL_PKG_KEYS.includes(f.key)) return null;
+    }
     {
       const rdPairs=RD_TEST_PAIRS[logType]||[];
       const asRd1=rdPairs.find(p=>p[0]===f.key);
@@ -4734,7 +4779,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       ),
       el('div',{className:'mbd'},
         el('div',{style:{background:'rgba(30,58,95,.04)',border:'1px solid rgba(30,58,95,.1)',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:'var(--text2)'}},'\uD83D\uDCCB Fields marked * are required. This record is timestamped and signed \u2014 legally valid for DCR inspections.'),
-        lt.fields.filter(f=>!(logType==='pre_rolls'&&PRE_ROLL_NO_KIEF_SKUS.includes(form.sku)&&PRE_ROLL_KIEF_SECTION_KEYS.includes(f.key))).map(f=>INP(f)),
+        lt.fields.filter(f=>!(logType==='pre_rolls'&&PRE_ROLL_NO_KIEF_SKUS.includes(form.sku)&&PRE_ROLL_KIEF_SECTION_KEYS.includes(f.key))&&!(logType==='pre_rolls'&&form.sku!=='Bodega Boyz - Shorties'&&PRE_ROLL_BBS_RD_KEYS.includes(f.key))).map(f=>INP(f)),
         // File attachments
         el('div',{style:{borderTop:'1px solid var(--border)',paddingTop:16,marginTop:8,marginBottom:16}},
           el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
