@@ -132,6 +132,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 @keyframes spin{to{transform:rotate(360deg);}}
 @keyframes shake{0%,100%{transform:translateX(0)}10%,30%,50%,70%,90%{transform:translateX(-8px)}20%,40%,60%,80%{transform:translateX(8px)}}
 @keyframes pulse-red{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)}50%{box-shadow:0 0 0 20px rgba(239,68,68,0)}}
+@keyframes pulseReview{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.3),0 0 0 2px rgba(239,68,68,.12)}60%{box-shadow:0 0 0 6px rgba(239,68,68,0),0 0 0 2px rgba(239,68,68,.12)}}
 .on-hold-alert{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(239,68,68,.15);backdrop-filter:blur(2px);animation:shake .5s ease 0s 3;}
 .on-hold-banner{background:#ef4444;color:#fff;padding:32px 40px;border-radius:16px;text-align:center;max-width:420px;box-shadow:0 0 60px rgba(239,68,68,.6);animation:pulse-red 1s infinite;}
 .cancelled-alert{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(239,68,68,.15);backdrop-filter:blur(2px);animation:shake .5s ease 0s 3;}
@@ -4371,9 +4372,16 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
     setSaving(true);
     try{
       if(editData){
+        const isPmEdit=hasRole(cu,'production_manager')&&!isAdmin&&!isElevated;
         const update={...form,signature_image:sig||editData.signature_image||null,updated_by:cu.name,updated_at:new Date().toISOString()};
         if(requiresEditNote){
-          update.edit_history=[...(editData.edit_history||[]),{by:cu.name,at:update.updated_at,note:editNote.trim()}];
+          update.edit_history=[...(editData.edit_history||[]),{by:cu.name,role:cu.role||'',at:update.updated_at,note:editNote.trim()}];
+        }
+        // Flag for director review when a PM makes any edit
+        if(isPmEdit){
+          update.needs_review=true;
+          update.needs_review_since=update.updated_at;
+          update.needs_review_by=cu.name;
         }
         await db.update(lt.table,editData.id,update);
         onSave({...editData,...update});
@@ -5270,19 +5278,30 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
         filtered.map((entry,i)=>{
           const checks=BATCH_METRC_CHECKLIST[activeType]||[];
           const isDone=checks.length>0&&checks.every(c=>entry[c.key]===true||entry[c.key]==='true'||entry[c.key]===1);
+          const needsReview=!isDone&&entry.needs_review&&(isAdmin||isElevated);
           return el('div',{key:entry.id||i,style:{
-            background:isDone?'rgba(22,163,74,.06)':'#ffffff',
-            border:'1px solid '+(isDone?'rgba(22,163,74,.35)':'var(--border)'),
-            borderLeft:'4px solid '+(isDone?'#16a34a':lt.color),
+            background:needsReview?'rgba(239,68,68,.04)':isDone?'rgba(22,163,74,.06)':'#ffffff',
+            border:'1px solid '+(needsReview?'rgba(239,68,68,.35)':isDone?'rgba(22,163,74,.35)':'var(--border)'),
+            borderLeft:'4px solid '+(needsReview?'#ef4444':isDone?'#16a34a':lt.color),
             borderRadius:12,padding:'14px 16px',
-            boxShadow:isDone?'0 1px 4px rgba(22,163,74,.08)':'0 1px 3px rgba(15,23,42,.04)',
+            boxShadow:needsReview?'0 0 0 2px rgba(239,68,68,.12)':isDone?'0 1px 4px rgba(22,163,74,.08)':'0 1px 3px rgba(15,23,42,.04)',
             opacity:isDone?0.82:1,
+            animation:needsReview?'pulseReview 2s ease-in-out infinite':undefined,
           }},
           el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,flexWrap:'wrap'}},
             el('div',{style:{flex:1}},
               el('div',{style:{display:'flex',gap:8,marginBottom:6,flexWrap:'wrap',alignItems:'center'}},
-                el('span',{style:{fontSize:12,fontWeight:700,color:isDone?'#16a34a':lt.color}},lt.icon+' '+(entry.batch_number||'#'+(filtered.length-i))),
+                el('span',{style:{fontSize:12,fontWeight:700,color:needsReview?'#ef4444':isDone?'#16a34a':lt.color}},lt.icon+' '+(entry.batch_number||'#'+(filtered.length-i))),
                 isDone&&el('span',{style:{fontSize:11}},'\u2705'),
+                needsReview&&el('span',{style:{
+                  display:'inline-flex',alignItems:'center',gap:4,
+                  background:'#ef4444',color:'#fff',
+                  borderRadius:6,padding:'3px 10px',fontSize:11,fontWeight:800,
+                  letterSpacing:'.3px',animation:'pulseReview 2s ease-in-out infinite',
+                }},'\u26A0\uFE0F NEEDS REVIEW'),
+                needsReview&&el('span',{style:{fontSize:11,color:'#ef4444',fontWeight:600}},
+                  'Edited by '+entry.needs_review_by+' \u2014 '+new Date(entry.needs_review_since).toLocaleString()
+                ),
                 entry.status&&el('span',{style:{
                   background:isDone?'rgba(22,163,74,.15)':lt.color+'20',
                   color:isDone?'#16a34a':lt.color,
@@ -5307,6 +5326,11 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
               el(MetrcStatusStrip,{entry,logType:activeType}),
             ),
             el('div',{style:{display:'flex',gap:6,flexShrink:0,flexWrap:'wrap'}},
+              needsReview&&el('button',{onClick:async()=>{
+                const upd={needs_review:false,needs_review_since:null,needs_review_by:null};
+                await db.update(lt.table,entry.id,upd);
+                setEntries(p=>p.map(e=>e.id===entry.id?{...e,...upd}:e));
+              },style:{background:'#ef4444',color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',fontFamily:'inherit',fontSize:12,fontWeight:700,cursor:'pointer'}},'\u2713 Mark Reviewed'),
               el('button',{onClick:()=>exportLogPdf(activeType,[entry],'',''),className:'btn b-ghost btn-sm'},'PDF'),
               canEdit&&el('button',{onClick:()=>{setEditEntry(entry);setShowForm(true);},className:'btn b-ghost btn-sm'},'Edit'),
               !canEdit&&canOpen&&el('button',{onClick:()=>{setEditEntry(entry);setShowForm(true);},className:'btn b-ghost btn-sm'},'\uD83D\uDD13 Open'),
