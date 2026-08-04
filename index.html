@@ -5267,12 +5267,28 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
         el('button',{onClick:()=>{setEditEntry(null);setShowForm(true);},style:{background:lt.color,color:'#fff',border:'none',borderRadius:8,padding:'10px 24px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',marginTop:8}},'+ New Batch'),
       )
     :el('div',{style:{display:'flex',flexDirection:'column',gap:8}},
-        filtered.map((entry,i)=>el('div',{key:entry.id||i,style:{background:'#ffffff',border:'1px solid var(--border)',borderRadius:12,padding:'14px 16px',boxShadow:'0 1px 3px rgba(15,23,42,.04)'}},
+        filtered.map((entry,i)=>{
+          const checks=BATCH_METRC_CHECKLIST[activeType]||[];
+          const isDone=checks.length>0&&checks.every(c=>entry[c.key]===true||entry[c.key]==='true'||entry[c.key]===1);
+          return el('div',{key:entry.id||i,style:{
+            background:isDone?'rgba(22,163,74,.06)':'#ffffff',
+            border:'1px solid '+(isDone?'rgba(22,163,74,.35)':'var(--border)'),
+            borderLeft:'4px solid '+(isDone?'#16a34a':lt.color),
+            borderRadius:12,padding:'14px 16px',
+            boxShadow:isDone?'0 1px 4px rgba(22,163,74,.08)':'0 1px 3px rgba(15,23,42,.04)',
+            opacity:isDone?0.82:1,
+          }},
           el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,flexWrap:'wrap'}},
             el('div',{style:{flex:1}},
               el('div',{style:{display:'flex',gap:8,marginBottom:6,flexWrap:'wrap',alignItems:'center'}},
-                el('span',{style:{fontSize:12,fontWeight:700,color:lt.color}},lt.icon+' '+(entry.batch_number||'#'+(filtered.length-i))),
-                entry.status&&el('span',{style:{background:lt.color+'20',color:lt.color,borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:700}},entry.status),
+                el('span',{style:{fontSize:12,fontWeight:700,color:isDone?'#16a34a':lt.color}},lt.icon+' '+(entry.batch_number||'#'+(filtered.length-i))),
+                isDone&&el('span',{style:{fontSize:11}},'\u2705'),
+                entry.status&&el('span',{style:{
+                  background:isDone?'rgba(22,163,74,.15)':lt.color+'20',
+                  color:isDone?'#16a34a':lt.color,
+                  borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:700,
+                  border:isDone?'1px solid rgba(22,163,74,.3)':'none',
+                }},entry.status),
                 el('span',{style:{fontSize:12,color:'var(--text2)'}},entry.date||''),
                 el('span',{style:{fontSize:12,color:'var(--text2)'}},'\u00B7 '+(entry.submitted_by||'')),
                 entry.signature_image&&el('span',{style:{background:'rgba(22,163,74,.1)',color:'#16a34a',borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:700}},'\u270D\uFE0F Signed'),
@@ -5297,7 +5313,7 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
               canDelete&&el('button',{onClick:async()=>{if(!confirm('Delete this batch record?'))return;await db.remove(lt.table,entry.id);setEntries(p=>p.filter(e=>e.id!==entry.id));},className:'btn b-red btn-sm'},'Delete'),
             ),
           ),
-        ))
+        );})
       ),
     (showForm||editEntry)&&el(LogEntryForm,{logType:activeType,cu,SUPA_URL,SUPA_KEY,H,
       editData:editEntry,
