@@ -4383,6 +4383,15 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
     setSaving(false);
   }
   const INP=(f)=>{
+    // ── BHO SKU gate: must run before generic section/checkbox renderers ─────
+    if(logType==='butane_extraction'){
+      const sku=form.sku||'Live Resin';
+      const isTHCA=sku==='THCA Isolate & HTE';
+      const STD_KEYS=['_s2std','s2_bho_used','s2_bho_waste','s2_bho_waste_metrc','s2_prod_ip_metrc','s2_prod_ip_weight','s2_metrc_confirmed','_s3std','s3_final_metrc','s3_final_weight','s3_final_waste','s3_waste_metrc','s3_metrc_confirmed'];
+      const THCA_KEYS=['_s2thca','s2t_bho_used','s2t_bho_waste','s2t_bho_waste_metrc','s2t_thca_ip_metrc','s2t_thca_ip_weight','s2t_hte_ip_metrc','s2t_hte_ip_weight','s2t_metrc_confirmed','_s3thca','s3t_thca_tag','s3t_thca_weight','s3t_thca_waste','s3t_thca_waste_metrc','s3t_thca_metrc','_s3hte','s3t_hte_tag','s3t_hte_weight','s3t_hte_waste','s3t_hte_waste_metrc','s3t_hte_metrc'];
+      if(isTHCA&&STD_KEYS.includes(f.key)) return null;
+      if(!isTHCA&&THCA_KEYS.includes(f.key)) return null;
+    }
     if(f.type==='section'){
       const isOptional=f.label.includes('Optional');
       return el('div',{key:f.key,style:{background:isOptional?'#7c3aed':'var(--accent)',color:'#fff',borderRadius:8,padding:'8px 14px',marginBottom:12,marginTop:8,fontSize:11,fontWeight:800,letterSpacing:'.5px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
@@ -4582,12 +4591,6 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
     if(logType==='butane_extraction'){
       const sku=form.sku||'Live Resin';
       const isTHCA=sku==='THCA Isolate & HTE';
-      // Fields that only appear for standard SKUs (not THCA/HTE)
-      const STD_KEYS=['_s2std','s2_bho_used','s2_bho_waste','s2_bho_waste_metrc','s2_prod_ip_metrc','s2_prod_ip_weight','s2_metrc_confirmed','_s3std','s3_final_metrc','s3_final_weight','s3_final_waste','s3_waste_metrc','s3_metrc_confirmed'];
-      // Fields that only appear for THCA/HTE
-      const THCA_KEYS=['_s2thca','s2t_bho_used','s2t_bho_waste','s2t_bho_waste_metrc','s2t_thca_ip_metrc','s2t_thca_ip_weight','s2t_hte_ip_metrc','s2t_hte_ip_weight','s2t_metrc_confirmed','_s3thca','s3t_thca_tag','s3t_thca_weight','s3t_thca_waste','s3t_thca_waste_metrc','s3t_thca_metrc','_s3hte','s3t_hte_tag','s3t_hte_weight','s3t_hte_waste','s3t_hte_waste_metrc','s3t_hte_metrc'];
-      if(isTHCA&&STD_KEYS.includes(f.key)) return null;
-      if(!isTHCA&&THCA_KEYS.includes(f.key)) return null;
 
       // ── SKU dropdown ───────────────────────────────────────────────────────
       if(f.key==='sku'){
