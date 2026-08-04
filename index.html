@@ -5282,6 +5282,7 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
                   el('div',{style:{color:'var(--text2)',marginTop:2}},h.note),
                 )),
               ),
+              el(MetrcStatusStrip,{entry,logType:activeType}),
             ),
             el('div',{style:{display:'flex',gap:6,flexShrink:0,flexWrap:'wrap'}},
               el('button',{onClick:()=>exportLogPdf(activeType,[entry],'',''),className:'btn b-ghost btn-sm'},'PDF'),
@@ -5304,7 +5305,92 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
   );
 }
 
-const RISK_CATEGORIES=['Regulatory','Food Safety / GMP','Supplier','Equipment','Personnel','Cybersecurity','Environmental','Financial','Operational','Quality'];
+// ── METRC checklist config keyed by batch type ────────────────────────────────
+// Each entry: { label, key } where key is the boolean checkbox field in the record.
+const BATCH_METRC_CHECKLIST={
+  gummies:[
+    {label:'Gummy Mixture',key:'mixture_metrc_confirmed'},
+    {label:'Gummy Mixture Waste',key:'gummy_mixture_waste_metrc_confirmed'},
+    {label:'Gummy Production Batch',key:'production_metrc_confirmed'},
+    {label:'Production Batch Waste',key:'gummies_waste_presugar_metrc_confirmed'},
+    {label:'Sugar Coated Gummies',key:'sugared_metrc_confirmed'},
+    {label:'Sugar Coated Waste',key:'sugar_coated_waste_metrc_confirmed'},
+    {label:'Final Packaging',key:'packaging_metrc_confirmed_gummy'},
+  ],
+  pre_rolls:[
+    {label:'Flower Batch',key:'flower_metrc_confirmed'},
+    {label:'Infused Joints',key:'infused_joints_metrc_confirmed'},
+    {label:'Infused Joints Waste',key:'joints_waste_metrc_confirmed'},
+    {label:'Kiefed Pre-Roll',key:'kiefed_metrc_confirmed'},
+    {label:'Kief Waste',key:'kief_waste_metrc_confirmed'},
+    {label:'Final Packaging',key:'packaging_metrc_confirmed'},
+  ],
+  ethanol_extraction:[
+    {label:'Biomass / Source',key:'biomass_metrc_confirmed'},
+    {label:'Crude Oil',key:'crude_metrc_confirmed'},
+    {label:'Distillate',key:'distillate_metrc_confirmed'},
+    {label:'Waste',key:'ethanol_waste_metrc_confirmed'},
+  ],
+  butane_extraction:[
+    {label:'Section 1',key:'s1_metrc_confirmed'},
+    {label:'Section 2 Waste',key:'s2_bho_waste_metrc'},
+    {label:'Section 2',key:'s2_metrc_confirmed'},
+    {label:'Section 3 Waste',key:'s3_waste_metrc'},
+    {label:'Section 3',key:'s3_metrc_confirmed'},
+  ],
+  cartridges:[
+    {label:'Oil Fill',key:'oil_metrc_confirmed'},
+    {label:'Final Packaging',key:'cart_packaging_metrc_confirmed'},
+    {label:'Waste',key:'cart_waste_metrc_confirmed'},
+  ],
+  infused_flower:[
+    {label:'Flower Batch',key:'if_flower_metrc_confirmed'},
+    {label:'Distillate',key:'if_distillate_metrc_confirmed'},
+    {label:'Infused Flower',key:'if_metrc_confirmed'},
+    {label:'Waste',key:'if_waste_metrc_confirmed'},
+  ],
+  moon_rocks:[
+    {label:'Flower',key:'mr_flower_metrc_confirmed'},
+    {label:'Oil',key:'mr_oil_metrc_confirmed'},
+    {label:'Kief',key:'mr_kief_metrc_confirmed'},
+    {label:'Waste',key:'mr_waste_metrc_confirmed'},
+  ],
+  snow_caps:[
+    {label:'Base Product',key:'sc_base_metrc_confirmed'},
+    {label:'Kief',key:'sc_kief_metrc_confirmed'},
+    {label:'Waste',key:'sc_waste_metrc_confirmed'},
+  ],
+};
+
+function MetrcStatusStrip({entry,logType}){
+  const checks=BATCH_METRC_CHECKLIST[logType];
+  if(!checks||checks.length===0) return null;
+  const done=checks.filter(c=>entry[c.key]===true||entry[c.key]==='true'||entry[c.key]===1);
+  const total=checks.length;
+  const allDone=done.length===total;
+  return el('div',{style:{marginTop:10,borderTop:'1px solid var(--border)',paddingTop:8,display:'flex',flexDirection:'column',gap:5}},
+    el('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:2}},
+      el('span',{style:{fontSize:10,fontWeight:800,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.6px'}},'METRC Status'),
+      el('span',{style:{fontSize:10,fontWeight:700,color:allDone?'#16a34a':'#d97706'}},done.length+'/'+total+' recorded'),
+      !allDone&&el('span',{style:{fontSize:10,color:'#dc2626',fontWeight:600}},'\u26A0 '+( total-done.length)+' pending'),
+    ),
+    el('div',{style:{display:'flex',flexWrap:'wrap',gap:5}},
+      checks.map(c=>{
+        const checked=entry[c.key]===true||entry[c.key]==='true'||entry[c.key]===1;
+        return el('span',{key:c.key,style:{
+          display:'inline-flex',alignItems:'center',gap:4,
+          padding:'3px 9px',borderRadius:20,fontSize:11,fontWeight:600,
+          background:checked?'rgba(22,163,74,.1)':'rgba(220,38,38,.07)',
+          color:checked?'#16a34a':'#dc2626',
+          border:'1px solid '+(checked?'rgba(22,163,74,.25)':'rgba(220,38,38,.2)'),
+        }},
+          el('span',{style:{fontSize:12}},checked?'\u2713':'\u25CB'),
+          c.label,
+        );
+      }),
+    ),
+  );
+}
 const RISK_LIKELIHOOD=['1 - Rare','2 - Unlikely','3 - Possible','4 - Likely','5 - Almost Certain'];
 const RISK_IMPACT=['1 - Negligible','2 - Minor','3 - Moderate','4 - Major','5 - Catastrophic'];
 
