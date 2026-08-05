@@ -4372,6 +4372,8 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
     setSaving(true);
     try{
       if(editData){
+        const isAdmin=cu.role==='admin';
+        const isElevated=isAdmin||hasAnyRole(cu,['general_manager','assistant_general_manager','compliance_officer','security_manager']);
         const isPmEdit=hasRole(cu,'production_manager')&&!isAdmin&&!isElevated;
         const update={...form,signature_image:sig||editData.signature_image||null,updated_by:cu.name,updated_at:new Date().toISOString()};
         if(requiresEditNote){
