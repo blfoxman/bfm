@@ -4372,18 +4372,9 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
     setSaving(true);
     try{
       if(editData){
-        const isAdmin=cu.role==='admin';
-        const isElevated=isAdmin||hasAnyRole(cu,['general_manager','assistant_general_manager','compliance_officer','security_manager']);
-        const isPmEdit=hasRole(cu,'production_manager')&&!isAdmin&&!isElevated;
         const update={...form,signature_image:sig||editData.signature_image||null,updated_by:cu.name,updated_at:new Date().toISOString()};
         if(requiresEditNote){
           update.edit_history=[...(editData.edit_history||[]),{by:cu.name,role:cu.role||'',at:update.updated_at,note:editNote.trim()}];
-        }
-        // Flag for director review when a PM makes any edit
-        if(isPmEdit){
-          update.needs_review=true;
-          update.needs_review_since=update.updated_at;
-          update.needs_review_by=cu.name;
         }
         await db.update(lt.table,editData.id,update);
         onSave({...editData,...update});
@@ -5227,9 +5218,9 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
   // in fields still blank — but any field that already has a value is locked
   // read-only for them (they cannot go back and change what's already there;
   // only a full editor with a logged reason can do that).
-  const canEdit=isElevated||isAdmin||hasRole(cu,'production_manager');
+  const canEdit=isElevated||isAdmin;
   const canDelete=isElevated||isAdmin;
-  const canOpen=restricted==='lead';
+  const canOpen=restricted==='lead'||restricted==='pm';
 
   React.useEffect(()=>{
     setLoading(true);setEntries([]);
@@ -5253,7 +5244,7 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
           el('div',{style:{fontSize:12,opacity:.8,marginTop:6}},lt.dcr+' \u00B7 '+lt.freq),
         ),
         el('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
-          el('button',{onClick:()=>{setEditEntry(null);setShowForm(true);},style:{background:'#fff',color:lt.color,border:'none',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'+ New Batch'),
+          canEdit&&el('button',{onClick:()=>{setEditEntry(null);setShowForm(true);},style:{background:'#fff',color:lt.color,border:'none',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'+ New Batch'),
           el('button',{onClick:()=>exportLogPdf(activeType,filtered,dateFrom,dateTo),style:{background:'rgba(255,255,255,.2)',color:'#fff',border:'1px solid rgba(255,255,255,.4)',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'\uD83D\uDCC4 Export PDF'),
         ),
       ),
@@ -5274,7 +5265,7 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
     :filtered.length===0?el('div',{style:{textAlign:'center',padding:'48px 24px',background:'var(--surface)',borderRadius:12,border:'1px solid var(--border)'}},
         el('div',{style:{fontSize:36,marginBottom:12}},lt.icon),
         el('div',{style:{fontSize:15,fontWeight:700,color:'var(--text)',marginBottom:6}},'No batches yet'),
-        el('button',{onClick:()=>{setEditEntry(null);setShowForm(true);},style:{background:lt.color,color:'#fff',border:'none',borderRadius:8,padding:'10px 24px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',marginTop:8}},'+ New Batch'),
+        canEdit&&el('button',{onClick:()=>{setEditEntry(null);setShowForm(true);},style:{background:lt.color,color:'#fff',border:'none',borderRadius:8,padding:'10px 24px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',marginTop:8}},'+ New Batch'),
       )
     :el('div',{style:{display:'flex',flexDirection:'column',gap:8}},
         filtered.map((entry,i)=>{
