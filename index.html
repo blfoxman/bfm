@@ -132,7 +132,6 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 @keyframes spin{to{transform:rotate(360deg);}}
 @keyframes shake{0%,100%{transform:translateX(0)}10%,30%,50%,70%,90%{transform:translateX(-8px)}20%,40%,60%,80%{transform:translateX(8px)}}
 @keyframes pulse-red{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)}50%{box-shadow:0 0 0 20px rgba(239,68,68,0)}}
-@keyframes pulseReview{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.3),0 0 0 2px rgba(239,68,68,.12)}60%{box-shadow:0 0 0 6px rgba(239,68,68,0),0 0 0 2px rgba(239,68,68,.12)}}
 .on-hold-alert{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(239,68,68,.15);backdrop-filter:blur(2px);animation:shake .5s ease 0s 3;}
 .on-hold-banner{background:#ef4444;color:#fff;padding:32px 40px;border-radius:16px;text-align:center;max-width:420px;box-shadow:0 0 60px rgba(239,68,68,.6);animation:pulse-red 1s infinite;}
 .cancelled-alert{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(239,68,68,.15);backdrop-filter:blur(2px);animation:shake .5s ease 0s 3;}
@@ -3364,6 +3363,7 @@ Create comprehensive meeting notes in this EXACT JSON format (no markdown, just 
 // \u2500\u2500 QMS (Quality Management System) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 const QMS_TABS=[
   {id:'dashboard',label:'Dashboard',ico:'\uD83D\uDCCA'},
+  {id:'sops',label:'SOPs',ico:'\uD83D\uDCCB'},
   {id:'deviations',label:'Deviations',ico:'\u26A0\uFE0F'},
   {id:'capas',label:'CAPAs',ico:'\uD83D\uDD27'},
   {id:'audits',label:'Audits',ico:'\uD83D\uDD0D'},
@@ -3421,7 +3421,7 @@ const PRE_ROLL_SKUS=[
 const PRE_ROLL_FLAVORS={
   'Muha Meds - Mates - THCA Infused 5 x 0.6g':['Berry Blast','Honey Melon','Agave Sunrise','Mango Peach Fusion','Frosty Mint Blueberry','Strawberry Ice Cream','Caramel Apple Gelato','Winter Cookie Crumble','Purple Punch','Biscotti Bomb'],
   'Muha Meds - Mates Reserve - 5 x 0.6g':['Presidential OG','Muha OG','STL Gas','Kush Widow','Super Lemon'],
-  'Bodega Boyz - Shorties':['Banana Honey','Sour Apple','Watermelon Zkittlez','Guava Zkittlez','OJ Hi-C','Pineapple Kush','Peach Kush','Strawberry Haze','Lemon OG','Mango Gelato'],
+  'Bodega Boyz - Shorties':[],
   'Muha Meds 2G Infused Pre Roll':['Banana Pie','Blue Slushie','Cinnamon Cream OG','Desert Gold Chocolate','Grape Stomper','Honey Melon','Lemon Cheesecake','Matcha Gold','Midnight Espresso','PB Jelly','Peaches & Cream','Pineapple Poison','Pumpkin Bliss','Strawberry Lava','Watermelon Punch'],
   'Muha Meds 1G Plain Pre Roll':[],
 };
@@ -3429,7 +3429,7 @@ const PRE_ROLL_NO_FLAVOR_SKUS=['Muha Meds 1G Plain Pre Roll'];
 // Gummies SKU/Flavor dropdown (Batch Tracker \u2014 New Batch)
 const GUMMY_SKUS=['Muha Meds Distillate Gummies'];
 const GUMMY_FLAVORS={
-  'Muha Meds Distillate Gummies':['Mango Mirage','Strawberry Lemon','Sour Apple','Very Berry','Watermelon'],
+  'Muha Meds Distillate Gummies':['Mango Mirage','Strawberry Lemon','Green Apple','Very Berry','Watermelon'],
 };
 // Gummies auto-calculation chain:
 //   Gummy Mixture Used        = Gummy Mixture Batch Weight \u2212 Gummy Mixture Waste
@@ -3447,7 +3447,7 @@ function recalcGummy(logType,f){
   const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
   const mixtureUsed=num(f.gummy_mixture_batch_weight)-num(f.gummy_mixture_waste);
   const sugarCoated=num(f.units_produced)-num(f.total_gummies_waste_presugar);
-  const packaged=(sugarCoated-num(f.rd_testing)-num(f.sugar_coated_waste))/10;
+  const packaged=(sugarCoated-num(f.sugar_coated_waste))/10;
   const expectedPackaged=(mixtureUsed/GUMMY_UNIT_WEIGHT)/10;
   const lower=expectedPackaged*(1-GUMMY_TOLERANCE);
   const upper=expectedPackaged*(1+GUMMY_TOLERANCE);
@@ -3556,17 +3556,9 @@ function recalcInfusedFlower(logType,f){
     packaging_check_status:preRollCheck(expected,actual),
   };
 }
-// BHO biomass sum (mirrors ethanol recalc but for butane_extraction)
-function recalcBHO(logType,f){
-  if(logType!=='butane_extraction') return f;
-  const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
-  const tags=Array.isArray(f.biomass_tags)?f.biomass_tags:[];
-  const total=tags.reduce((s,r)=>s+num(r&&r.weight),0);
-  return{...f,total_biomass_used:String(Math.round(total*100)/100)};
-}
 // Runs every batch-type auto-calculation; each one is a no-op for the wrong logType.
 function recalcBatch(logType,f){
-  return recalcBHO(logType,recalcInfusedFlower(logType,recalcEthanol(logType,recalcPreRoll(logType,recalcCartridge(logType,recalcGummy(logType,f))))));
+  return recalcInfusedFlower(logType,recalcEthanol(logType,recalcPreRoll(logType,recalcCartridge(logType,recalcGummy(logType,f)))));
 }
 // Pre-Rolls has TWO System Check checkpoints against the same Infused Flower
 // Used figure, at different grams-per-joint targets for each production stage.
@@ -3580,7 +3572,6 @@ const PRE_ROLL_JOINT_WEIGHT_2=0.60; // fallback default, grams/joint, Kiefed Pre
 const PRE_ROLL_JOINT_WEIGHTS={
   'Muha Meds 2G Infused Pre Roll':{filled:1.9,kief:2.0},
   'Muha Meds 1G Plain Pre Roll':{filled:1.0,kief:null},
-  'Bodega Boyz - Shorties':{filled:0.7,kief:null},
 };
 function preRollJointWeight(sku){
   return PRE_ROLL_JOINT_WEIGHTS[sku]||{filled:PRE_ROLL_JOINT_WEIGHT_1,kief:PRE_ROLL_JOINT_WEIGHT_2};
@@ -3602,7 +3593,7 @@ function recalcPreRoll(logType,f){
   // Infused Flower check: sum of all ingredients that went into the flower
   // (Flower + THCA + Terpene, plus Live Resin/Decarbed Cured Resin/Distillate
   // for SKUs that use them) should roughly equal Infused Flower Total WT, \u00B110%.
-  const ingredientsSum=num(f.flower_qty)+num(f.trim_qty)+num(f.thca_qty)+num(f.diamond_qty)+num(f.terp_qty)+num(f.live_resin_qty)+num(f.decarbed_resin_qty)+num(f.distillate_qty);
+  const ingredientsSum=num(f.flower_qty)+num(f.thca_qty)+num(f.terp_qty)+num(f.live_resin_qty)+num(f.decarbed_resin_qty)+num(f.distillate_qty);
   const flowerActual=num(f.infused_flower_total_wt);
   // Final Packaging check: for SKUs with a known units-per-package ratio,
   // Total Jar Packaged should roughly equal (joints available for packaging)
@@ -3634,7 +3625,6 @@ function recalcPreRoll(logType,f){
 const PRE_ROLL_UNITS_PER_PACKAGE={
   'Muha Meds 1G Plain Pre Roll':1,
   'Muha Meds 2G Infused Pre Roll':1,
-  'Bodega Boyz - Shorties':4,
 };
 // Generalized SKU\u2192Flavor cascading dropdown config, keyed by batch log type.
 // Any batch type listed here gets the SKU/Flavor special-case rendering in
@@ -3655,17 +3645,15 @@ const SKU_FLAVOR_CONFIG={
 const PRE_ROLL_SKU_INGREDIENTS={
   'Muha Meds - Mates - THCA Infused 5 x 0.6g':['thca_metrc','thca_qty','terp_qty'],
   'Muha Meds - Mates Reserve - 5 x 0.6g':['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'],
-  'Bodega Boyz - Shorties':['trim_metrc','trim_qty','thca_metrc','thca_qty','diamond_metrc','diamond_qty','terp_name','terp_qty','distillate_metrc','distillate_qty'],
+  'Bodega Boyz - Shorties':[],
   'Muha Meds 2G Infused Pre Roll':['thca_metrc','thca_qty','terp_qty'],
   'Muha Meds 1G Plain Pre Roll':[],
 };
-const PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS=['thca_metrc','thca_qty','diamond_metrc','diamond_qty','terp_name','terp_qty','trim_metrc','trim_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'];
+const PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS=['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'];
 // 1G Plain Pre Roll has no kiefing step at all \u2014 the entire Kiefed Preroll
 // section (and its System Check) is hidden for it, not just individual fields.
-const PRE_ROLL_NO_KIEF_SKUS=['Muha Meds 1G Plain Pre Roll','Bodega Boyz - Shorties'];
+const PRE_ROLL_NO_KIEF_SKUS=['Muha Meds 1G Plain Pre Roll'];
 const PRE_ROLL_KIEF_SECTION_KEYS=['_s_kiefed','total_infused_preroll_used','total_infused_preroll_waste','preroll_waste_metrc_confirmed','kief_metrc','kief_qty_used','total_kiefed_infused_joints','kiefed_infused_preroll_metrc','kiefed_metrc_confirmed','_s_kiefed_system_check','kiefed_check_result','kiefed_infused_joints_used','kief_infused_joints_waste','kief_waste_metrc_confirmed'];
-// R&D Testing section only shown for Bodega Boyz Shorties (before final packaging)
-const PRE_ROLL_BBS_RD_KEYS=['_s_bbs_rd','bbs_rd1_result','bbs_rd2_result'];
 // R&D test checkpoints, keyed by batch logType. Each pair is [rd1_key,rd2_key];
 // rd2 only appears once rd1 has been marked Failed. A batch type can have more
 // than one checkpoint (Cartridges has one at Primed Oil and one at Filled
@@ -3719,9 +3707,7 @@ const LOG_TYPES={
     {key:'qty_expired',label:'Quantity of Waste / Expired Product *',type:'text',placeholder:'e.g. 14.2 or 50'},
     {key:'camera_1',label:'Camera #1 Name (Angle 1 of Destruction)',type:'text',placeholder:'Camera name or ID'},
     {key:'camera_2',label:'Camera #2 Name (Angle 2 of Destruction)',type:'text',placeholder:'Camera name or ID'},
-    {key:'method_of_rendering',label:'Method of Rendering',type:'select',options:['Grinding / Mixing with Non-Consumable Solid','Incineration','Composting','Waste Management Company Pickup','Other']},
     {key:'qty_rendered',label:'Quantity of Rendered Waste',type:'text',placeholder:'Total weight/quantity after rendering'},
-    {key:'location_of_waste',label:'Location of Waste',type:'text',placeholder:'e.g. Waste room, vault, dumpster location'},
     {key:'disposal_date',label:'Date of Disposal',type:'date'},
     {key:'disposal_time',label:'Time of Disposal',type:'time'},
     {key:'waste_company',label:'Waste Management Company / Facility Used',type:'text',placeholder:'Licensed waste disposal company name'},
@@ -3799,7 +3785,7 @@ const LOG_TYPES={
     {key:'visitor_name',label:'Visitor Full Name *',type:'text',placeholder:''},
     {key:'visitor_company',label:'Company / Organization',type:'text',placeholder:''},
     {key:'visitor_id',label:'ID Type & Number',type:'text',placeholder:'e.g. MO DL A123456789'},
-    {key:'purpose',label:'Purpose of Visit *',type:'select',options:['Regulatory inspection (DCR)','Regulatory inspection (other)','Vendor / delivery','Maintenance / repair','Audit','Business meeting','Prospective employee','Testing / Lab','Waste Company','Other']},
+    {key:'purpose',label:'Purpose of Visit *',type:'select',options:['Regulatory inspection (DCR)','Regulatory inspection (other)','Vendor / delivery','Maintenance / repair','Audit','Business meeting','Other']},
     {key:'areas_accessed',label:'Areas Accessed *',type:'textarea',placeholder:'List all areas visitor entered'},
     {key:'escorted_by',label:'Escorted By *',type:'text',placeholder:'Employee who supervised visitor'},
     {key:'notes',label:'Notes',type:'textarea',placeholder:''},
@@ -3842,58 +3828,17 @@ const LOG_TYPES={
     {key:'status',label:'Status',type:'select',options:['In Progress','Winterization','Filtration','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
-  butane_extraction:{id:'butane_extraction',category:'batch',label:'BHO Extraction',icon:'\uD83D\uDD25',color:'#ea580c',bg:'#fff7ed',table:'pf_batch_tracker',dcr:'Missouri DCR / METRC \u2014 BHO Batch Production Record',freq:'Per batch',bho:true,fields:[
-    // SKU at top \u2014 drives Section 2 & 3 variant
-    {key:'sku',label:'Product Type *',type:'select',options:['Live Resin','THCA Isolate & HTE','Shatter','Sugar','Crumble','Cured Resin']},
+  butane_extraction:{id:'butane_extraction',category:'batch',label:'Butane Extraction',icon:'\uD83D\uDD25',color:'#ea580c',bg:'#fff7ed',table:'pf_batch_tracker',dcr:'Missouri DCR / METRC \u2014 Batch Production Record',freq:'Per batch',fields:[
+    {key:'batch_number',label:'Batch / Lot Number',type:'text',placeholder:'e.g. BHO-2026-014'},
     {key:'date',label:'Date',type:'date'},
     {key:'operator',label:'Operator / Personnel',type:'text',placeholder:'Who performed the extraction'},
-    // \u2550\u2550 SECTION 1 (all SKUs) \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-    {key:'_s1',label:'--- SECTION 1: BHO PRODUCTION BATCH ---',type:'section'},
-    {key:'bho_batch_metrc',label:'BHO Production Batch METRC Tag *',type:'text',placeholder:'24-digit METRC production batch tag'},
-    {key:'bho_batch_total_weight',label:'Total Weight of BHO Production Batch',type:'text',placeholder:'e.g. 2,400g'},
-    {key:'_s1_biomass',label:'--- BIOMASS USED ---',type:'section'},
-    {key:'biomass_tags',label:'Biomass Tags',type:'text'},
-    {key:'total_biomass_used',label:'Total Biomass Used',type:'display'},
-    {key:'s1_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
-    // \u2550\u2550 SECTION 2: Standard SKUs (Live Resin / Shatter / Sugar / Crumble / Cured Resin) \u2550\u2550
-    {key:'_s2std',label:'--- SECTION 2 ---',type:'section'},
-    {key:'s2_bho_used',label:'BHO Production Batch Used',type:'text',placeholder:'Weight pulled from production batch'},
-    {key:'s2_bho_waste',label:'BHO Production Batch Waste',type:'text',placeholder:'Waste weight'},
-    {key:'s2_bho_waste_metrc',label:'Recorded on METRC?',type:'checkbox'},
-    {key:'s2_prod_ip_metrc',label:'[SKU] (In Progress) METRC #',type:'text',placeholder:'METRC tag for in-progress concentrate'},
-    {key:'s2_prod_ip_weight',label:'[SKU] (In Progress) Weight',type:'text',placeholder:'e.g. 1,850g'},
-    {key:'s2_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
-    // \u2550\u2550 SECTION 3: Standard SKU Final Batch \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-    {key:'_s3std',label:'--- SECTION 3 ---',type:'section'},
-    {key:'s3_final_metrc',label:'[SKU] Final Batch METRC Tag #',type:'text',placeholder:'METRC final batch tag'},
-    {key:'s3_final_weight',label:'[SKU] Total Weight After Off-Gassing',type:'text',placeholder:'e.g. 1,780g'},
-    {key:'s3_final_waste',label:'[SKU] (In Progress) Waste',type:'text',placeholder:'Waste during finalization'},
-    {key:'s3_waste_metrc',label:'Recorded on METRC?',type:'checkbox'},
-    {key:'s3_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
-    // \u2550\u2550 SECTION 2: THCA / HTE \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-    {key:'_s2thca',label:'--- SECTION 2 ---',type:'section'},
-    {key:'s2t_bho_used',label:'BHO Production Batch Used',type:'text',placeholder:'Weight pulled from production batch'},
-    {key:'s2t_bho_waste',label:'BHO Production Batch Waste',type:'text',placeholder:'Waste weight'},
-    {key:'s2t_bho_waste_metrc',label:'Recorded on METRC?',type:'checkbox'},
-    {key:'s2t_thca_ip_metrc',label:'THCA (In Progress) METRC #',type:'text',placeholder:'METRC tag for in-progress THCA isolate'},
-    {key:'s2t_thca_ip_weight',label:'THCA (In Progress) Weight',type:'text',placeholder:'e.g. 800g'},
-    {key:'s2t_hte_ip_metrc',label:'HTE (In Progress) METRC #',type:'text',placeholder:'METRC tag for in-progress HTE'},
-    {key:'s2t_hte_ip_weight',label:'HTE (In Progress) Weight',type:'text',placeholder:'e.g. 1,000g'},
-    {key:'s2t_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
-    // \u2550\u2550 SECTION 3: THCA Final \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-    {key:'_s3thca',label:'--- SECTION 3: THCA FINAL BATCH ---',type:'section'},
-    {key:'s3t_thca_tag',label:'THCA Final Batch METRC Tag #',type:'text',placeholder:'METRC final batch tag for THCA isolate'},
-    {key:'s3t_thca_weight',label:'THCA Total Weight After Off-Gassing',type:'text',placeholder:'e.g. 780g'},
-    {key:'s3t_thca_waste',label:'THCA (In Progress) Waste',type:'text',placeholder:'Waste during THCA finalization'},
-    {key:'s3t_thca_waste_metrc',label:'Recorded on METRC?',type:'checkbox'},
-    {key:'s3t_thca_metrc',label:'Recorded on METRC?',type:'checkbox'},
-    // \u2550\u2550 SECTION 3: HTE Final \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-    {key:'_s3hte',label:'--- SECTION 3: HTE FINAL BATCH ---',type:'section'},
-    {key:'s3t_hte_tag',label:'HTE Final Batch METRC Tag #',type:'text',placeholder:'METRC final batch tag for HTE'},
-    {key:'s3t_hte_weight',label:'HTE Total Weight After Off-Gassing',type:'text',placeholder:'e.g. 960g'},
-    {key:'s3t_hte_waste',label:'HTE (In Progress) Waste',type:'text',placeholder:'Waste during HTE finalization'},
-    {key:'s3t_hte_waste_metrc',label:'Recorded on METRC?',type:'checkbox'},
-    {key:'s3t_hte_metrc',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'strain_input',label:'Strain(s) / Input Material',type:'text',placeholder:'Strain name(s) used'},
+    {key:'input_weight',label:'Input Weight',type:'text',placeholder:'e.g. 5 lbs flower/trim'},
+    {key:'butane_volume',label:'Butane Volume Used',type:'text',placeholder:'e.g. 8 lbs'},
+    {key:'purge_time_temp',label:'Purge Time / Temp',type:'text',placeholder:'e.g. 12 hrs at 90\u00B0F'},
+    {key:'output_weight',label:'Output Weight (Concentrate)',type:'text',placeholder:'e.g. 640g'},
+    {key:'yield_percent',label:'Yield %',type:'text',placeholder:'e.g. 14.1%'},
+    {key:'metrc_tag',label:'METRC Tag #(s)',type:'text',placeholder:'Source and/or output tags'},
     {key:'status',label:'Status',type:'select',options:['In Progress','Purging','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
@@ -3906,13 +3851,8 @@ const LOG_TYPES={
     {key:'_s_infused_flower',label:'--- INFUSED FLOWER ---',type:'section'},
     {key:'flower_metrc',label:'Flower METRC #',type:'text',placeholder:'METRC tag for the source flower'},
     {key:'flower_qty',label:'Flower Used',type:'text',placeholder:'e.g. 1,000g'},
-    {key:'trim_metrc',label:'Trim METRC Tag',type:'text',placeholder:'METRC tag for trim used'},
-    {key:'trim_qty',label:'Trim Used',type:'text',placeholder:'e.g. 500g'},
-    {key:'thca_metrc',label:'THCA Isolate METRC #',type:'text',placeholder:'METRC tag for the THCA isolate used'},
-    {key:'thca_qty',label:'THCA Isolate Used',type:'text',placeholder:'e.g. 200g'},
-    {key:'diamond_metrc',label:'Diamond METRC #',type:'text',placeholder:'METRC tag for the diamonds used'},
-    {key:'diamond_qty',label:'Diamond Used',type:'text',placeholder:'e.g. 50g'},
-    {key:'terp_name',label:'Terpene Name',type:'text',placeholder:'e.g. Blue Zkittlez Terp'},
+    {key:'thca_metrc',label:'THCA #',type:'text',placeholder:'METRC tag for the THCA used'},
+    {key:'thca_qty',label:'THCA Used',type:'text',placeholder:'e.g. 200g'},
     {key:'terp_qty',label:'Terpene Used',type:'text',placeholder:'e.g. 40g'},
     {key:'live_resin_metrc',label:'Live Resin METRC #',type:'text',placeholder:'METRC tag for the live resin used'},
     {key:'live_resin_qty',label:'Live Resin Used',type:'text',placeholder:'e.g. 150g'},
@@ -3934,9 +3874,6 @@ const LOG_TYPES={
     {key:'joints_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_joints_system_check',label:'--- SYSTEM CHECK ---',type:'section'},
     {key:'joints_check_result',label:'System Check',type:'display'},
-    {key:'_s_bbs_rd',label:'--- R&D TESTING ---',type:'section'},
-    {key:'bbs_rd1_result',label:'R&D Test',type:'text'},
-    {key:'bbs_rd2_result',label:'R&D Re-Submit',type:'text'},
     {key:'_s_kiefed',label:'--- INFUSED KIEFED PREROLL ---',type:'section'},
     {key:'total_infused_preroll_used',label:'Total Infused Pre Roll Used',type:'text',placeholder:'Joints used for kiefing'},
     {key:'total_infused_preroll_waste',label:'Total Infused Pre Roll Waste',type:'text',placeholder:'Joints wasted'},
@@ -4036,10 +3973,9 @@ const LOG_TYPES={
     {key:'sugared_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_final_packaging',label:'--- FINAL PACKAGING ---',type:'section'},
     {key:'sugar_coated_used',label:'Total Sugar Coated Gummies Used',type:'text',placeholder:'Amount used for packaging'},
-    {key:'rd_testing',label:'Taken for R&D Testing',type:'text',placeholder:'Units pulled for R&D / QC testing'},
     {key:'sugar_coated_waste',label:'Total Sugar Coated Gummies Waste',type:'text',placeholder:'Amount wasted during packaging'},
     {key:'sugar_coated_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
-    {key:'total_packaged_gummies',label:'Total Packaged Gummies (auto-calculated)',type:'display'},
+    {key:'total_packaged_gummies',label:'Total Packaged Gummies',type:'text',placeholder:'Final packaged unit count'},
     {key:'final_packaged_gummies_metrc',label:'Final Packaged Gummies METRC#',type:'text',placeholder:'METRC tag for packaged units'},
     {key:'gummy_mandatory_test',label:'Mandatory Testing',type:'select',options:['Not Submitted','Submitted','Passed','Failed']},
     {key:'packaging_metrc_confirmed_gummy',label:'Recorded on METRC?',type:'checkbox'},
@@ -4115,8 +4051,6 @@ const LOG_TYPES={
 };
 
 const BATCH_TYPE_IDS=['ethanol_extraction','butane_extraction','pre_rolls','cartridges','gummies','infused_flower','moon_rocks','snow_caps'];
-// BHO biomass tags init helper (used in LogEntryForm init)
-// butane_extraction uses biomass_tags array just like ethanol_extraction
 
 // jsPDF's built-in fonts (helvetica/times/courier) only support WinAnsi/Latin-1
 // encoding. Any character outside that range (emoji, checkmarks \u2713, warning
@@ -4312,7 +4246,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       else if(fl.type==='checkbox')f[fl.key]=false;
       else if(SKU_FLAVOR_CONFIG[logType]&&fl.key==='sku')f[fl.key]=SKU_FLAVOR_CONFIG[logType].skus[0];
       else if(SKU_FLAVOR_CONFIG[logType]&&fl.key==='flavor')f[fl.key]=(SKU_FLAVOR_CONFIG[logType].flavors[SKU_FLAVOR_CONFIG[logType].skus[0]]||[])[0]||'';
-      else if((logType==='ethanol_extraction'||logType==='butane_extraction')&&fl.key==='biomass_tags')f[fl.key]=[];
+      else if(logType==='ethanol_extraction'&&fl.key==='biomass_tags')f[fl.key]=[];
       else if(fl.type==='select')f[fl.key]=fl.options[0];
       else f[fl.key]='';
     });
@@ -4376,7 +4310,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       if(editData){
         const update={...form,signature_image:sig||editData.signature_image||null,updated_by:cu.name,updated_at:new Date().toISOString()};
         if(requiresEditNote){
-          update.edit_history=[...(editData.edit_history||[]),{by:cu.name,role:cu.role||'',at:update.updated_at,note:editNote.trim()}];
+          update.edit_history=[...(editData.edit_history||[]),{by:cu.name,at:update.updated_at,note:editNote.trim()}];
         }
         await db.update(lt.table,editData.id,update);
         onSave({...editData,...update});
@@ -4389,15 +4323,6 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
     setSaving(false);
   }
   const INP=(f)=>{
-    // ── BHO SKU gate: must run before generic section/checkbox renderers ─────
-    if(logType==='butane_extraction'){
-      const sku=form.sku||'Live Resin';
-      const isTHCA=sku==='THCA Isolate & HTE';
-      const STD_KEYS=['_s2std','s2_bho_used','s2_bho_waste','s2_bho_waste_metrc','s2_prod_ip_metrc','s2_prod_ip_weight','s2_metrc_confirmed','_s3std','s3_final_metrc','s3_final_weight','s3_final_waste','s3_waste_metrc','s3_metrc_confirmed'];
-      const THCA_KEYS=['_s2thca','s2t_bho_used','s2t_bho_waste','s2t_bho_waste_metrc','s2t_thca_ip_metrc','s2t_thca_ip_weight','s2t_hte_ip_metrc','s2t_hte_ip_weight','s2t_metrc_confirmed','_s3thca','s3t_thca_tag','s3t_thca_weight','s3t_thca_waste','s3t_thca_waste_metrc','s3t_thca_metrc','_s3hte','s3t_hte_tag','s3t_hte_weight','s3t_hte_waste','s3t_hte_waste_metrc','s3t_hte_metrc'];
-      if(isTHCA&&STD_KEYS.includes(f.key)) return null;
-      if(!isTHCA&&THCA_KEYS.includes(f.key)) return null;
-    }
     if(f.type==='section'){
       const isOptional=f.label.includes('Optional');
       return el('div',{key:f.key,style:{background:isOptional?'#7c3aed':'var(--accent)',color:'#fff',borderRadius:8,padding:'8px 14px',marginBottom:12,marginTop:8,fontSize:11,fontWeight:800,letterSpacing:'.5px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
@@ -4525,25 +4450,6 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         ),
       );
     }
-    if(logType==='gummies'&&f.key==='total_packaged_gummies'){
-      const nv=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
-      const sugarCoated=nv(form.total_sugar_coated_gummies);
-      const rdTesting=nv(form.rd_testing);
-      const waste=nv(form.sugar_coated_waste);
-      const packaged=Math.max(0,(sugarCoated-rdTesting-waste)/10);
-      return el('div',{key:f.key,className:'fg'},
-        el('label',null,'Total Packaged Gummies (auto-calculated)'),
-        el('div',{style:{width:'100%',background:'rgba(217,119,6,.08)',border:'2px solid #d97706',borderRadius:'var(--rs)',padding:'11px 16px',color:'#d97706',fontFamily:'inherit',fontWeight:800,fontSize:18,boxSizing:'border-box',display:'flex',alignItems:'center',gap:10}},
-          el('span',{style:{fontSize:22}},'🍬'),
-          packaged.toFixed(2)+' bags',
-        ),
-        el('div',{style:{fontSize:11,color:'var(--text3)',marginTop:5,lineHeight:1.5}},
-          '\u2211 Formula: (Total Sugar Coated \u2212 R&D Testing \u2212 Waste) \u00F7 10',
-          el('br'),
-          '= ('+sugarCoated.toFixed(2)+' \u2212 '+rdTesting.toFixed(2)+' \u2212 '+waste.toFixed(2)+') \u00F7 10 = '+packaged.toFixed(2),
-        ),
-      );
-    }
     if(logType==='gummies'&&f.key==='system_check_result'){
       const status=form.system_check_status||'pass';
       const cfg={
@@ -4593,83 +4499,6 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         el('div',{style:{width:'100%',background:'var(--surface2)',border:'1px dashed var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,fontWeight:700,boxSizing:'border-box'}},form.total_biomass_used||'0'),
       );
     }
-    // ── BHO Extraction: hide sections/fields that don't apply to the selected SKU ──
-    if(logType==='butane_extraction'){
-      const sku=form.sku||'Live Resin';
-      const isTHCA=sku==='THCA Isolate & HTE';
-
-      // ── SKU dropdown ───────────────────────────────────────────────────────
-      if(f.key==='sku'){
-        return el('div',{key:f.key,className:'fg'},
-          el('label',null,f.label),
-          el('select',{value:sku,onChange:ev=>setForm(p=>recalcBatch(logType,{...p,sku:ev.target.value})),
-            style:{width:'100%',background:'var(--bg)',border:'2px solid #ea580c',borderRadius:'var(--rs)',padding:'10px 14px',color:'var(--text)',fontFamily:'inherit',fontSize:14,fontWeight:700}},
-            ['Live Resin','THCA Isolate & HTE','Shatter','Sugar','Crumble','Cured Resin'].map(o=>el('option',{key:o,value:o},o))
-          ),
-        );
-      }
-
-      // ── Section headers ────────────────────────────────────────────────────
-      const secStyle=(bg)=>({background:bg,color:'#fff',borderRadius:8,padding:'9px 14px',marginBottom:12,marginTop:8,fontSize:12,fontWeight:800,letterSpacing:'.5px',textTransform:'uppercase'});
-      if(f.key==='_s2std') return el('div',{key:f.key,style:secStyle('#ea580c')},'Section 2: '+sku+' \u2014 In Progress');
-      if(f.key==='_s3std') return el('div',{key:f.key,style:secStyle('#ea580c')},'Section 3: '+sku+' \u2014 Final Batch');
-      if(f.key==='_s2thca') return el('div',{key:f.key,style:secStyle('#ea580c')},'Section 2: THCA / HTE \u2014 In Progress');
-      if(f.key==='_s3thca') return el('div',{key:f.key,style:secStyle('#7c3aed')},'Section 3: THCA \u2014 Final Batch');
-      if(f.key==='_s3hte') return el('div',{key:f.key,style:secStyle('#0891b2')},'Section 3: HTE \u2014 Final Batch');
-
-      // ── Biomass tags: weight FIRST, then METRC tag ─────────────────────────
-      if(f.key==='biomass_tags'){
-        const tags=Array.isArray(form.biomass_tags)?form.biomass_tags:[];
-        const base={background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 12px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'};
-        return el('div',{key:f.key,className:'fg'},
-          el('label',null,'Biomass Used \u2014 add as many METRC tags as needed'),
-          el('div',{style:{display:'flex',flexDirection:'column',gap:8}},
-            tags.length===0&&el('div',{style:{fontSize:12,color:'var(--text3)',padding:'4px 0'}},'No biomass tags yet \u2014 click below to add.'),
-            tags.map((row,i)=>el('div',{key:i,style:{display:'flex',gap:8,alignItems:'center'}},
-              el('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',background:'#ea580c',color:'#fff',borderRadius:6,width:28,height:28,fontSize:11,fontWeight:800,flexShrink:0}},i+1),
-              // weight left, METRC tag right (weight in front per spec)
-              el('input',{type:'text',value:(row&&row.weight)||'',placeholder:'Weight (g)',
-                onChange:ev=>{const t=tags.map((r,j)=>j===i?{...r,weight:ev.target.value}:r);setF('biomass_tags',t);},
-                style:{...base,width:110,flexShrink:0}}),
-              el('input',{type:'text',value:(row&&row.tag)||'',placeholder:'Biomass METRC Tag #',
-                onChange:ev=>{const t=tags.map((r,j)=>j===i?{...r,tag:ev.target.value}:r);setF('biomass_tags',t);},
-                style:{...base,flex:1}}),
-              el('button',{type:'button',onClick:()=>setF('biomass_tags',tags.filter((_,j)=>j!==i)),
-                style:{background:'#fee2e2',color:'#dc2626',border:'none',borderRadius:6,padding:'7px 11px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',flexShrink:0}},'\u2715'),
-            )),
-            el('button',{type:'button',onClick:()=>setF('biomass_tags',[...tags,{tag:'',weight:''}]),
-              style:{background:'#ea580c',color:'#fff',border:'none',borderRadius:8,padding:'8px 16px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',alignSelf:'flex-start',marginTop:4}},'+ Add Biomass Tag'),
-          ),
-        );
-      }
-
-      // ── Total Biomass Used: auto-sum banner ────────────────────────────────
-      if(f.key==='total_biomass_used'){
-        const tags=Array.isArray(form.biomass_tags)?form.biomass_tags:[];
-        const nv=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
-        const total=tags.reduce((s,r)=>s+nv(r&&r.weight),0);
-        return el('div',{key:f.key,className:'fg'},
-          el('label',null,'Total Biomass Used'),
-          el('div',{style:{width:'100%',background:'rgba(234,88,12,.08)',border:'2px solid #ea580c',borderRadius:'var(--rs)',padding:'11px 16px',color:'#ea580c',fontFamily:'inherit',fontSize:18,fontWeight:800,boxSizing:'border-box',display:'flex',alignItems:'center',gap:10}},
-            el('span',{style:{fontSize:22}},'\u2211'),
-            total.toFixed(2)+'g',
-            el('span',{style:{fontSize:12,fontWeight:400,color:'var(--text3)',marginLeft:4}},'('+tags.length+' biomass tag'+(tags.length!==1?'s':'')+')'),
-          ),
-        );
-      }
-
-      // ── Standard SKU: inject SKU name into Section 2 & 3 field labels ─────
-      const skuLabel={s2_prod_ip_metrc:sku+' (In Progress) METRC #',s2_prod_ip_weight:sku+' (In Progress) Weight',s3_final_metrc:sku+' Final Batch METRC Tag #',s3_final_weight:sku+' Total Weight After Off-Gassing',s3_final_waste:sku+' (In Progress) Waste'}[f.key];
-      if(skuLabel){
-        return el('div',{key:f.key,className:'fg'},
-          el('label',null,skuLabel),
-          el('input',{type:'text',value:form[f.key]||'',onChange:ev=>setF(f.key,ev.target.value),
-            placeholder:f.placeholder||'',
-            style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
-        );
-      }
-      // all other BHO fields fall through to generic renderer
-    }
     if(logType==='ethanol_extraction'&&['ethanol_crude_weight','decarbed_crude_weight','total_distillate_produced'].includes(f.key)){
       const suggestion={ethanol_crude_weight:['ethanol_crude_suggested','77%'],decarbed_crude_weight:['decarbed_crude_suggested','20%'],total_distillate_produced:['distillate_suggested','16%']}[f.key];
       return el('div',{key:f.key,className:'fg'},
@@ -4700,44 +4529,6 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       const allowed=PRE_ROLL_SKU_INGREDIENTS[form.sku]||[];
       if(!allowed.includes(f.key)) return null;
       // else fall through to the generic text-field renderer below
-    }
-    // ── Bodega Boyz Shorties R&D Testing block (before final packaging) ───────
-    if(logType==='pre_rolls'&&form.sku==='Bodega Boyz - Shorties'){
-      if(f.key==='_s_bbs_rd'){
-        return el('div',{key:f.key,style:{background:'#0891b2',color:'#fff',borderRadius:8,padding:'9px 14px',marginBottom:12,marginTop:8,fontSize:12,fontWeight:800,letterSpacing:'.5px',textTransform:'uppercase'}},
-          '\uD83E\uDDEA R&D Testing'
-        );
-      }
-      const isBbsRd1=f.key==='bbs_rd1_result';
-      const isBbsRd2=f.key==='bbs_rd2_result';
-      if(isBbsRd1||isBbsRd2){
-        // rd2 only shows if rd1 === 'Failed'
-        if(isBbsRd2&&form.bbs_rd1_result!=='Failed') return null;
-        const passed=form.bbs_rd1_result==='Passed'||form.bbs_rd2_result==='Passed';
-        const color=opt=>opt==='Passed'?'#16a34a':'#dc2626';
-        const label=isBbsRd1?'R&D Test':'R&D Re-Submit';
-        return el('div',{key:f.key,className:'fg'},
-          el('label',null,label),
-          el('div',{style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
-            ['Passed','Failed'].map(opt=>el('button',{key:opt,type:'button',onClick:()=>setF(f.key,form[f.key]===opt?'':opt),
-              style:{padding:'9px 22px',borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',
-                background:form[f.key]===opt?color(opt):'var(--bg)',
-                color:form[f.key]===opt?'#fff':'var(--text2)',
-                border:'2px solid '+(form[f.key]===opt?color(opt):'var(--border)'),
-              }},(form[f.key]===opt?'\u2713 ':'')+opt)),
-            form[f.key]==='Passed'&&el('span',{style:{fontSize:12,color:'#16a34a',fontWeight:700}},'\u2713 Passed \u2014 proceed to Final Packaging'),
-            form[f.key]==='Failed'&&isBbsRd1&&el('span',{style:{fontSize:12,color:'#dc2626',fontWeight:700}},'\u26A0 Failed \u2014 re-submit below'),
-          ),
-          // show resubmit banner if this is rd1 and it failed
-          isBbsRd1&&form.bbs_rd1_result==='Failed'&&!form.bbs_rd2_result&&el('div',{style:{marginTop:8,background:'#fef2f2',border:'1px solid #fca5a5',borderRadius:8,padding:'8px 12px',fontSize:12,color:'#dc2626',fontWeight:600}},
-            '\u26A0 Re-submit required before proceeding to Final Packaging.'
-          ),
-        );
-      }
-      // Gate Final Packaging: hide if R&D not yet passed
-      const bbsRdPassed=form.bbs_rd1_result==='Passed'||form.bbs_rd2_result==='Passed';
-      const FINAL_PKG_KEYS=['_s_final_packaging','kiefed_infused_joints_used','kief_infused_joints_waste','kief_waste_metrc_confirmed','total_jar_packaged','final_packaged_tag','packaging_check_result','rd1_result','rd2_result','mandatory_testing','packaging_metrc_confirmed'];
-      if(!bbsRdPassed&&FINAL_PKG_KEYS.includes(f.key)) return null;
     }
     {
       const rdPairs=RD_TEST_PAIRS[logType]||[];
@@ -4790,7 +4581,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       ),
       el('div',{className:'mbd'},
         el('div',{style:{background:'rgba(30,58,95,.04)',border:'1px solid rgba(30,58,95,.1)',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:'var(--text2)'}},'\uD83D\uDCCB Fields marked * are required. This record is timestamped and signed \u2014 legally valid for DCR inspections.'),
-        lt.fields.filter(f=>!(logType==='pre_rolls'&&PRE_ROLL_NO_KIEF_SKUS.includes(form.sku)&&PRE_ROLL_KIEF_SECTION_KEYS.includes(f.key))&&!(logType==='pre_rolls'&&form.sku!=='Bodega Boyz - Shorties'&&PRE_ROLL_BBS_RD_KEYS.includes(f.key))).map(f=>INP(f)),
+        lt.fields.filter(f=>!(logType==='pre_rolls'&&PRE_ROLL_NO_KIEF_SKUS.includes(form.sku)&&PRE_ROLL_KIEF_SECTION_KEYS.includes(f.key))).map(f=>INP(f)),
         // File attachments
         el('div',{style:{borderTop:'1px solid var(--border)',paddingTop:16,marginTop:8,marginBottom:16}},
           el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
@@ -5220,9 +5011,9 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
   // in fields still blank — but any field that already has a value is locked
   // read-only for them (they cannot go back and change what's already there;
   // only a full editor with a logged reason can do that).
-  const canEdit=isElevated||isAdmin;
+  const canEdit=isElevated||isAdmin||hasRole(cu,'production_manager');
   const canDelete=isElevated||isAdmin;
-  const canOpen=restricted==='lead'||restricted==='pm';
+  const canOpen=restricted==='lead';
 
   React.useEffect(()=>{
     setLoading(true);setEntries([]);
@@ -5246,7 +5037,7 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
           el('div',{style:{fontSize:12,opacity:.8,marginTop:6}},lt.dcr+' \u00B7 '+lt.freq),
         ),
         el('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
-          canEdit&&el('button',{onClick:()=>{setEditEntry(null);setShowForm(true);},style:{background:'#fff',color:lt.color,border:'none',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'+ New Batch'),
+          el('button',{onClick:()=>{setEditEntry(null);setShowForm(true);},style:{background:'#fff',color:lt.color,border:'none',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'+ New Batch'),
           el('button',{onClick:()=>exportLogPdf(activeType,filtered,dateFrom,dateTo),style:{background:'rgba(255,255,255,.2)',color:'#fff',border:'1px solid rgba(255,255,255,.4)',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'\uD83D\uDCC4 Export PDF'),
         ),
       ),
@@ -5267,42 +5058,15 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
     :filtered.length===0?el('div',{style:{textAlign:'center',padding:'48px 24px',background:'var(--surface)',borderRadius:12,border:'1px solid var(--border)'}},
         el('div',{style:{fontSize:36,marginBottom:12}},lt.icon),
         el('div',{style:{fontSize:15,fontWeight:700,color:'var(--text)',marginBottom:6}},'No batches yet'),
-        canEdit&&el('button',{onClick:()=>{setEditEntry(null);setShowForm(true);},style:{background:lt.color,color:'#fff',border:'none',borderRadius:8,padding:'10px 24px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',marginTop:8}},'+ New Batch'),
+        el('button',{onClick:()=>{setEditEntry(null);setShowForm(true);},style:{background:lt.color,color:'#fff',border:'none',borderRadius:8,padding:'10px 24px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',marginTop:8}},'+ New Batch'),
       )
     :el('div',{style:{display:'flex',flexDirection:'column',gap:8}},
-        filtered.map((entry,i)=>{
-          const checks=BATCH_METRC_CHECKLIST[activeType]||[];
-          const isDone=checks.length>0&&checks.every(c=>entry[c.key]===true||entry[c.key]==='true'||entry[c.key]===1);
-          const needsReview=!isDone&&entry.needs_review&&(isAdmin||isElevated);
-          return el('div',{key:entry.id||i,style:{
-            background:needsReview?'rgba(239,68,68,.04)':isDone?'rgba(22,163,74,.06)':'#ffffff',
-            border:'1px solid '+(needsReview?'rgba(239,68,68,.35)':isDone?'rgba(22,163,74,.35)':'var(--border)'),
-            borderLeft:'4px solid '+(needsReview?'#ef4444':isDone?'#16a34a':lt.color),
-            borderRadius:12,padding:'14px 16px',
-            boxShadow:needsReview?'0 0 0 2px rgba(239,68,68,.12)':isDone?'0 1px 4px rgba(22,163,74,.08)':'0 1px 3px rgba(15,23,42,.04)',
-            opacity:isDone?0.82:1,
-            animation:needsReview?'pulseReview 2s ease-in-out infinite':undefined,
-          }},
+        filtered.map((entry,i)=>el('div',{key:entry.id||i,style:{background:'#ffffff',border:'1px solid var(--border)',borderRadius:12,padding:'14px 16px',boxShadow:'0 1px 3px rgba(15,23,42,.04)'}},
           el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,flexWrap:'wrap'}},
             el('div',{style:{flex:1}},
               el('div',{style:{display:'flex',gap:8,marginBottom:6,flexWrap:'wrap',alignItems:'center'}},
-                el('span',{style:{fontSize:12,fontWeight:700,color:needsReview?'#ef4444':isDone?'#16a34a':lt.color}},lt.icon+' '+(entry.batch_number||'#'+(filtered.length-i))),
-                isDone&&el('span',{style:{fontSize:11}},'\u2705'),
-                needsReview&&el('span',{style:{
-                  display:'inline-flex',alignItems:'center',gap:4,
-                  background:'#ef4444',color:'#fff',
-                  borderRadius:6,padding:'3px 10px',fontSize:11,fontWeight:800,
-                  letterSpacing:'.3px',animation:'pulseReview 2s ease-in-out infinite',
-                }},'\u26A0\uFE0F NEEDS REVIEW'),
-                needsReview&&el('span',{style:{fontSize:11,color:'#ef4444',fontWeight:600}},
-                  'Edited by '+entry.needs_review_by+' \u2014 '+new Date(entry.needs_review_since).toLocaleString()
-                ),
-                entry.status&&el('span',{style:{
-                  background:isDone?'rgba(22,163,74,.15)':lt.color+'20',
-                  color:isDone?'#16a34a':lt.color,
-                  borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:700,
-                  border:isDone?'1px solid rgba(22,163,74,.3)':'none',
-                }},entry.status),
+                el('span',{style:{fontSize:12,fontWeight:700,color:lt.color}},lt.icon+' '+(entry.batch_number||'#'+(filtered.length-i))),
+                entry.status&&el('span',{style:{background:lt.color+'20',color:lt.color,borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:700}},entry.status),
                 el('span',{style:{fontSize:12,color:'var(--text2)'}},entry.date||''),
                 el('span',{style:{fontSize:12,color:'var(--text2)'}},'\u00B7 '+(entry.submitted_by||'')),
                 entry.signature_image&&el('span',{style:{background:'rgba(22,163,74,.1)',color:'#16a34a',borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:700}},'\u270D\uFE0F Signed'),
@@ -5318,21 +5082,15 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
                   el('div',{style:{color:'var(--text2)',marginTop:2}},h.note),
                 )),
               ),
-              el(MetrcStatusStrip,{entry,logType:activeType}),
             ),
             el('div',{style:{display:'flex',gap:6,flexShrink:0,flexWrap:'wrap'}},
-              needsReview&&el('button',{onClick:async()=>{
-                const upd={needs_review:false,needs_review_since:null,needs_review_by:null};
-                await db.update(lt.table,entry.id,upd);
-                setEntries(p=>p.map(e=>e.id===entry.id?{...e,...upd}:e));
-              },style:{background:'#ef4444',color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',fontFamily:'inherit',fontSize:12,fontWeight:700,cursor:'pointer'}},'\u2713 Mark Reviewed'),
               el('button',{onClick:()=>exportLogPdf(activeType,[entry],'',''),className:'btn b-ghost btn-sm'},'PDF'),
               canEdit&&el('button',{onClick:()=>{setEditEntry(entry);setShowForm(true);},className:'btn b-ghost btn-sm'},'Edit'),
               !canEdit&&canOpen&&el('button',{onClick:()=>{setEditEntry(entry);setShowForm(true);},className:'btn b-ghost btn-sm'},'\uD83D\uDD13 Open'),
               canDelete&&el('button',{onClick:async()=>{if(!confirm('Delete this batch record?'))return;await db.remove(lt.table,entry.id);setEntries(p=>p.filter(e=>e.id!==entry.id));},className:'btn b-red btn-sm'},'Delete'),
             ),
           ),
-        );})
+        ))
       ),
     (showForm||editEntry)&&el(LogEntryForm,{logType:activeType,cu,SUPA_URL,SUPA_KEY,H,
       editData:editEntry,
@@ -5346,95 +5104,7 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}){
   );
 }
 
-// ── METRC checklist config keyed by batch type ────────────────────────────────
-// Each entry: { label, key } where key is the boolean checkbox field in the record.
-const BATCH_METRC_CHECKLIST={
-  gummies:[
-    {label:'Gummy Mixture',key:'mixture_metrc_confirmed'},
-    {label:'Gummy Mixture Waste',key:'gummy_mixture_waste_metrc_confirmed'},
-    {label:'Gummy Production Batch',key:'production_metrc_confirmed'},
-    {label:'Production Batch Waste',key:'gummies_waste_presugar_metrc_confirmed'},
-    {label:'Sugar Coated Gummies',key:'sugared_metrc_confirmed'},
-    {label:'Sugar Coated Waste',key:'sugar_coated_waste_metrc_confirmed'},
-    {label:'Final Packaging',key:'packaging_metrc_confirmed_gummy'},
-  ],
-  pre_rolls:[
-    {label:'Infused Flower',key:'flower_metrc_confirmed'},
-    {label:'Infused Flower Waste',key:'infused_flower_waste_metrc_confirmed'},
-    {label:'Infused Joints',key:'joints_metrc_confirmed'},
-    {label:'Infused Joints Waste',key:'preroll_waste_metrc_confirmed'},
-    {label:'Infused Kiefed Joints',key:'kiefed_metrc_confirmed'},
-    {label:'Infused Kiefed Joints Waste',key:'kief_waste_metrc_confirmed'},
-    {label:'Final Packaging',key:'packaging_metrc_confirmed'},
-  ],
-  ethanol_extraction:[
-    {label:'Biomass / Source',key:'biomass_metrc_confirmed'},
-    {label:'Crude Oil',key:'crude_metrc_confirmed'},
-    {label:'Distillate',key:'distillate_metrc_confirmed'},
-    {label:'Waste',key:'ethanol_waste_metrc_confirmed'},
-  ],
-  butane_extraction:[
-    {label:'Section 1',key:'s1_metrc_confirmed'},
-    {label:'Section 2 Waste',key:'s2_bho_waste_metrc'},
-    {label:'Section 2',key:'s2_metrc_confirmed'},
-    {label:'Section 3 Waste',key:'s3_waste_metrc'},
-    {label:'Section 3',key:'s3_metrc_confirmed'},
-  ],
-  cartridges:[
-    {label:'Primed Oil',key:'primed_metrc_confirmed'},
-    {label:'Primed Oil Waste',key:'oil_waste_metrc_confirmed'},
-    {label:'Filled Hardware',key:'filled_metrc_confirmed'},
-    {label:'Filled Hardware Waste',key:'cart_waste_metrc_confirmed'},
-    {label:'Final Packaging',key:'packaged_metrc_confirmed'},
-  ],
-  infused_flower:[
-    {label:'Flower Batch',key:'if_flower_metrc_confirmed'},
-    {label:'Distillate',key:'if_distillate_metrc_confirmed'},
-    {label:'Infused Flower',key:'if_metrc_confirmed'},
-    {label:'Waste',key:'if_waste_metrc_confirmed'},
-  ],
-  moon_rocks:[
-    {label:'Flower',key:'mr_flower_metrc_confirmed'},
-    {label:'Oil',key:'mr_oil_metrc_confirmed'},
-    {label:'Kief',key:'mr_kief_metrc_confirmed'},
-    {label:'Waste',key:'mr_waste_metrc_confirmed'},
-  ],
-  snow_caps:[
-    {label:'Base Product',key:'sc_base_metrc_confirmed'},
-    {label:'Kief',key:'sc_kief_metrc_confirmed'},
-    {label:'Waste',key:'sc_waste_metrc_confirmed'},
-  ],
-};
-
-function MetrcStatusStrip({entry,logType}){
-  const checks=BATCH_METRC_CHECKLIST[logType];
-  if(!checks||checks.length===0) return null;
-  const done=checks.filter(c=>entry[c.key]===true||entry[c.key]==='true'||entry[c.key]===1);
-  const total=checks.length;
-  const allDone=done.length===total;
-  return el('div',{style:{marginTop:10,borderTop:'1px solid var(--border)',paddingTop:8,display:'flex',flexDirection:'column',gap:5}},
-    el('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:2}},
-      el('span',{style:{fontSize:10,fontWeight:800,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.6px'}},'METRC Status'),
-      el('span',{style:{fontSize:10,fontWeight:700,color:allDone?'#16a34a':'#d97706'}},done.length+'/'+total+' recorded'),
-      !allDone&&el('span',{style:{fontSize:10,color:'#dc2626',fontWeight:600}},'\u26A0 '+( total-done.length)+' pending'),
-    ),
-    el('div',{style:{display:'flex',flexWrap:'wrap',gap:5}},
-      checks.map(c=>{
-        const checked=entry[c.key]===true||entry[c.key]==='true'||entry[c.key]===1;
-        return el('span',{key:c.key,style:{
-          display:'inline-flex',alignItems:'center',gap:4,
-          padding:'3px 9px',borderRadius:20,fontSize:11,fontWeight:600,
-          background:checked?'rgba(22,163,74,.1)':'rgba(220,38,38,.07)',
-          color:checked?'#16a34a':'#dc2626',
-          border:'1px solid '+(checked?'rgba(22,163,74,.25)':'rgba(220,38,38,.2)'),
-        }},
-          el('span',{style:{fontSize:12}},checked?'\u2713':'\u25CB'),
-          c.label,
-        );
-      }),
-    ),
-  );
-}
+const RISK_CATEGORIES=['Regulatory','Food Safety / GMP','Supplier','Equipment','Personnel','Cybersecurity','Environmental','Financial','Operational','Quality'];
 const RISK_LIKELIHOOD=['1 - Rare','2 - Unlikely','3 - Possible','4 - Likely','5 - Almost Certain'];
 const RISK_IMPACT=['1 - Negligible','2 - Minor','3 - Moderate','4 - Major','5 - Catastrophic'];
 
@@ -7028,7 +6698,7 @@ function SupplierTab({cu,isElevated,suppliers,setSuppliers,filterByLic,handleSav
   return null;
 }
 
-function QMS({cu,users,tasks,sops,deviations,setDeviations,capas,setCapas,audits,setAudits,changes,setChanges,complaints,setComplaints,suppliers,setSuppliers,corrective,setCorrective}){
+function QMS({cu,users,tasks,sops,setSops,deviations,setDeviations,capas,setCapas,audits,setAudits,changes,setChanges,complaints,setComplaints,suppliers,setSuppliers,corrective,setCorrective}){
   const[tab,setTab]=useState('dashboard');
   const[showNew,setNew]=useState(false);
   const[sel,setSel]=useState(null);
@@ -7192,6 +6862,7 @@ function QMS({cu,users,tasks,sops,deviations,setDeviations,capas,setCapas,audits
     ),
 
     // \u2500\u2500 DASHBOARD \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    tab==='sops'&&el(SOPs,{sops,setSops,cu,users}),
     tab==='dashboard'&&el('div',null,
       el('div',{className:'g4',style:{marginBottom:20}},
         [{l:'Open Deviations',v:openDeviations.length,c:openDeviations.length>0?'var(--red)':'var(--green)',ico:'\u26A0\uFE0F'},
@@ -9278,118 +8949,27 @@ const LICENSE_CHART_TIERS=[
   ]},
   {label:'Production & operations',color:'#be185d',bg:'#fdf2f8',roles:[
     {title:'Production Manager',name:'Zak Knowles'},
-    {title:'Extraction Manager',name:'Amir Yrigoyen'},
+    {title:'Extraction Manager',name:'Juan Marmolejo'},
   ]},
 ];
-// ── ORG CHART NODE ────────────────────────────────────────────────────────────
-function OrgNode({node,depth=0}){
-  const[expanded,setExpanded]=useState(true);
-  const hasChildren=node.children&&node.children.length>0;
-  const colors=['#1e3a5f','#2d5282','#0891b2','#7c3aed','#be185d','#ea580c','#065f46'];
-  const color=colors[depth%colors.length];
-  return el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',position:'relative'}},
-    // Connector line from parent
-    depth>0&&el('div',{style:{width:2,height:24,background:'var(--border)',flexShrink:0}}),
-    // Node card
-    el('div',{
-      onClick:()=>hasChildren&&setExpanded(e=>!e),
-      style:{
-        background:'#fff',border:'2px solid '+color,borderRadius:12,padding:'12px 18px',
-        minWidth:180,maxWidth:220,textAlign:'center',position:'relative',
-        cursor:hasChildren?'pointer':'default',
-        boxShadow:'0 2px 8px rgba(15,23,42,.1)',transition:'all .15s',
-        userSelect:'none',
-      },
-      onMouseEnter:hasChildren?ev=>{ev.currentTarget.style.transform='translateY(-2px)';ev.currentTarget.style.boxShadow='0 6px 20px rgba(15,23,42,.15)';ev.currentTarget.style.borderColor=color;}:undefined,
-      onMouseLeave:hasChildren?ev=>{ev.currentTarget.style.transform='translateY(0)';ev.currentTarget.style.boxShadow='0 2px 8px rgba(15,23,42,.1)';}:undefined,
-    },
-      el('div',{style:{fontSize:9,fontWeight:800,color:color,textTransform:'uppercase',letterSpacing:'.8px',marginBottom:4}},node.dept||''),
-      el('div',{style:{fontSize:13,fontWeight:800,color:'#0f172a',lineHeight:1.3,marginBottom:3}},node.title),
-      node.name&&el('div',{style:{fontSize:12,fontWeight:600,color:color,marginTop:4,padding:'3px 8px',background:color+'15',borderRadius:6,display:'inline-block'}},node.name),
-      node.note&&el('div',{style:{fontSize:10,color:'#64748b',marginTop:6,lineHeight:1.4}},node.note),
-      hasChildren&&el('div',{style:{position:'absolute',bottom:-12,left:'50%',transform:'translateX(-50%)',width:22,height:22,borderRadius:'50%',background:color,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:800,border:'2px solid #fff',zIndex:2,boxShadow:'0 1px 4px rgba(0,0,0,.2)'}},expanded?'\u2212':'+'),
-    ),
-    // Children
-    hasChildren&&expanded&&el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center'}},
-      el('div',{style:{width:2,height:12,background:'var(--border)'}}),
-      el('div',{style:{display:'flex',gap:0,alignItems:'flex-start',position:'relative'}},
-        // Horizontal connector bar
-        node.children.length>1&&el('div',{style:{
-          position:'absolute',top:0,left:'calc(50% - '+Math.floor((node.children.length-1)/2*100)+'%)',
-          height:2,background:'var(--border)',
-          width:(node.children.length-1)*100+'%',
-          minWidth:'100%',
-        }}),
-        node.children.map((child,ci)=>el('div',{key:ci,style:{display:'flex',flexDirection:'column',alignItems:'center',minWidth:220,padding:'0 8px'}},
-          el(OrgNode,{node:child,depth:depth+1}),
-        )),
-      ),
-    ),
-  );
-}
-
 function LicenseChart(){
-  const ORG_TREE={
-    title:'General Manager',name:'Saman Salari',dept:'Executive Leadership',
-    children:[
-      {
-        title:'Assistant General Manager',name:'Liisa Pembroke',dept:'Leadership',
-        children:[
-          {
-            title:'Compliance Officer',name:'Micah Heppermann',dept:'Compliance & Security',
-            note:'ISO 9001 / QMS oversight \u2014 19 CSR 100',
-            children:[
-              {title:'Security Manager',name:'Micah Heppermann',dept:'Security',note:'19 CSR 100-1.090(7)\u2013(8)'},
-              {title:'Inventory Control',name:'Saman Salari',dept:'Warehouse',note:'19 CSR 100-1.130(1)(A)'},
-            ],
-          },
-          {
-            title:'Production Manager',name:'Zak Knowles',dept:'Production',
-            children:[
-              {title:'Extraction Manager',name:'Amir Yrigoyen',dept:'Extraction'},
-              {title:'Production Lead',name:'Sara Haarmann',dept:'Production'},
-              {title:'Team Members',name:'',dept:'Production'},
-            ],
-          },
-          {
-            title:'Sales Manager',name:'Alfonso Toscano',dept:'Sales',
-            children:[],
-          },
-        ],
-      },
-    ],
-  };
-
   return el('div',null,
     el('div',{className:'ph'},
       el('div',null,
-        el('div',{className:'pt'},'\uD83C\uDF31 Org Chart'),
-        el('div',{className:'ps'},'Organizational structure \u2014 Missouri DCR (19 CSR 100) \u00B7 ISO 9001 / QMS'),
+        el('div',{className:'pt'},'License Chart'),
+        el('div',{className:'ps'},'Designated responsible parties \u2014 Missouri DCR (19 CSR 100) \u00B7 ISO 9001 / QMS'),
       ),
     ),
-    el('div',{style:{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:12,padding:'24px 16px',marginBottom:16,fontSize:12,color:'var(--text2)',display:'flex',gap:16,flexWrap:'wrap',alignItems:'center'}},
-      el('span',{style:{fontWeight:700,color:'var(--text)'}},'\uD83D\uDCA1 Click any node with a dot to expand / collapse its branch'),
-      ['Executive Leadership','Leadership','Compliance & Security','Production','Extraction','Sales','Warehouse'].map((dept,i)=>{
-        const colors=['#1e3a5f','#2d5282','#0891b2','#7c3aed','#be185d','#ea580c','#065f46'];
-        return el('span',{key:dept,style:{display:'flex',alignItems:'center',gap:4}},
-          el('span',{style:{width:10,height:10,borderRadius:'50%',background:colors[i%colors.length],display:'inline-block'}}),
-          dept,
-        );
-      }),
-    ),
-    el('div',{style:{overflowX:'auto',paddingBottom:32}},
-      el('div',{style:{minWidth:900,display:'flex',justifyContent:'center',padding:'20px 40px'}},
-        el(OrgNode,{node:ORG_TREE,depth:0}),
-      ),
-    ),
-    el('div',{style:{display:'flex',gap:12,flexWrap:'wrap',marginTop:8}},
-      LICENSE_CHART_TIERS.map(tier=>el('div',{key:tier.label,style:{flex:'1 1 280px',background:'#fff',border:'1px solid var(--border)',borderTop:'4px solid '+tier.color,borderRadius:10,padding:'14px 16px'}},
-        el('div',{style:{fontSize:10,fontWeight:800,color:tier.color,textTransform:'uppercase',letterSpacing:'.6px',marginBottom:10}},tier.label),
-        tier.roles.map((r,i)=>el('div',{key:i,style:{marginBottom:8,paddingBottom:8,borderBottom:i<tier.roles.length-1?'1px solid var(--border)':'none'}},
-          el('div',{style:{fontSize:12,fontWeight:700,color:'var(--text)'}},r.title),
-          el('div',{style:{fontSize:13,fontWeight:600,color:tier.color,marginTop:2}},r.name),
-          r.note&&el('div',{style:{fontSize:10,color:'var(--text2)',marginTop:4,lineHeight:1.4}},r.note),
-        )),
+    el('div',{style:{display:'flex',flexDirection:'column',gap:20,padding:'0 4px 20px'}},
+      LICENSE_CHART_TIERS.map(tier=>el('div',{key:tier.label},
+        el('div',{style:{background:'var(--surface2)',borderRadius:8,padding:'8px 14px',fontSize:11,fontWeight:800,color:'var(--accent)',textTransform:'uppercase',letterSpacing:'.6px',marginBottom:10}},tier.label),
+        el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:12}},
+          tier.roles.map((r,i)=>el('div',{key:r.title+i,style:{background:'#fff',border:'1px solid var(--border)',borderLeft:'4px solid '+tier.color,borderRadius:8,padding:'14px 16px'}},
+            el('div',{style:{fontSize:13,fontWeight:700,color:'var(--text)'}},r.title),
+            el('div',{style:{fontSize:14,fontWeight:600,color:tier.color,marginTop:4}},r.name),
+            r.note&&el('div',{style:{fontSize:11,color:'var(--text2)',marginTop:8,lineHeight:1.4}},r.note),
+          )),
+        ),
       )),
     ),
   );
@@ -11831,7 +11411,7 @@ function VisitorKiosk(){
   const[cameraActive,setCameraActive]=React.useState(false);
   const setF=(k,v)=>setForm(p=>({...p,[k]:v}));
 
-  const PURPOSES=['Vendor / delivery','Maintenance / repair','Regulatory inspection (DCR)','Regulatory inspection (other)','Audit','Business meeting','Prospective employee','Testing / Lab','Waste Company','Other'];
+  const PURPOSES=['Vendor / delivery','Maintenance / repair','Regulatory inspection (DCR)','Regulatory inspection (other)','Audit','Business meeting','Prospective employee','Other'];
 
   // Camera for selfie
   async function startCamera(){
@@ -12224,15 +11804,13 @@ function App(){
     {id:'license',ico:'\uD83D\uDCDC',label:'License Chart'},
     {id:'board',ico:'\u2B1B',label:'Task Board'},
     {id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
-    (cu.role==='admin'||hasRole(cu,'sales_manager')||cu.dept==='Sales'||cu.dept==='Marketing')&&{id:'sales',ico:'\uD83C\uDFEA',label:'Sales & Marketing'},
-    {id:'sops',ico:'\uD83D\uDCCB',label:'SOPs'},
     canAccessQms&&{id:'qms',ico:'\uD83D\uDEE1\uFE0F',label:'QMS'},
     canAccessQms&&{id:'compliance',ico:'\u2705',label:'Compliance'},
     canAccessQms&&{id:'risks',ico:'\u26A0\uFE0F',label:'Risk Register'},
     {id:'logs',ico:'\uD83D\uDCCB',label:'Facility Logs'},
     {id:'batch',ico:'\uD83E\uDDEA',label:'Batch Tracker'},
     {id:'mydocs',ico:'\uD83D\uDCC1',label:'My Documents'},
-    {id:'scores',ico:'\uD83C\uDFC6',label:'Scoreboard'},
+    (cu.role==='admin'||hasRole(cu,'sales_manager')||cu.dept==='Sales'||cu.dept==='Marketing')&&{id:'sales',ico:'\uD83C\uDFEA',label:'Sales & Marketing'},
     isAdmin&&{id:'team',ico:'\uD83D\uDC65',label:'Team & Access',badge:pending||null},
   ]).filter(Boolean);
 
@@ -12427,12 +12005,10 @@ function App(){
         }},
         el('span',{className:'mnav-ico'},typeof Notification!=='undefined'&&Notification.permission==='granted'?'\uD83D\uDD14':'\uD83D\uDD15'),'Alerts'
       ),
-      el('button',{className:`mnav-btn${page==='sops'?' on':''}`,onClick:()=>setPage('sops')},el('span',{className:'mnav-ico'},'\uD83D\uDCCB'),'SOPs'),
       el('button',{className:`mnav-btn${page==='mydocs'?' on':''}`,onClick:()=>setPage('mydocs')},el('span',{className:'mnav-ico'},'\uD83D\uDCC1'),'My Docs'),
       !restricted&&canAccessQms&&el('button',{className:`mnav-btn${page==='qms'?' on':''}`,onClick:()=>setPage('qms')},el('span',{className:'mnav-ico'},'\uD83D\uDEE1\uFE0F'),'QMS'),
       !restricted&&el('button',{className:`mnav-btn${page==='logs'?' on':''}`,onClick:()=>setPage('logs')},el('span',{className:'mnav-ico'},'\uD83D\uDCCB'),'Logs'),
       (restricted==='lead'||restricted==='pm')&&el('button',{className:`mnav-btn${page==='batch'?' on':''}`,onClick:()=>setPage('batch')},el('span',{className:'mnav-ico'},'\uD83E\uDDEA'),'Batch'),
-      !restricted&&el('button',{className:`mnav-btn${page==='scores'?' on':''}`,onClick:()=>setPage('scores')},el('span',{className:'mnav-ico'},'\uD83C\uDFC6'),'Scores'),
       el('button',{className:'mnav-btn',onClick:()=>{if(window.confirm('Sign out?')){localStorage.removeItem('pf_session');localStorage.removeItem('pf_token');window.location.reload();}}},el('span',{className:'mnav-ico'},'\u23FB'),'Sign Out'),
     ),
     el('div',{className:'main'},
@@ -12440,12 +12016,12 @@ function App(){
       page==='calendar'&&el(Calendar,{events,setEvents,tasks,cu,users,locFilter,meetingNotes,setMeetingNotes,onJoinCall:(room,title,meetLink)=>setActiveCall({room,title,meetLink})}),
       page==='sales'&&!restricted&&el(SalesMarketing,{salesTasks,setSalesTasks,cu,users,locFilter}),
       page==='license'&&el(LicenseChart,{}),
-      page==='sops'&&el(SOPs,{sops,setSops,cu,users}),
+      page==='sops'&&restricted&&el(SOPs,{sops,setSops,cu,users}),
       page==='compliance'&&!restricted&&canAccessQms&&el(ComplianceModule,{cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db}),
       page==='risks'&&!restricted&&canAccessQms&&el(RiskRegister,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
       page==='logs'&&!restricted&&el(FacilityLogs,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
       page==='batch'&&(!restricted||restricted==='lead'||restricted==='pm')&&el(BatchTracker,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted}),
-      page==='qms'&&!restricted&&canAccessQms&&el(QMS,{cu,users,tasks,sops,
+      page==='qms'&&!restricted&&canAccessQms&&el(QMS,{cu,users,tasks,sops,setSops,
         deviations:qmsDeviations,setDeviations:setQmsDeviations,
         capas:qmsCAPAs,setCapas:setQmsCAPAs,
         audits:qmsAudits,setAudits:setQmsAudits,
@@ -12455,7 +12031,6 @@ function App(){
         corrective:qmsCorrective,setCorrective:setQmsCorrective,
       }),
       page==='mydocs'&&el(MyDocuments,{cu,corrective:qmsCorrective,setCorrective:setQmsCorrective}),
-      page==='scores'&&!restricted&&el(Scoreboard,{tasks,cu,users}),
       page==='team'&&isAdmin&&el(Team,{users,setUsers,cu}),
     )
   );
