@@ -869,9 +869,16 @@ function Auth({onLogin}){
       const exists=await db.get('pf_users_safe',`email=eq.${encodeURIComponent(f.email)}`);
       if(exists.length){setMsg('Email already registered.');setLoading(false);return;}
       const fullName=f.firstName.trim()+' '+f.lastName.trim();
-      await db.insert('pf_users',{id:'u'+Date.now(),name:fullName,first_name:f.firstName,last_name:f.lastName,email:f.email,pw:f.pw,role:'team_member',dept:(f.depts||[])[0]||'Production',depts:f.depts||[],licenses:f.licenses||[],loc:f.loc,approved:false,perms:[],managers:[],oversees_depts:[]});
+      // Registration is unauthenticated \u2014 use direct REST insert with anon key
+      // (not rpcWrite which requires a valid session token a new user can't have yet).
+      const regRes=await fetch(`${SUPA_URL}/rest/v1/pf_users`,{
+        method:'POST',
+        headers:{...H.headers,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body:JSON.stringify({id:'u'+Date.now(),name:fullName,first_name:f.firstName,last_name:f.lastName,email:f.email,pw:f.pw,role:'team_member',dept:(f.depts||[])[0]||'Production',depts:f.depts||[],licenses:f.licenses||[],loc:f.loc,approved:false,perms:[],managers:[],oversees_depts:[]}),
+      });
+      if(!regRes.ok){const t=await regRes.text();throw new Error(t);}
       setPend(true);
-    }catch(e){setMsg('Error. Please try again.');console.error(e);}
+    }catch(e){setMsg('Error registering. Please try again.');console.error(e);}
     setLoading(false);
   }
 
@@ -899,8 +906,8 @@ function Auth({onLogin}){
       el('button',{className:'btn-primary',onClick:login,disabled:loading},loading?'Signing in...':'Sign In'),
     ):el('div',null,
       el('div',{className:'g2'},
-        el('div',{className:'fg',style:{marginBottom:0}},el('label',null,'First Name'),el('input',{placeholder:'Sam',value:f.firstName,onChange:ev=>setF(p=>({...p,firstName:ev.target.value}))})),
-        el('div',{className:'fg',style:{marginBottom:0}},el('label',null,'Last Name'),el('input',{placeholder:'Salari',value:f.lastName,onChange:ev=>setF(p=>({...p,lastName:ev.target.value}))})),
+        el('div',{className:'fg',style:{marginBottom:0}},el('label',null,'First Name'),el('input',{placeholder:'Alex',value:f.firstName,onChange:ev=>setF(p=>({...p,firstName:ev.target.value}))})),
+        el('div',{className:'fg',style:{marginBottom:0}},el('label',null,'Last Name'),el('input',{placeholder:'Johnson',value:f.lastName,onChange:ev=>setF(p=>({...p,lastName:ev.target.value}))})),
       ),
       el('div',{className:'fg'},el('label',null,'Email'),el('input',{type:'email',value:f.email,onChange:ev=>setF(p=>({...p,email:ev.target.value}))})),
       el('div',{className:'fg'},el('label',null,'Password'),el('input',{type:'password',value:f.pw,onChange:ev=>setF(p=>({...p,pw:ev.target.value}))})),
