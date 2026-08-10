@@ -427,18 +427,18 @@ const MODULE_DEFS=[
 ];
 const ROLE_DEFAULT_PERMS={
   admin:{license:'admin',board:'admin',qms:'admin',compliance:'admin',risks:'admin',logs:'admin',batch:'admin',mydocs:'admin',sales:'admin'},
-  general_manager:{license:'admin',board:'admin',qms:'admin',compliance:'admin',risks:'admin',logs:'admin',batch:'admin',mydocs:'admin',sales:'admin'},
-  assistant_general_manager:{license:'admin',board:'admin',qms:'admin',compliance:'admin',risks:'admin',logs:'admin',batch:'admin',mydocs:'admin',sales:'admin'},
-  compliance_officer:{license:'admin',board:'admin',qms:'admin',compliance:'admin',risks:'admin',logs:'admin',batch:'admin',mydocs:'admin',sales:null},
-  security_manager:{license:'admin',board:'admin',qms:'admin',compliance:'admin',risks:'admin',logs:'admin',batch:'admin',mydocs:'admin',sales:null},
-  security_officer:{license:'read',board:'read',qms:'read',compliance:null,risks:null,logs:'admin',batch:null,mydocs:'admin',sales:null},
-  inventory_manager:{license:'admin',board:'admin',qms:'admin',compliance:'admin',risks:'admin',logs:'admin',batch:'admin',mydocs:'admin',sales:null},
-  extraction_manager:{license:'admin',board:'admin',qms:'admin',compliance:'admin',risks:'admin',logs:'admin',batch:'admin',mydocs:'admin',sales:null},
-  production_manager:{license:'admin',board:'editor',qms:'read',compliance:null,risks:null,logs:null,batch:'editor',mydocs:'admin',sales:null},
-  sales_manager:{license:'admin',board:'admin',qms:'editor',compliance:'read',risks:'read',logs:'read',batch:'read',mydocs:'admin',sales:'admin'},
-  production_lead:{license:'read',board:'read',qms:'read',compliance:null,risks:null,logs:null,batch:'editor',mydocs:'admin',sales:null},
-  team_member:{license:'read',board:null,qms:'read',compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
-  sanitation:{license:'read',board:null,qms:'read',compliance:null,risks:null,logs:'read',batch:null,mydocs:'admin',sales:null},
+  general_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
+  assistant_general_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
+  compliance_officer:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
+  security_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
+  security_officer:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
+  inventory_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
+  extraction_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
+  production_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
+  sales_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
+  production_lead:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
+  team_member:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
+  sanitation:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
 };
 function modulePerm(u,mod){
   if(!u)return null;
@@ -6889,6 +6889,11 @@ function QMS({cu,users,tasks,sops,setSops,deviations,setDeviations,capas,setCapa
   const pendingAudits=audits.filter(a=>a.next_audit_date&&a.next_audit_date<=new Date(Date.now()+7*86400000).toISOString().slice(0,10));
   // Scoped target users per SOP (same license_id + dept logic used in SOPs module)
   function targetUsersForSop(sop){
+    // If the SOP has specific target_user_ids set, use ONLY those people.
+    // This overrides the folder/dept logic — admin picked individuals explicitly.
+    if(sop.target_user_ids&&sop.target_user_ids.length>0){
+      return users.filter(u=>u.approved&&sop.target_user_ids.includes(u.id));
+    }
     return users.filter(u=>{
       if(!u.approved) return false;
       // Step 1: License check \u2014 if the SOP is tied to specific licenses,
@@ -8387,18 +8392,21 @@ function exportSopPdf(sop){
 
 // \u2500\u2500 SOP EDIT MODAL (title, license, departments \u2014 admin only, any status) \u2500\u2500\u2500\u2500\u2500
 // \u2500\u2500 SOP EDIT MODAL (state, license, departments \u2014 any status, admin/canCreate) \u2500
-function SOPEditModal({sop,cu,onClose,onSave}){
+function SOPEditModal({sop,cu,onClose,onSave,users}){
   const initLic=LICENSES.find(l=>l.id===sop.license_id)||LICENSES.find(l=>l.name===sop.license_name)||null;
   const[ef,setEf]=useState({
     title:sop.title||'',
     state:sop.state||initLic?.state||'Missouri',
     license_ids:sop.license_id?[sop.license_id]:(initLic?[initLic.id]:[]),
     folder:getSopFolder(sop)==='Archived'?(sop.previous_folder||'General'):getSopFolder(sop),
+    target_user_ids:sop.target_user_ids||[],
+    use_individuals:!!(sop.target_user_ids&&sop.target_user_ids.length>0),
   });
   const[saving,setSaving]=useState(false);
   const[error,setError]=useState('');
 
   const stateLicenses=LICENSES.filter(l=>l.state===ef.state);
+  const approvedUsers=(users||[]).filter(u=>u.approved&&u.role!=='admin');
 
   function toggleLicense(id){
     setEf(p=>{
@@ -8408,12 +8416,19 @@ function SOPEditModal({sop,cu,onClose,onSave}){
     });
   }
 
+  function toggleTargetUser(id){
+    setEf(p=>{
+      const cur=new Set(p.target_user_ids||[]);
+      cur.has(id)?cur.delete(id):cur.add(id);
+      return{...p,target_user_ids:[...cur]};
+    });
+  }
+
   async function save(){
     if(!ef.title.trim()){setError('Title is required.');return;}
     if((ef.license_ids||[]).length===0){setError('Select at least one license.');return;}
+    if(ef.use_individuals&&(ef.target_user_ids||[]).length===0){setError('Select at least one person, or switch to department mode.');return;}
     setSaving(true);setError('');
-    // Store first license as the primary license_id/license_name (for legacy single-license
-    // logic elsewhere), plus the full list as license_ids for multi-license SOPs.
     const primaryLic=LICENSES.find(l=>l.id===ef.license_ids[0]);
     const update={
       title:ef.title.trim(),
@@ -8424,6 +8439,8 @@ function SOPEditModal({sop,cu,onClose,onSave}){
       folder:ef.folder,
       dept:ef.folder,
       visible_to_depts:ef.folder==='General'?[]:[ef.folder],
+      // If individuals mode: save the picked IDs; otherwise clear them (use dept logic)
+      target_user_ids:ef.use_individuals?(ef.target_user_ids||[]):[],
       updated_at:new Date().toISOString(),
       updated_by:cu.name,
     };
@@ -8454,7 +8471,7 @@ function SOPEditModal({sop,cu,onClose,onSave}){
           el('label',null,'State *'),
           el('div',{style:{display:'flex',gap:8}},
             ['Missouri'].map(s=>el('button',{key:s,
-              onClick:()=>setEf(p=>({...p,state:s,license_ids:[]})), // reset licenses when state changes
+              onClick:()=>setEf(p=>({...p,state:s,license_ids:[]})),
               style:{flex:1,padding:'9px',borderRadius:'var(--rs)',border:'2px solid',borderColor:ef.state===s?'var(--accent)':'var(--border)',background:ef.state===s?'rgba(30,58,95,.08)':'transparent',color:ef.state===s?'var(--accent)':'var(--text2)',fontFamily:'inherit',fontWeight:600,fontSize:13,cursor:'pointer',transition:'all .15s'}
             },s))
           ),
@@ -8485,8 +8502,49 @@ function SOPEditModal({sop,cu,onClose,onSave}){
           getSopFolder(sop)==='Archived'&&el('div',{style:{fontSize:11,color:'var(--text3)',marginTop:6}},'This SOP is currently Archived. Changing its folder here only sets where it goes if it\u2019s un-archived \u2014 use Publish/Restore to bring it out of Archived.'),
         ),
 
-        el('div',{style:{background:'rgba(139,92,246,.06)',border:'1px solid rgba(139,92,246,.2)',borderRadius:8,padding:'10px 14px',fontSize:11,color:'var(--text2)'}},
-          '\uD83D\uDD12 Only employees assigned to ',el('strong',{style:{color:'#c4b5fd'}},ef.state),' + the selected license(s) + the selected department(s) will see and be required to acknowledge this SOP.'
+        // ── WHO NEEDS TO ACKNOWLEDGE ─────────────────────────────────────
+        el('div',{className:'fg'},
+          el('label',null,'Who needs to acknowledge this SOP?'),
+          el('div',{style:{display:'flex',gap:8,marginBottom:10}},
+            el('button',{
+              onClick:()=>setEf(p=>({...p,use_individuals:false,target_user_ids:[]})),
+              style:{flex:1,padding:'8px',borderRadius:'var(--rs)',border:'2px solid',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',transition:'all .15s',
+                borderColor:!ef.use_individuals?'var(--accent)':'var(--border)',
+                background:!ef.use_individuals?'rgba(30,58,95,.08)':'transparent',
+                color:!ef.use_individuals?'var(--accent)':'var(--text2)',
+              }
+            },'\uD83C\uDFEC By department (current folder)'),
+            el('button',{
+              onClick:()=>setEf(p=>({...p,use_individuals:true})),
+              style:{flex:1,padding:'8px',borderRadius:'var(--rs)',border:'2px solid',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',transition:'all .15s',
+                borderColor:ef.use_individuals?'var(--accent)':'var(--border)',
+                background:ef.use_individuals?'rgba(30,58,95,.08)':'transparent',
+                color:ef.use_individuals?'var(--accent)':'var(--text2)',
+              }
+            },'\uD83D\uDC64 Pick specific people'),
+          ),
+          ef.use_individuals&&el('div',null,
+            el('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:8}},'Select exactly who needs to read and sign this SOP. Only they will see it as required.'),
+            el('div',{style:{display:'flex',flexDirection:'column',gap:5,maxHeight:220,overflowY:'auto',border:'1px solid var(--border)',borderRadius:8,padding:10}},
+              approvedUsers.length===0&&el('div',{style:{fontSize:12,color:'var(--text3)'}},'No approved team members found.'),
+              approvedUsers.map(u=>{
+                const checked=(ef.target_user_ids||[]).includes(u.id);
+                return el('label',{key:u.id,style:{display:'flex',alignItems:'center',gap:10,padding:'7px 10px',borderRadius:6,border:'1px solid',borderColor:checked?'var(--accent)':'var(--border)',background:checked?'rgba(30,58,95,.06)':'transparent',cursor:'pointer',transition:'all .15s'}},
+                  el('input',{type:'checkbox',checked,onChange:()=>toggleTargetUser(u.id),style:{accentColor:'var(--accent)',flexShrink:0}}),
+                  el('div',{style:{flex:1,minWidth:0}},
+                    el('div',{style:{fontSize:13,fontWeight:600,color:checked?'var(--accent)':'var(--text)'}},u.name),
+                    el('div',{style:{fontSize:11,color:'var(--text3)'}},roleLabels(u)+(u.dept?' \u00B7 '+u.dept:'')),
+                  ),
+                );
+              })
+            ),
+            (ef.target_user_ids||[]).length>0&&el('div',{style:{fontSize:11,color:'var(--accent)',marginTop:6,fontWeight:600}},
+              (ef.target_user_ids||[]).length+' person'+(ef.target_user_ids.length===1?'':'s')+' selected'
+            ),
+          ),
+          !ef.use_individuals&&el('div',{style:{background:'rgba(139,92,246,.06)',border:'1px solid rgba(139,92,246,.2)',borderRadius:8,padding:'10px 14px',fontSize:11,color:'var(--text2)'}},
+            '\uD83D\uDD12 Everyone in the ',el('strong',{style:{color:'#c4b5fd'}},ef.folder||'General'),' department assigned to the selected license(s) will be required to acknowledge.'
+          ),
         ),
 
         error&&el('div',{style:{background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.3)',borderRadius:8,padding:'10px 14px',fontSize:13,color:'var(--red)',marginTop:10}},error),
@@ -8499,6 +8557,7 @@ function SOPEditModal({sop,cu,onClose,onSave}){
     )
   );
 }
+
 
 // \u2500\u2500 CORRECTIVE ACTION PDF EXPORT \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 function exportCorrectiveActionPdf(ca){
@@ -10547,7 +10606,7 @@ function SOPs({sops,setSops,cu,users}){
       onSave:(sop)=>{setSops(p=>[sop,...p]);setShowGenerator(false);setSel(sop);},
     }),
     showEditSop&&sel&&el(SOPEditModal,{
-      sop:sel,cu,
+      sop:sel,cu,users,
       onClose:()=>setShowEditSop(false),
       onSave:(updated)=>{
         setSops(p=>p.map(s=>s.id===updated.id?updated:s));
