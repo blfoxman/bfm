@@ -3021,14 +3021,51 @@ function AIReporter({cu,SUPA_URL,SUPA_KEY,H}){
     return anyMatch?[...matched]:ALL_REPORTER_TABLES;
   }
 
+  // Columns to exclude per table — these contain large JSON blobs or base64 data
+  // that explode the token count without adding useful analytical value
+  const STRIP_COLS={
+    pf_batch_tracker:['generated_content','attachments','signature_image','notes','edit_history'],
+    pf_sops:['generated_content','attachments','steps','quality_checks','documentation_required','responsibilities','required_materials','definitions','regulatory_references'],
+    pf_qms_capas:['generated_content','attachments','description'],
+    pf_qms_corrective:['generated_content','attachments','description','corrective_steps'],
+    pf_qms_deviations:['generated_content','attachments','description'],
+    pf_qms_audits:['generated_content','attachments','findings','notes'],
+    pf_qms_suppliers:['attachments','notes'],
+    pf_qms_complaints:['attachments','description','resolution'],
+    pf_qms_changes:['attachments','description','impact'],
+    pf_compliance_checks:['attachments','notes'],
+    pf_risk_register:['attachments','description','mitigation'],
+    pf_tasks:['attachments','description'],
+    pf_log_visitor:['signature_image','selfie_image','attachments'],
+    pf_log_waste:['attachments','notes'],
+    pf_log_sanitation:['attachments','notes'],
+    pf_log_pest:['attachments','notes'],
+    pf_log_equipment:['attachments','notes'],
+    pf_log_temperature:['attachments','notes'],
+    pf_log_security:['attachments','notes'],
+    pf_users_safe:['attachments'],
+  };
+
   async function fetchTableData(tables){
     const results={};
     await Promise.all(tables.map(async t=>{
       try{
-        const res=await fetch(`${SUPA_URL}/rest/v1/${t}?order=created_at.desc&limit=200`,{headers:H.headers});
-        if(res.ok) results[t]=await res.json();
-        else results[t]=[];
-      }catch{results[t]=[];}
+        const res=await fetch(`${SUPA_URL}/rest/v1/${t}?order=created_at.desc&limit=50`,{headers:H.headers});
+        if(res.ok){
+          const rows=await res.json();
+          const strip=new Set(STRIP_COLS[t]||[]);
+          // Remove heavy columns, truncate remaining strings to 80 chars
+          results[t]=rows.map(r=>{
+            const out={};
+            Object.entries(r).forEach(([k,v])=>{
+              if(strip.has(k)) return;
+              if(typeof v==='string'&&v.length>80) out[k]=v.slice(0,80)+'…';
+              else if(v!==null&&v!==undefined) out[k]=v;
+            });
+            return out;
+          });
+        }else results[t]=[];
+      }catch(e){results[t]=[];}
     }));
     return results;
   }
@@ -3037,33 +3074,19 @@ function AIReporter({cu,SUPA_URL,SUPA_KEY,H}){
     const now=new Date().toISOString().slice(0,10);
     const dataStr=tables.map(t=>{
       const rows=data[t]||[];
-      if(!rows.length) return `## ${t}\n(no records)`;
-      // Summarize: show first 50 rows as JSON, truncate large fields
-      const truncated=rows.slice(0,50).map(r=>{
-        const out={};
-        Object.entries(r).forEach(([k,v])=>{
-          if(typeof v==='string'&&v.length>300) out[k]=v.slice(0,300)+'...';
-          else out[k]=v;
-        });
-        return out;
-      });
-      return `## ${t} (${rows.length} records, showing up to 50)\n${JSON.stringify(truncated,null,1)}`;
+      if(!rows.length) return `## ${t}: no records`;
+      let str=JSON.stringify(rows.slice(0,30));
+      if(str.length>3000) str=str.slice(0,3000)+'…';
+      return `## ${t} (${rows.length} total)\n${str}`;
     }).join('\n\n');
 
-    return `You are the AI Reporter for Black Fox QMS, a cannabis manufacturing compliance system for Black Fox Manufacturing / HMBF Management Inc (Missouri license MAN000109).
+    const cappedData=dataStr.length>30000?dataStr.slice(0,30000)+'…':dataStr;
 
-Today is ${now}. The user is ${cu.name} (role: ${cu.role}).
+    return `You are the AI Reporter for Black Fox QMS — Missouri cannabis manufacturing (Black Fox Manufacturing / HMBF Management Inc, license MAN000109). Today: ${now}. User: ${cu.name} (${cu.role}).
 
-You have been given a live snapshot of the facility's QMS data below. Use it to answer questions accurately. When presenting results:
-- Lead with a clear summary (1-3 sentences answering the question directly)
-- Follow with structured details: tables, bullet lists, counts, percentages where relevant
-- Flag anything that looks like a compliance gap, overdue item, or anomaly — even if not explicitly asked
-- Be specific: name actual records, dates, people, batch numbers from the data
-- If data is missing or the table is empty, say so clearly
-- Keep answers concise and scannable — this is a compliance tool, not a chat
+Answer using ONLY the live data below. Be specific — reference actual IDs, batch numbers, names, dates. Lead with a direct 1-2 sentence answer, then structured details. Flag compliance gaps or anomalies proactively.
 
-LIVE QMS DATA:
-${dataStr}`;
+${cappedData}`;
   }
 
   async function send(){
@@ -3087,21 +3110,27 @@ ${dataStr}`;
       history.push({role:'user',content:q});
 
       // Step 3: call Claude via the Supabase Edge Function proxy
-      // (browsers can't call api.anthropic.com directly — CORS blocks it)
       const systemPrompt=buildSystemPrompt(data,tables);
-      const res=await fetch(`${SUPA_URL}/functions/v1/claude-proxy`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
-        body:JSON.stringify({
-          model:'claude-sonnet-4-6',
-          max_tokens:2000,
-          system:systemPrompt,
-          messages:history,
-        }),
-      });
-      const aiData=await res.json();
-      if(!res.ok||aiData.error) throw new Error((aiData.error&&aiData.error.message)||'AI call failed');
-      const text=aiData.content.map(b=>b.type==='text'?b.text:'').join('');
+      let res;
+      try{
+        res=await fetch(`${SUPA_URL}/functions/v1/claude-proxy`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
+          body:JSON.stringify({
+            model:'claude-sonnet-4-6',
+            max_tokens:2000,
+            system:systemPrompt,
+            messages:history,
+          }),
+        });
+      }catch(fetchErr){
+        throw new Error('Network error reaching AI proxy: '+fetchErr.message+'. Check that the claude-proxy Edge Function is deployed in Supabase.');
+      }
+      let aiData;
+      try{aiData=await res.json();}
+      catch{throw new Error('AI proxy returned non-JSON (status '+res.status+'). Check Edge Function logs in Supabase.');}
+      if(!res.ok||aiData.error) throw new Error((aiData.error&&(aiData.error.message||JSON.stringify(aiData.error)))||'AI call failed (HTTP '+res.status+')');
+      const text=(aiData.content||[]).map(b=>b.type==='text'?b.text:'').join('');
 
       setMessages(p=>[...p,{role:'assistant',content:text,tables,ts:new Date().toISOString()}]);
     }catch(e){
@@ -9948,7 +9977,7 @@ function App(){
   // QMS access: Admin, Managers, and Supervisors. Employees, Leads, and Staff
   // get SOPs only (per Black Fox QMS QMS RBAC policy).
   const qmsRoleGroup=topRoleGroup(cu);
-  const canAccessQms=canRead(cu,'qms');
+  const canAccessQms=isAdmin||isElevated||canRead(cu,'qms');
   const canAccessLogs=canRead(cu,'logs');
   const canAccessBatch=canRead(cu,'batch');
   const canAccessRisks=canRead(cu,'risks');
