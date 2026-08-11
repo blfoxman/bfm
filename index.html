@@ -3086,14 +3086,16 @@ ${dataStr}`;
       const history=messages.map(m=>({role:m.role==='user'?'user':'assistant',content:m.content}));
       history.push({role:'user',content:q});
 
-      // Step 3: call Claude API
-      const res=await fetch('https://api.anthropic.com/v1/messages',{
+      // Step 3: call Claude via the Supabase Edge Function proxy
+      // (browsers can't call api.anthropic.com directly — CORS blocks it)
+      const systemPrompt=buildSystemPrompt(data,tables);
+      const res=await fetch(`${SUPA_URL}/functions/v1/claude-proxy`,{
         method:'POST',
-        headers:{'Content-Type':'application/json'},
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
         body:JSON.stringify({
           model:'claude-sonnet-4-6',
           max_tokens:2000,
-          system:buildSystemPrompt(data,tables),
+          system:systemPrompt,
           messages:history,
         }),
       });
