@@ -3802,6 +3802,22 @@ const RD_TEST_PAIRS={
   infused_flower:[['rd1_result','rd2_result']],
 };
 function slug(s){return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
+// Some fields (e.g. Ethanol's biomass_tags) store arrays of objects like
+// {tag,weight} even though the field itself is declared type:'text' for form
+// purposes. Rendering that raw value directly as a React child throws
+// "Objects are not valid as a React child" and crashes the whole list.
+// This normalizes any field value into something safe to render as preview
+// text in an entry list card, regardless of what shape it turns out to be.
+function previewSafe(v){
+  if(v==null) return null;
+  if(Array.isArray(v)){
+    if(v.length===0) return null;
+    if(typeof v[0]==='object') return v.length+' item'+(v.length===1?'':'s');
+    return v.join(', ');
+  }
+  if(typeof v==='object') return null; // plain object with no defined preview shape \u2014 skip rather than crash
+  return v;
+}
 // Turns a plain list of names into an array of checkbox field definitions
 // (used for the Sanitation Log's Daily/Weekly/Monthly area & equipment checklists).
 function checklistFields(prefix,names){return names.map(n=>({key:prefix+'_'+slug(n),label:n,type:'checkbox'}));}
@@ -3957,6 +3973,7 @@ const LOG_TYPES={
     {key:'total_decarbed_crude_waste',label:'Total Decarbed Crude Waste',type:'text',placeholder:''},
     {key:'decarbed_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'total_distillate_produced',label:'Total Distillate Produced',type:'text',placeholder:'Actual measured weight'},
+    {key:'distillate_metrc_tag',label:'Distillate METRC Tag',type:'text',placeholder:'METRC tag for the finished distillate'},
     {key:'distillation_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_yield_quality',label:'--- BATCH YIELD QUALITY CHECK ---',type:'section'},
     {key:'yield_quality_result',label:'Yield Quality',type:'display'},
@@ -5072,7 +5089,7 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
                         el('span',{style:{marginLeft:12,color:'var(--text)'}},'Out: '),entry.time_out||el('span',{style:{color:'#dc2626'}},'Not yet clocked out'),
                       ),
                     ]
-                  :lt.fields.slice(0,4).map(f=>entry[f.key]?el('div',{key:f.key,style:{fontSize:12,color:'var(--text2)'}},el('span',{style:{fontWeight:600,color:'var(--text)'}},f.label.replace(' *','')+': '),entry[f.key]):null)
+                  :lt.fields.slice(0,4).map(f=>{const pv=previewSafe(entry[f.key]);return pv?el('div',{key:f.key,style:{fontSize:12,color:'var(--text2)'}},el('span',{style:{fontWeight:600,color:'var(--text)'}},f.label.replace(' *','')+': '),pv):null;})
               ),
             ),
             el('div',{style:{display:'flex',gap:6,flexShrink:0,flexWrap:'wrap'}},
@@ -5206,10 +5223,27 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn
                 el('span',{style:{fontSize:12,color:'var(--text2)'}},entry.date||''),
                 el('span',{style:{fontSize:12,color:'var(--text2)'}},'\u00B7 '+(entry.submitted_by||'')),
                 entry.signature_image&&el('span',{style:{background:'rgba(22,163,74,.1)',color:'#16a34a',borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:700}},'\u270D\uFE0F Signed'),
+                (()=>{
+                  // METRC conversion status: count how many "Recorded on METRC?"
+                  // checkboxes this batch type has, and how many are checked on
+                  // this specific entry \u2014 gives an at-a-glance completion badge
+                  // without opening the record.
+                  const metrcFields=lt.fields.filter(f=>f.type==='checkbox'&&f.key.includes('metrc_confirmed'));
+                  if(metrcFields.length===0) return null;
+                  const done=metrcFields.filter(f=>entry[f.key]).length;
+                  const total=metrcFields.length;
+                  const complete=done===total;
+                  const none=done===0;
+                  const color=complete?'#16a34a':none?'#dc2626':'#d97706';
+                  const bg=complete?'rgba(22,163,74,.1)':none?'rgba(220,38,38,.1)':'rgba(217,119,6,.1)';
+                  return el('span',{style:{background:bg,color,borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:700}},
+                    (complete?'\u2705':'\uD83D\uDD04')+' METRC '+done+'/'+total
+                  );
+                })(),
                 (entry.edit_history||[]).length>0&&el('span',{onClick:()=>setHistoryFor(historyFor===entry.id?null:entry.id),style:{background:'rgba(217,119,6,.1)',color:'#d97706',borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:700,cursor:'pointer'}},'\uD83D\uDD01 Edited \u00D7'+(entry.edit_history||[]).length),
               ),
               el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:4}},
-                lt.fields.filter(f=>f.key!=='batch_number'&&f.key!=='date'&&f.key!=='status').slice(0,4).map(f=>entry[f.key]?el('div',{key:f.key,style:{fontSize:12,color:'var(--text2)'}},el('span',{style:{fontWeight:600,color:'var(--text)'}},f.label.replace(' *','')+': '),entry[f.key]):null)
+                lt.fields.filter(f=>f.key!=='batch_number'&&f.key!=='date'&&f.key!=='status').slice(0,4).map(f=>{const pv=previewSafe(entry[f.key]);return pv?el('div',{key:f.key,style:{fontSize:12,color:'var(--text2)'}},el('span',{style:{fontWeight:600,color:'var(--text)'}},f.label.replace(' *','')+': '),pv):null;})
               ),
               historyFor===entry.id&&(entry.edit_history||[]).length>0&&el('div',{style:{marginTop:10,background:'rgba(217,119,6,.05)',border:'1px solid rgba(217,119,6,.2)',borderRadius:8,padding:'10px 12px',display:'flex',flexDirection:'column',gap:8}},
                 el('div',{style:{fontSize:10,fontWeight:800,color:'#d97706',textTransform:'uppercase',letterSpacing:'.5px'}},'Edit History'),
