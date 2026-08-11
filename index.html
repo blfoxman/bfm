@@ -5630,36 +5630,50 @@ function CogsCalculator({cu,SUPA_URL,SUPA_KEY,H}){
   },[]);
 
   async function saveLibraryItem(item){
-    if(item.id){
-      await db.update('pf_cogs_library',item.id,item);
-      setLibrary(p=>p.map(i=>i.id===item.id?{...i,...item}:i));
-    }else{
-      const rec={...item,id:'lib-'+Date.now(),created_by:cu.name,created_at:new Date().toISOString()};
-      await db.insert('pf_cogs_library',rec);
-      setLibrary(p=>[...p,rec]);
+    try{
+      if(item.id){
+        await db.update('pf_cogs_library',item.id,item);
+        setLibrary(p=>p.map(i=>i.id===item.id?{...i,...item}:i));
+      }else{
+        const rec={...item,id:'lib-'+Date.now(),created_by:cu.name,created_at:new Date().toISOString()};
+        await db.insert('pf_cogs_library',rec);
+        setLibrary(p=>[...p,rec]);
+      }
+      return true;
+    }catch(e){
+      alert('Could not save: '+e.message+'\n\nMost likely cause: the pf_cogs_library table hasn\u2019t been created yet, or hasn\u2019t been added to the secure_write whitelist in Supabase. Check with whoever ran the SQL migration.');
+      return false;
     }
   }
   async function deleteLibraryItem(id){
     if(!window.confirm('Delete this library item? This won\u2019t affect past calculations that already used it.')) return;
-    await db.remove('pf_cogs_library',id);
-    setLibrary(p=>p.filter(i=>i.id!==id));
+    try{
+      await db.remove('pf_cogs_library',id);
+      setLibrary(p=>p.filter(i=>i.id!==id));
+    }catch(e){alert('Could not delete: '+e.message);}
   }
   async function saveCalc(calc){
-    if(calc.id){
-      await db.update('pf_cogs_calculations',calc.id,calc);
-      setCalcs(p=>p.map(c=>c.id===calc.id?calc:c));
-    }else{
-      const rec={...calc,id:'cogs-'+Date.now(),created_by:cu.name,created_by_id:cu.id,created_at:new Date().toISOString()};
-      await db.insert('pf_cogs_calculations',rec);
-      setCalcs(p=>[rec,...p]);
+    try{
+      if(calc.id){
+        await db.update('pf_cogs_calculations',calc.id,calc);
+        setCalcs(p=>p.map(c=>c.id===calc.id?calc:c));
+      }else{
+        const rec={...calc,id:'cogs-'+Date.now(),created_by:cu.name,created_by_id:cu.id,created_at:new Date().toISOString()};
+        await db.insert('pf_cogs_calculations',rec);
+        setCalcs(p=>[rec,...p]);
+      }
+      setEditingCalc(null);
+    }catch(e){
+      alert('Could not save: '+e.message+'\n\nMost likely cause: the pf_cogs_calculations table hasn\u2019t been created yet, or hasn\u2019t been added to the secure_write whitelist in Supabase.');
     }
-    setEditingCalc(null);
   }
   async function deleteCalc(id){
     if(!window.confirm('Delete this COGS calculation? This cannot be undone.')) return;
-    await db.remove('pf_cogs_calculations',id);
-    setCalcs(p=>p.filter(c=>c.id!==id));
-    setViewingCalc(null);
+    try{
+      await db.remove('pf_cogs_calculations',id);
+      setCalcs(p=>p.filter(c=>c.id!==id));
+      setViewingCalc(null);
+    }catch(e){alert('Could not delete: '+e.message);}
   }
 
   if(loading) return el('div',{style:{textAlign:'center',padding:60,color:'var(--text3)'}},'Loading\u2026');
@@ -5946,8 +5960,8 @@ function CogsLibraryManager({library,onSave,onDelete}){
   function startNew(){setEditing(null);setF({category:'raw_material',name:'',unit:'',cost_per_unit:'',product_types:[]});setShowAdd(true);}
   async function submit(){
     if(!f.name.trim()){alert('Enter a name.');return;}
-    await onSave({...f,id:editing});
-    setShowAdd(false);
+    const ok=await onSave({...f,id:editing});
+    if(ok!==false) setShowAdd(false);
   }
 
   return el('div',null,
