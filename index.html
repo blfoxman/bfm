@@ -3691,9 +3691,23 @@ function recalcInfusedFlower(logType,f){
     packaging_check_status:preRollCheck(expected,actual),
   };
 }
+// BHO/Butane: same biomass-tags-sum pattern as Ethanol, no yield-quality band
+// requested for this type \u2014 just the running total.
+const BHO_DUAL_SKU='THCA/HTE';
+// Fields that only apply to single-product SKUs (Live Resin, Shatter, Sugar,
+// Crumble) \u2014 hidden when SKU is THCA/HTE, which uses the dual-product fields instead.
+const BHO_SINGLE_PRODUCT_KEYS=['product_inprogress_metrc','product_inprogress_qty','product_inprogress_metrc_confirmed','product_inprogress_waste','product_inprogress_waste_metrc_confirmed','product_final_metrc','product_final_qty','product_final_metrc_confirmed','product_final_waste','product_final_waste_metrc_confirmed'];
+const BHO_DUAL_PRODUCT_KEYS=['hte_inprogress_metrc','hte_inprogress_qty','hte_inprogress_metrc_confirmed','hte_inprogress_waste','hte_inprogress_waste_metrc_confirmed','thca_inprogress_metrc','thca_inprogress_qty','thca_inprogress_metrc_confirmed','thca_inprogress_waste','thca_inprogress_waste_metrc_confirmed','hte_final_metrc','hte_final_qty','hte_final_metrc_confirmed','hte_final_waste','hte_final_waste_metrc_confirmed','thca_final_metrc','thca_final_qty','thca_final_metrc_confirmed','thca_final_waste','thca_final_waste_metrc_confirmed'];
+function recalcBho(logType,f){
+  if(logType!=='butane_extraction') return f;
+  const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
+  const tags=Array.isArray(f.biomass_tags)?f.biomass_tags:[];
+  const totalBiomass=tags.reduce((sum,row)=>sum+num(row&&row.weight),0);
+  return{...f,total_biomass_used:String(Math.round(totalBiomass*100)/100)};
+}
 // Runs every batch-type auto-calculation; each one is a no-op for the wrong logType.
 function recalcBatch(logType,f){
-  return recalcInfusedFlower(logType,recalcEthanol(logType,recalcPreRoll(logType,recalcCartridge(logType,recalcGummy(logType,f)))));
+  return recalcBho(logType,recalcInfusedFlower(logType,recalcEthanol(logType,recalcPreRoll(logType,recalcCartridge(logType,recalcGummy(logType,f))))));
 }
 // Pre-Rolls has TWO System Check checkpoints against the same Infused Flower
 // Used figure, at different grams-per-joint targets for each production stage.
@@ -3980,17 +3994,55 @@ const LOG_TYPES={
     {key:'status',label:'Status',type:'select',options:['In Progress','Winterization','Filtration','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
-  butane_extraction:{id:'butane_extraction',category:'batch',label:'Butane Extraction',icon:'\uD83D\uDD25',color:'#ea580c',bg:'#fff7ed',table:'pf_batch_tracker',dcr:'Missouri DCR / METRC \u2014 Batch Production Record',freq:'Per batch',fields:[
+  butane_extraction:{id:'butane_extraction',category:'batch',label:'BHO Extraction',icon:'\uD83D\uDD25',color:'#ea580c',bg:'#fff7ed',table:'pf_batch_tracker',dcr:'Missouri DCR / METRC \u2014 Batch Production Record',freq:'Per batch',fields:[
     {key:'batch_number',label:'Batch / Lot Number',type:'text',placeholder:'e.g. BHO-2026-014'},
     {key:'date',label:'Date',type:'date'},
     {key:'operator',label:'Operator / Personnel',type:'text',placeholder:'Who performed the extraction'},
-    {key:'strain_input',label:'Strain(s) / Input Material',type:'text',placeholder:'Strain name(s) used'},
-    {key:'input_weight',label:'Input Weight',type:'text',placeholder:'e.g. 5 lbs flower/trim'},
-    {key:'butane_volume',label:'Butane Volume Used',type:'text',placeholder:'e.g. 8 lbs'},
-    {key:'purge_time_temp',label:'Purge Time / Temp',type:'text',placeholder:'e.g. 12 hrs at 90\u00B0F'},
-    {key:'output_weight',label:'Output Weight (Concentrate)',type:'text',placeholder:'e.g. 640g'},
-    {key:'yield_percent',label:'Yield %',type:'text',placeholder:'e.g. 14.1%'},
-    {key:'metrc_tag',label:'METRC Tag #(s)',type:'text',placeholder:'Source and/or output tags'},
+    {key:'sku',label:'SKU',type:'select',options:['Live Resin','Shatter','Sugar','THCA/HTE','Crumble']},
+    {key:'_s_biomass',label:'--- BIOMASS USED ---',type:'section'},
+    {key:'biomass_tags',label:'Biomass Tags',type:'text'},
+    {key:'total_biomass_used',label:'Total Biomass Used',type:'text'},
+    {key:'_s_bho_crude',label:'--- BHO CRUDE ---',type:'section'},
+    {key:'bho_crude_metrc',label:'BHO Crude METRC #',type:'text',placeholder:'METRC tag for the BHO crude'},
+    {key:'bho_crude_produced',label:'BHO Crude Produced',type:'text',placeholder:'Actual measured weight'},
+    {key:'bho_crude_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'_s_inprogress',label:'--- IN PROGRESS ---',type:'section'},
+    // Single-product SKUs (Live Resin, Shatter, Sugar, Crumble) \u2014 label is
+    // dynamically prefixed with the selected SKU name at render time.
+    {key:'product_inprogress_metrc',label:'(In Progress) METRC #',type:'text'},
+    {key:'product_inprogress_qty',label:'(In Progress) Qty Produced',type:'text'},
+    {key:'product_inprogress_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'product_inprogress_waste',label:'(In Progress) Waste',type:'text'},
+    {key:'product_inprogress_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    // THCA/HTE \u2014 two separate products tracked side by side
+    {key:'hte_inprogress_metrc',label:'HTE (In Progress) METRC #',type:'text'},
+    {key:'hte_inprogress_qty',label:'HTE (In Progress) Qty Produced',type:'text'},
+    {key:'hte_inprogress_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'hte_inprogress_waste',label:'HTE (In Progress) Waste',type:'text'},
+    {key:'hte_inprogress_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'thca_inprogress_metrc',label:'THCA (In Progress) METRC #',type:'text'},
+    {key:'thca_inprogress_qty',label:'THCA (In Progress) Qty Produced',type:'text'},
+    {key:'thca_inprogress_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'thca_inprogress_waste',label:'THCA (In Progress) Waste',type:'text'},
+    {key:'thca_inprogress_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'_s_bho_final',label:'--- FINAL ---',type:'section'},
+    // Single-product SKUs
+    {key:'product_final_metrc',label:'Final Batch METRC #',type:'text'},
+    {key:'product_final_qty',label:'Final Qty',type:'text'},
+    {key:'product_final_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'product_final_waste',label:'Final Waste',type:'text'},
+    {key:'product_final_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    // THCA/HTE final
+    {key:'hte_final_metrc',label:'HTE Final Batch METRC #',type:'text'},
+    {key:'hte_final_qty',label:'HTE Final Qty',type:'text'},
+    {key:'hte_final_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'hte_final_waste',label:'HTE Final Waste',type:'text'},
+    {key:'hte_final_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'thca_final_metrc',label:'THCA Final Batch METRC #',type:'text'},
+    {key:'thca_final_qty',label:'THCA Final Qty',type:'text'},
+    {key:'thca_final_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'thca_final_waste',label:'THCA Final Waste',type:'text'},
+    {key:'thca_final_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'status',label:'Status',type:'select',options:['In Progress','Purging','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
@@ -4527,6 +4579,14 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         ),
       );
     }
+    // BHO: single-product SKU fields carry a generic base label ("(In Progress)
+    // METRC #") \u2014 prefix it with whichever SKU is currently selected so it
+    // reads as "Live Resin (In Progress) METRC #" / "Shatter (In Progress)
+    // METRC #" / etc. without needing a separate field set per SKU.
+    if(logType==='butane_extraction'&&BHO_SINGLE_PRODUCT_KEYS.includes(f.key)&&f.type!=='checkbox'){
+      const skuName=form.sku&&form.sku!==BHO_DUAL_SKU?form.sku:'Product';
+      f={...f,label:skuName+' '+f.label};
+    }
     if(logType==='infused_flower'&&f.key==='packaging_check_result'){
       const status=form.packaging_check_status||'pass';
       const cfg={
@@ -4622,7 +4682,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         el('div',{style:{width:'100%',background:'var(--surface2)',border:'1px dashed var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,fontWeight:700,boxSizing:'border-box'}},form[f.key]||'0'),
       );
     }
-    if(logType==='ethanol_extraction'&&f.key==='biomass_tags'){
+    if((logType==='ethanol_extraction'||logType==='butane_extraction')&&f.key==='biomass_tags'){
       const tags=Array.isArray(form.biomass_tags)?form.biomass_tags:[];
       const rowStyle={flex:1,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 12px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'};
       return el('div',{key:f.key,className:'fg'},
@@ -4645,7 +4705,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         ),
       );
     }
-    if(logType==='ethanol_extraction'&&f.key==='total_biomass_used'){
+    if((logType==='ethanol_extraction'||logType==='butane_extraction')&&f.key==='total_biomass_used'){
       return el('div',{key:f.key,className:'fg'},
         el('label',null,f.label+' (auto-calculated)'),
         el('div',{style:{width:'100%',background:'var(--surface2)',border:'1px dashed var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,fontWeight:700,boxSizing:'border-box'}},form.total_biomass_used||'0'),
@@ -4733,7 +4793,11 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       ),
       el('div',{className:'mbd'},
         el('div',{style:{background:'rgba(30,58,95,.04)',border:'1px solid rgba(30,58,95,.1)',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:'var(--text2)'}},'\uD83D\uDCCB Fields marked * are required. This record is timestamped and signed \u2014 legally valid for DCR inspections.'),
-        lt.fields.filter(f=>!(logType==='pre_rolls'&&PRE_ROLL_NO_KIEF_SKUS.includes(form.sku)&&PRE_ROLL_KIEF_SECTION_KEYS.includes(f.key))).map(f=>INP(f)),
+        lt.fields.filter(f=>
+          !(logType==='pre_rolls'&&PRE_ROLL_NO_KIEF_SKUS.includes(form.sku)&&PRE_ROLL_KIEF_SECTION_KEYS.includes(f.key))
+          &&!(logType==='butane_extraction'&&form.sku===BHO_DUAL_SKU&&BHO_SINGLE_PRODUCT_KEYS.includes(f.key))
+          &&!(logType==='butane_extraction'&&form.sku!==BHO_DUAL_SKU&&BHO_DUAL_PRODUCT_KEYS.includes(f.key))
+        ).map(f=>INP(f)),
         // File attachments
         el('div',{style:{borderTop:'1px solid var(--border)',paddingTop:16,marginTop:8,marginBottom:16}},
           el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
