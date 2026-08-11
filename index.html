@@ -423,23 +423,24 @@ const MODULE_DEFS=[
   {id:'risks',label:'Risk Register'},
   {id:'logs',label:'Facility Logs'},
   {id:'batch',label:'Batch Tracker'},
+  {id:'cogs',label:'COGS Calculator'},
   {id:'mydocs',label:'My Documents'},
   {id:'sales',label:'Sales & Marketing'},
 ];
 const ROLE_DEFAULT_PERMS={
-  admin:{license:'admin',board:'admin',qms:'admin',compliance:'admin',risks:'admin',logs:'admin',batch:'admin',mydocs:'admin',sales:'admin'},
-  general_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
-  assistant_general_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
-  compliance_officer:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
-  security_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
-  security_officer:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
-  inventory_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
-  extraction_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
-  production_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
-  sales_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
-  production_lead:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
-  team_member:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
-  sanitation:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,mydocs:'admin',sales:null},
+  admin:{license:'admin',board:'admin',qms:'admin',compliance:'admin',risks:'admin',logs:'admin',batch:'admin',cogs:'admin',mydocs:'admin',sales:'admin'},
+  general_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
+  assistant_general_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
+  compliance_officer:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
+  security_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
+  security_officer:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
+  inventory_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
+  extraction_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
+  production_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
+  sales_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
+  production_lead:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
+  team_member:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
+  sanitation:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
 };
 function modulePerm(u,mod){
   if(!u)return null;
@@ -5596,6 +5597,410 @@ function AIReporter({cu,SUPA_URL,SUPA_KEY,H}){
         style:{flexShrink:0,padding:'10px 18px',borderRadius:'var(--rs)',border:'none',background:input.trim()&&!loading?'var(--accent)':'var(--border)',color:input.trim()&&!loading?'#fff':'var(--text3)',fontFamily:'inherit',fontSize:13,fontWeight:600,cursor:input.trim()&&!loading?'pointer':'not-allowed',transition:'all .15s',marginBottom:1}
       },loading?'\u23F3':'Send'),
     ),
+  );
+}
+
+// ── COGS CALCULATOR ──────────────────────────────────────────────────────────
+// Tied to Batch Tracker product types. Two tabs: saved Calculations, and a
+// reusable Cost Library (raw materials / packaging / labor rates you can pick
+// from when building a calculation, and still override per-batch).
+const COGS_CATEGORIES=[
+  {id:'raw_material',label:'Raw Materials',nameLabel:'Material',qtyLabel:'Qty',unitLabel:'Unit',rateLabel:'Cost / Unit'},
+  {id:'packaging',label:'Packaging',nameLabel:'Item',qtyLabel:'Qty',unitLabel:'Unit',rateLabel:'Cost / Unit'},
+  {id:'labor',label:'Labor',nameLabel:'Role / Task',qtyLabel:'Hours',unitLabel:'Unit',rateLabel:'Rate / Hour'},
+];
+function cogsNum(v){const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;}
+function lineTotal(row){return cogsNum(row.qty)*cogsNum(row.cost_per_unit);}
+function sumLines(rows){return (rows||[]).reduce((s,r)=>s+lineTotal(r),0);}
+
+function CogsCalculator({cu,SUPA_URL,SUPA_KEY,H}){
+  const[tab,setTab]=useState('calculations');
+  const[calcs,setCalcs]=useState([]);
+  const[library,setLibrary]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[editingCalc,setEditingCalc]=useState(null); // null = list view, {} = new, {...} = editing
+  const[viewingCalc,setViewingCalc]=useState(null);
+
+  React.useEffect(()=>{
+    setLoading(true);
+    Promise.all([
+      fetch(`${SUPA_URL}/rest/v1/pf_cogs_calculations?order=created_at.desc`,{headers:H.headers}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+      fetch(`${SUPA_URL}/rest/v1/pf_cogs_library?order=category.asc,name.asc`,{headers:H.headers}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+    ]).then(([c,l])=>{setCalcs(Array.isArray(c)?c:[]);setLibrary(Array.isArray(l)?l:[]);setLoading(false);});
+  },[]);
+
+  async function saveLibraryItem(item){
+    if(item.id){
+      await db.update('pf_cogs_library',item.id,item);
+      setLibrary(p=>p.map(i=>i.id===item.id?{...i,...item}:i));
+    }else{
+      const rec={...item,id:'lib-'+Date.now(),created_by:cu.name,created_at:new Date().toISOString()};
+      await db.insert('pf_cogs_library',rec);
+      setLibrary(p=>[...p,rec]);
+    }
+  }
+  async function deleteLibraryItem(id){
+    if(!window.confirm('Delete this library item? This won\u2019t affect past calculations that already used it.')) return;
+    await db.remove('pf_cogs_library',id);
+    setLibrary(p=>p.filter(i=>i.id!==id));
+  }
+  async function saveCalc(calc){
+    if(calc.id){
+      await db.update('pf_cogs_calculations',calc.id,calc);
+      setCalcs(p=>p.map(c=>c.id===calc.id?calc:c));
+    }else{
+      const rec={...calc,id:'cogs-'+Date.now(),created_by:cu.name,created_by_id:cu.id,created_at:new Date().toISOString()};
+      await db.insert('pf_cogs_calculations',rec);
+      setCalcs(p=>[rec,...p]);
+    }
+    setEditingCalc(null);
+  }
+  async function deleteCalc(id){
+    if(!window.confirm('Delete this COGS calculation? This cannot be undone.')) return;
+    await db.remove('pf_cogs_calculations',id);
+    setCalcs(p=>p.filter(c=>c.id!==id));
+    setViewingCalc(null);
+  }
+
+  if(loading) return el('div',{style:{textAlign:'center',padding:60,color:'var(--text3)'}},'Loading\u2026');
+
+  if(editingCalc) return el(CogsCalcEditor,{
+    calc:editingCalc,library,cu,
+    onCancel:()=>setEditingCalc(null),
+    onSave:saveCalc,
+  });
+
+  if(viewingCalc) return el(CogsCalcView,{
+    calc:viewingCalc,
+    onClose:()=>setViewingCalc(null),
+    onEdit:()=>{setEditingCalc(viewingCalc);setViewingCalc(null);},
+    onDelete:()=>deleteCalc(viewingCalc.id),
+  });
+
+  return el('div',{style:{padding:'0 0 48px'}},
+    el('div',{style:{background:'#0f766e',borderRadius:14,padding:'20px 24px',marginBottom:20,color:'#fff'}},
+      el('div',{style:{fontSize:20,fontWeight:800,marginBottom:4}},'\uD83D\uDCB0 COGS Calculator'),
+      el('div',{style:{fontSize:12,opacity:.85}},'Cost of Goods Sold \u2014 raw materials, packaging, labor and testing per batch'),
+    ),
+    el('div',{style:{display:'flex',gap:4,marginBottom:18,background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--r)',padding:4,maxWidth:400}},
+      [{id:'calculations',label:'\uD83D\uDCCA Calculations'},{id:'library',label:'\uD83D\uDCDA Cost Library'}].map(t=>
+        el('button',{key:t.id,onClick:()=>setTab(t.id),style:{flex:1,padding:'8px 14px',borderRadius:8,border:'none',background:tab===t.id?'#0f766e':'transparent',color:tab===t.id?'#fff':'var(--text2)',fontFamily:'inherit',fontSize:13,fontWeight:tab===t.id?700:500,cursor:'pointer',transition:'all .15s'}},t.label)
+      )
+    ),
+
+    tab==='calculations'&&el(CogsCalcList,{calcs,onNew:()=>setEditingCalc({}),onView:c=>setViewingCalc(c)}),
+    tab==='library'&&el(CogsLibraryManager,{library,onSave:saveLibraryItem,onDelete:deleteLibraryItem}),
+  );
+}
+
+function CogsCalcList({calcs,onNew,onView}){
+  const[filter,setFilter]=useState('all');
+  const filtered=filter==='all'?calcs:calcs.filter(c=>c.product_type===filter);
+  return el('div',null,
+    el('div',{style:{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap',alignItems:'center'}},
+      el('select',{value:filter,onChange:ev=>setFilter(ev.target.value),style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 12px',color:'var(--text)',fontFamily:'inherit',fontSize:13}},
+        el('option',{value:'all'},'All Product Types'),
+        BATCH_TYPE_IDS.map(id=>el('option',{key:id,value:id},LOG_TYPES[id].label))
+      ),
+      el('button',{className:'btn b-blue',onClick:onNew,style:{marginLeft:'auto'}},'+ New Calculation'),
+    ),
+    filtered.length===0?el('div',{style:{textAlign:'center',padding:'48px 24px',background:'var(--surface)',borderRadius:12,border:'1px solid var(--border)'}},
+      el('div',{style:{fontSize:36,marginBottom:12}},'\uD83D\uDCB0'),
+      el('div',{style:{fontSize:15,fontWeight:700,color:'var(--text)',marginBottom:6}},'No COGS calculations yet'),
+      el('button',{onClick:onNew,style:{background:'#0f766e',color:'#fff',border:'none',borderRadius:8,padding:'10px 24px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',marginTop:8}},'+ New Calculation'),
+    ):el('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+      filtered.map(c=>{
+        const totalCogs=sumLines(c.raw_materials)+sumLines(c.packaging)+sumLines(c.labor)+cogsNum(c.testing_cost);
+        const perUnit=cogsNum(c.batch_size)>0?totalCogs/cogsNum(c.batch_size):0;
+        const margin=cogsNum(c.target_margin_pct)||40;
+        const suggestedPrice=margin<100?perUnit/(1-margin/100):0;
+        const lt=LOG_TYPES[c.product_type];
+        return el('div',{key:c.id,onClick:()=>onView(c),style:{background:'#fff',border:'1px solid var(--border)',borderRadius:12,padding:'14px 16px',boxShadow:'0 1px 3px rgba(15,23,42,.04)',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}},
+          el('div',null,
+            el('div',{style:{display:'flex',gap:8,alignItems:'center',marginBottom:4}},
+              el('span',{style:{fontSize:12,fontWeight:700,color:lt?lt.color:'#0f766e'}},(lt?lt.icon+' '+lt.label:c.product_type)),
+              el('span',{style:{fontSize:12,color:'var(--text2)'}},c.batch_label||''),
+            ),
+            el('div',{style:{fontSize:11,color:'var(--text3)'}},(c.date||'')+' \u00B7 '+(c.created_by||'')+' \u00B7 Batch size: '+(c.batch_size||0)+' units'),
+          ),
+          el('div',{style:{display:'flex',gap:20,alignItems:'center'}},
+            el('div',{style:{textAlign:'right'}},
+              el('div',{style:{fontSize:10,color:'var(--text3)',textTransform:'uppercase',fontWeight:700}},'COGS/Unit'),
+              el('div',{style:{fontSize:16,fontWeight:800,color:'#0f766e'}},'$'+perUnit.toFixed(2)),
+            ),
+            el('div',{style:{textAlign:'right'}},
+              el('div',{style:{fontSize:10,color:'var(--text3)',textTransform:'uppercase',fontWeight:700}},'Suggested Price'),
+              el('div',{style:{fontSize:16,fontWeight:800,color:'#059669'}},'$'+suggestedPrice.toFixed(2)),
+            ),
+          ),
+        );
+      })
+    ),
+  );
+}
+
+function CogsLineItemEditor({rows,setRows,category,library,productType}){
+  const catLib=library.filter(l=>l.category===category.id&&(!l.product_types||l.product_types.length===0||l.product_types.includes(productType)));
+  function updateRow(i,patch){setRows(rows.map((r,idx)=>idx===i?{...r,...patch}:r));}
+  function removeRow(i){setRows(rows.filter((_,idx)=>idx!==i));}
+  function addRow(){setRows([...rows,{name:'',qty:'',unit:'',cost_per_unit:''}]);}
+  function addFromLibrary(item){setRows([...rows,{name:item.name,qty:'',unit:item.unit||'',cost_per_unit:item.cost_per_unit||''}]);}
+  const total=sumLines(rows);
+  return el('div',{style:{marginBottom:20}},
+    el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},
+      el('div',{style:{fontSize:13,fontWeight:800,color:'var(--text)'}},category.label),
+      el('div',{style:{fontSize:13,fontWeight:800,color:'#0f766e'}},'$'+total.toFixed(2)),
+    ),
+    rows.length>0&&el('div',{style:{display:'flex',flexDirection:'column',gap:6,marginBottom:8}},
+      rows.map((row,i)=>el('div',{key:i,style:{display:'flex',gap:6,alignItems:'center'}},
+        el('input',{placeholder:category.nameLabel,value:row.name,onChange:ev=>updateRow(i,{name:ev.target.value}),style:{flex:2,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:6,padding:'7px 10px',fontSize:12,fontFamily:'inherit',color:'var(--text)'}}),
+        el('input',{placeholder:category.qtyLabel,value:row.qty,onChange:ev=>updateRow(i,{qty:ev.target.value}),style:{width:70,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:6,padding:'7px 10px',fontSize:12,fontFamily:'inherit',color:'var(--text)'}}),
+        el('input',{placeholder:category.unitLabel,value:row.unit,onChange:ev=>updateRow(i,{unit:ev.target.value}),style:{width:60,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:6,padding:'7px 10px',fontSize:12,fontFamily:'inherit',color:'var(--text)'}}),
+        el('input',{placeholder:category.rateLabel,value:row.cost_per_unit,onChange:ev=>updateRow(i,{cost_per_unit:ev.target.value}),style:{width:90,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:6,padding:'7px 10px',fontSize:12,fontFamily:'inherit',color:'var(--text)'}}),
+        el('div',{style:{width:70,textAlign:'right',fontSize:12,fontWeight:700,color:'var(--text)'}},'$'+lineTotal(row).toFixed(2)),
+        el('button',{onClick:()=>removeRow(i),style:{background:'#fee2e2',color:'#dc2626',border:'none',borderRadius:6,padding:'6px 10px',fontFamily:'inherit',fontSize:12,cursor:'pointer',flexShrink:0}},'\u2715'),
+      ))
+    ),
+    el('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
+      el('button',{onClick:addRow,style:{background:'var(--surface2)',border:'1px solid var(--border)',color:'var(--text2)',borderRadius:8,padding:'7px 14px',fontFamily:'inherit',fontSize:12,fontWeight:600,cursor:'pointer'}},'+ Add '+category.nameLabel),
+      catLib.length>0&&el('select',{value:'',onChange:ev=>{const item=catLib.find(l=>l.id===ev.target.value);if(item)addFromLibrary(item);},style:{background:'#0f766e10',border:'1px solid #0f766e40',color:'#0f766e',borderRadius:8,padding:'7px 10px',fontFamily:'inherit',fontSize:12,fontWeight:600,cursor:'pointer'}},
+        el('option',{value:''},'+ Add from Library\u2026'),
+        catLib.map(l=>el('option',{key:l.id,value:l.id},l.name+' ($'+cogsNum(l.cost_per_unit).toFixed(2)+'/'+(l.unit||'unit')+')'))
+      ),
+    ),
+  );
+}
+
+function CogsCalcEditor({calc,library,cu,onCancel,onSave}){
+  const[f,setF]=useState({
+    product_type:calc.product_type||BATCH_TYPE_IDS[0],
+    batch_label:calc.batch_label||'',
+    date:calc.date||new Date().toISOString().slice(0,10),
+    raw_materials:calc.raw_materials||[],
+    packaging:calc.packaging||[],
+    labor:calc.labor||[],
+    testing_cost:calc.testing_cost||'',
+    batch_size:calc.batch_size||'',
+    target_margin_pct:calc.target_margin_pct||40,
+    notes:calc.notes||'',
+    id:calc.id,
+  });
+  const[saving,setSaving]=useState(false);
+
+  const totalRaw=sumLines(f.raw_materials);
+  const totalPack=sumLines(f.packaging);
+  const totalLabor=sumLines(f.labor);
+  const testCost=cogsNum(f.testing_cost);
+  const totalCogs=totalRaw+totalPack+totalLabor+testCost;
+  const batchSize=cogsNum(f.batch_size);
+  const perUnit=batchSize>0?totalCogs/batchSize:0;
+  const margin=cogsNum(f.target_margin_pct);
+  const suggestedPrice=margin<100?perUnit/(1-margin/100):0;
+  const profitPerUnit=suggestedPrice-perUnit;
+
+  async function handleSave(){
+    if(!f.batch_label.trim()){alert('Give this calculation a name (e.g. the batch or product name).');return;}
+    if(batchSize<=0){alert('Enter a batch size greater than 0.');return;}
+    setSaving(true);
+    await onSave({...f});
+    setSaving(false);
+  }
+
+  const lt=LOG_TYPES[f.product_type];
+
+  return el('div',{style:{padding:'0 0 48px'}},
+    el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}},
+      el('div',{style:{fontSize:18,fontWeight:800,color:'var(--text)'}},calc.id?'Edit COGS Calculation':'New COGS Calculation'),
+      el('button',{className:'btn b-ghost',onClick:onCancel},'\u2190 Back'),
+    ),
+    el('div',{style:{display:'grid',gridTemplateColumns:'1fr 320px',gap:20,alignItems:'start'}},
+      // Left: inputs
+      el('div',{style:{background:'#fff',border:'1px solid var(--border)',borderRadius:12,padding:20}},
+        el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}},
+          el('div',null,
+            el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Product Type'),
+            el('select',{value:f.product_type,onChange:ev=>setF(p=>({...p,product_type:ev.target.value})),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)'}},
+              BATCH_TYPE_IDS.map(id=>el('option',{key:id,value:id},LOG_TYPES[id].label))
+            ),
+          ),
+          el('div',null,
+            el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Batch / Recipe Name'),
+            el('input',{value:f.batch_label,onChange:ev=>setF(p=>({...p,batch_label:ev.target.value})),placeholder:'e.g. Very Berry Gummies',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)',boxSizing:'border-box'}}),
+          ),
+          el('div',null,
+            el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Date'),
+            el('input',{type:'date',value:f.date,onChange:ev=>setF(p=>({...p,date:ev.target.value})),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)',boxSizing:'border-box'}}),
+          ),
+          el('div',null,
+            el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Batch Size (units produced)'),
+            el('input',{value:f.batch_size,onChange:ev=>setF(p=>({...p,batch_size:ev.target.value})),placeholder:'e.g. 500',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)',boxSizing:'border-box'}}),
+          ),
+        ),
+        el('hr',{style:{border:'none',borderTop:'1px solid var(--border)',margin:'4px 0 18px'}}),
+        el(CogsLineItemEditor,{rows:f.raw_materials,setRows:rows=>setF(p=>({...p,raw_materials:rows})),category:COGS_CATEGORIES[0],library,productType:f.product_type}),
+        el(CogsLineItemEditor,{rows:f.packaging,setRows:rows=>setF(p=>({...p,packaging:rows})),category:COGS_CATEGORIES[1],library,productType:f.product_type}),
+        el(CogsLineItemEditor,{rows:f.labor,setRows:rows=>setF(p=>({...p,labor:rows})),category:COGS_CATEGORIES[2],library,productType:f.product_type}),
+        el('div',{style:{marginBottom:16}},
+          el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Testing Cost (total)'),
+          el('input',{value:f.testing_cost,onChange:ev=>setF(p=>({...p,testing_cost:ev.target.value})),placeholder:'e.g. 150',style:{width:200,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)'}}),
+        ),
+        el('div',{style:{marginBottom:16}},
+          el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Target Margin %'),
+          el('input',{value:f.target_margin_pct,onChange:ev=>setF(p=>({...p,target_margin_pct:ev.target.value})),placeholder:'e.g. 40',style:{width:120,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)'}}),
+        ),
+        el('div',null,
+          el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Notes'),
+          el('textarea',{value:f.notes,onChange:ev=>setF(p=>({...p,notes:ev.target.value})),rows:2,style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)',boxSizing:'border-box',resize:'vertical'}}),
+        ),
+      ),
+      // Right: live summary
+      el('div',{style:{background:'#0f766e',borderRadius:12,padding:20,color:'#fff',position:'sticky',top:20}},
+        el('div',{style:{fontSize:12,fontWeight:700,opacity:.8,textTransform:'uppercase',letterSpacing:'.5px',marginBottom:14}},(lt?lt.icon+' '+lt.label:'')+' Summary'),
+        [
+          ['Raw Materials',totalRaw],['Packaging',totalPack],['Labor',totalLabor],['Testing',testCost],
+        ].map(([label,val])=>el('div',{key:label,style:{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:8,opacity:.9}},
+          el('span',null,label),el('span',{style:{fontWeight:700}},'$'+val.toFixed(2))
+        )),
+        el('div',{style:{borderTop:'1px solid rgba(255,255,255,.25)',margin:'10px 0',paddingTop:10,display:'flex',justifyContent:'space-between',fontSize:15,fontWeight:800}},
+          el('span',null,'Total COGS'),el('span',null,'$'+totalCogs.toFixed(2))
+        ),
+        el('div',{style:{background:'rgba(255,255,255,.12)',borderRadius:10,padding:14,marginTop:16}},
+          el('div',{style:{fontSize:11,opacity:.8,textTransform:'uppercase',fontWeight:700}},'COGS Per Unit'),
+          el('div',{style:{fontSize:26,fontWeight:800}},'$'+perUnit.toFixed(2)),
+        ),
+        el('div',{style:{background:'rgba(255,255,255,.12)',borderRadius:10,padding:14,marginTop:10}},
+          el('div',{style:{fontSize:11,opacity:.8,textTransform:'uppercase',fontWeight:700}},'Suggested Price @ '+margin+'% margin'),
+          el('div',{style:{fontSize:26,fontWeight:800}},'$'+suggestedPrice.toFixed(2)),
+          el('div',{style:{fontSize:11,opacity:.75,marginTop:4}},'Profit: $'+profitPerUnit.toFixed(2)+'/unit'),
+        ),
+        el('button',{onClick:handleSave,disabled:saving,style:{width:'100%',background:'#fff',color:'#0f766e',border:'none',borderRadius:8,padding:'12px',fontFamily:'inherit',fontSize:14,fontWeight:800,cursor:'pointer',marginTop:18,opacity:saving?.6:1}},saving?'Saving\u2026':'\uD83D\uDCBE Save Calculation'),
+      ),
+    ),
+  );
+}
+
+function CogsCalcView({calc,onClose,onEdit,onDelete}){
+  const lt=LOG_TYPES[calc.product_type];
+  const totalRaw=sumLines(calc.raw_materials);
+  const totalPack=sumLines(calc.packaging);
+  const totalLabor=sumLines(calc.labor);
+  const testCost=cogsNum(calc.testing_cost);
+  const totalCogs=totalRaw+totalPack+totalLabor+testCost;
+  const batchSize=cogsNum(calc.batch_size);
+  const perUnit=batchSize>0?totalCogs/batchSize:0;
+  const margin=cogsNum(calc.target_margin_pct)||40;
+  const suggestedPrice=margin<100?perUnit/(1-margin/100):0;
+
+  function lineRows(rows,cat){
+    return (rows||[]).map((r,i)=>el('div',{key:i,style:{display:'flex',justifyContent:'space-between',fontSize:12,padding:'5px 0',borderBottom:'1px solid var(--border)'}},
+      el('span',{style:{color:'var(--text2)'}},r.name+(r.qty?' \u00D7 '+r.qty+(r.unit?' '+r.unit:''):'')),
+      el('span',{style:{fontWeight:700,color:'var(--text)'}},'$'+lineTotal(r).toFixed(2)),
+    ));
+  }
+
+  return el('div',{style:{padding:'0 0 48px'}},
+    el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}},
+      el('button',{className:'btn b-ghost',onClick:onClose},'\u2190 Back'),
+      el('div',{style:{display:'flex',gap:8}},
+        el('button',{className:'btn b-ghost',onClick:onEdit},'Edit'),
+        el('button',{className:'btn b-ghost',onClick:onDelete,style:{color:'#dc2626'}},'Delete'),
+      ),
+    ),
+    el('div',{style:{background:'#0f766e',borderRadius:14,padding:'20px 24px',marginBottom:16,color:'#fff'}},
+      el('div',{style:{fontSize:12,opacity:.8,fontWeight:700,textTransform:'uppercase'}},lt?lt.icon+' '+lt.label:calc.product_type),
+      el('div',{style:{fontSize:22,fontWeight:800,marginTop:2}},calc.batch_label),
+      el('div',{style:{fontSize:12,opacity:.85,marginTop:4}},(calc.date||'')+' \u00B7 '+(calc.created_by||'')+' \u00B7 Batch size: '+batchSize+' units'),
+      el('div',{style:{display:'flex',gap:24,marginTop:16}},
+        el('div',null,el('div',{style:{fontSize:10,opacity:.7,textTransform:'uppercase',fontWeight:700}},'COGS Per Unit'),el('div',{style:{fontSize:24,fontWeight:800}},'$'+perUnit.toFixed(2))),
+        el('div',null,el('div',{style:{fontSize:10,opacity:.7,textTransform:'uppercase',fontWeight:700}},'Suggested Price'),el('div',{style:{fontSize:24,fontWeight:800}},'$'+suggestedPrice.toFixed(2))),
+        el('div',null,el('div',{style:{fontSize:10,opacity:.7,textTransform:'uppercase',fontWeight:700}},'Total COGS'),el('div',{style:{fontSize:24,fontWeight:800}},'$'+totalCogs.toFixed(2))),
+      ),
+    ),
+    el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}},
+      el('div',{style:{background:'#fff',border:'1px solid var(--border)',borderRadius:10,padding:16}},
+        el('div',{style:{fontSize:13,fontWeight:800,marginBottom:8}},'Raw Materials \u2014 $'+totalRaw.toFixed(2)),
+        lineRows(calc.raw_materials),
+      ),
+      el('div',{style:{background:'#fff',border:'1px solid var(--border)',borderRadius:10,padding:16}},
+        el('div',{style:{fontSize:13,fontWeight:800,marginBottom:8}},'Packaging \u2014 $'+totalPack.toFixed(2)),
+        lineRows(calc.packaging),
+      ),
+      el('div',{style:{background:'#fff',border:'1px solid var(--border)',borderRadius:10,padding:16}},
+        el('div',{style:{fontSize:13,fontWeight:800,marginBottom:8}},'Labor \u2014 $'+totalLabor.toFixed(2)),
+        lineRows(calc.labor),
+      ),
+      el('div',{style:{background:'#fff',border:'1px solid var(--border)',borderRadius:10,padding:16}},
+        el('div',{style:{fontSize:13,fontWeight:800,marginBottom:8}},'Testing \u2014 $'+testCost.toFixed(2)),
+        calc.notes&&el('div',{style:{fontSize:12,color:'var(--text2)',marginTop:8,paddingTop:8,borderTop:'1px solid var(--border)'}},el('b',null,'Notes: '),calc.notes),
+      ),
+    ),
+  );
+}
+
+function CogsLibraryManager({library,onSave,onDelete}){
+  const[showAdd,setShowAdd]=useState(false);
+  const[f,setF]=useState({category:'raw_material',name:'',unit:'',cost_per_unit:'',product_types:[]});
+  const[editing,setEditing]=useState(null);
+
+  function startEdit(item){setEditing(item.id);setF({...item,product_types:item.product_types||[]});setShowAdd(true);}
+  function startNew(){setEditing(null);setF({category:'raw_material',name:'',unit:'',cost_per_unit:'',product_types:[]});setShowAdd(true);}
+  async function submit(){
+    if(!f.name.trim()){alert('Enter a name.');return;}
+    await onSave({...f,id:editing});
+    setShowAdd(false);
+  }
+
+  return el('div',null,
+    el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}},
+      el('div',{style:{fontSize:13,color:'var(--text2)'}},'Reusable costs you can pull into any calculation \u2014 edit anytime without affecting past calculations.'),
+      el('button',{className:'btn b-blue',onClick:startNew},'+ Add Item'),
+    ),
+    showAdd&&el('div',{style:{background:'#fff',border:'1px solid var(--border)',borderRadius:10,padding:16,marginBottom:16}},
+      el('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:12}},
+        el('select',{value:f.category,onChange:ev=>setF(p=>({...p,category:ev.target.value})),style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',fontFamily:'inherit',fontSize:13}},
+          COGS_CATEGORIES.map(c=>el('option',{key:c.id,value:c.id},c.label))
+        ),
+        el('input',{placeholder:'Name (e.g. Distillate)',value:f.name,onChange:ev=>setF(p=>({...p,name:ev.target.value})),style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',fontFamily:'inherit',fontSize:13}}),
+        el('input',{placeholder:'Unit (e.g. g, ml, hr)',value:f.unit,onChange:ev=>setF(p=>({...p,unit:ev.target.value})),style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',fontFamily:'inherit',fontSize:13}}),
+        el('input',{placeholder:'Cost per unit',value:f.cost_per_unit,onChange:ev=>setF(p=>({...p,cost_per_unit:ev.target.value})),style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',fontFamily:'inherit',fontSize:13}}),
+      ),
+      el('div',{style:{marginBottom:12}},
+        el('div',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',marginBottom:6}},'Applies to (leave blank for all product types)'),
+        el('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},
+          BATCH_TYPE_IDS.map(id=>{
+            const on=(f.product_types||[]).includes(id);
+            return el('button',{key:id,onClick:()=>setF(p=>({...p,product_types:on?p.product_types.filter(x=>x!==id):[...(p.product_types||[]),id]})),
+              style:{padding:'4px 10px',borderRadius:14,border:'1px solid',borderColor:on?'#0f766e':'var(--border)',background:on?'#0f766e':'transparent',color:on?'#fff':'var(--text2)',fontFamily:'inherit',fontSize:11,fontWeight:600,cursor:'pointer'}
+            },LOG_TYPES[id].label);
+          })
+        ),
+      ),
+      el('div',{style:{display:'flex',gap:8}},
+        el('button',{className:'btn b-blue',onClick:submit},editing?'Save Changes':'Add to Library'),
+        el('button',{className:'btn b-ghost',onClick:()=>setShowAdd(false)},'Cancel'),
+      ),
+    ),
+    COGS_CATEGORIES.map(cat=>{
+      const items=library.filter(l=>l.category===cat.id);
+      if(items.length===0) return null;
+      return el('div',{key:cat.id,style:{marginBottom:20}},
+        el('div',{style:{fontSize:12,fontWeight:800,color:'var(--text2)',textTransform:'uppercase',marginBottom:8}},cat.label),
+        el('div',{style:{display:'flex',flexDirection:'column',gap:6}},
+          items.map(item=>el('div',{key:item.id,style:{background:'#fff',border:'1px solid var(--border)',borderRadius:8,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+            el('div',null,
+              el('span',{style:{fontSize:13,fontWeight:600,color:'var(--text)'}},item.name),
+              el('span',{style:{fontSize:12,color:'var(--text3)',marginLeft:8}},'$'+cogsNum(item.cost_per_unit).toFixed(2)+'/'+(item.unit||'unit')),
+              item.product_types&&item.product_types.length>0&&el('span',{style:{fontSize:10,color:'var(--text3)',marginLeft:8}},'\u2022 '+item.product_types.map(id=>LOG_TYPES[id]?.label).join(', ')),
+            ),
+            el('div',{style:{display:'flex',gap:6}},
+              el('button',{onClick:()=>startEdit(item),className:'btn b-ghost btn-sm'},'Edit'),
+              el('button',{onClick:()=>onDelete(item.id),className:'btn b-ghost btn-sm',style:{color:'#dc2626'}},'Delete'),
+            ),
+          ))
+        ),
+      );
+    }),
+    library.length===0&&!showAdd&&el('div',{style:{textAlign:'center',padding:'40px 24px',background:'var(--surface)',borderRadius:12,border:'1px solid var(--border)',color:'var(--text3)'}},'No library items yet. Add reusable costs so you don\u2019t have to retype them every time.'),
   );
 }
 
@@ -12332,6 +12737,7 @@ function App(){
   const canAccessQms=isAdmin||isElevated||canRead(cu,'qms');
   const canAccessLogs=isAdmin||isElevated||canRead(cu,'logs');
   const canAccessBatch=isAdmin||isElevated||canRead(cu,'batch');
+  const canAccessCogs=isAdmin||canRead(cu,'cogs');
   const canAccessRisks=isAdmin||isElevated||canRead(cu,'risks');
   const canAccessCompliance=isAdmin||isElevated||canRead(cu,'compliance');
   const canAccessSales=isAdmin||hasRole(cu,'sales_manager')||canRead(cu,'sales');
@@ -12357,6 +12763,7 @@ function App(){
     canAccessRisks&&{id:'risks',ico:'\u26A0\uFE0F',label:'Risk Register'},
     canAccessLogs&&{id:'logs',ico:'\uD83D\uDCCB',label:'Facility Logs'},
     canAccessBatch&&{id:'batch',ico:'\uD83E\uDDEA',label:'Batch Tracker'},
+    canAccessCogs&&{id:'cogs',ico:'\uD83D\uDCB0',label:'COGS Calculator'},
     {id:'mydocs',ico:'\uD83D\uDCC1',label:'My Documents'},
     canAccessSales&&{id:'sales',ico:'\uD83C\uDFEA',label:'Sales & Marketing'},
     isAdmin&&{id:'team',ico:'\uD83D\uDC65',label:'Team & Access',badge:pending||null},
@@ -12569,6 +12976,7 @@ function App(){
       page==='risks'&&canAccessRisks&&el(RiskRegister,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
       page==='logs'&&canAccessLogs&&el(FacilityLogs,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
       page==='batch'&&canAccessBatch&&el(BatchTracker,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn:modulePerm.bind(null,cu)}),
+      page==='cogs'&&canAccessCogs&&el(CogsCalculator,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='reporter'&&canAccessQms&&el(AIReporter,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='qms'&&!restricted&&canAccessQms&&el(QMS,{cu,users,tasks,sops,setSops,
         deviations:qmsDeviations,setDeviations:setQmsDeviations,
