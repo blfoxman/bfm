@@ -2798,75 +2798,146 @@ const PERM_COLORS_MAP={
   admin:{bg:'rgba(16,122,85,.12)',color:'#10b981'},
 };
 function AccessControlMatrix({users,setUsers}){
-  const[saving,setSaving]=useState({});
   const[filter,setFilter]=useState('');
+  const[draft,setDraft]=useState({});
+  const[saving,setSaving]=useState({});
+  const[saved,setSaved]=useState({});
+  const[errors,setErrors]=useState({});
   const visibleUsers=users.filter(u=>u.role!=='admin'&&(!filter||u.name.toLowerCase().includes(filter.toLowerCase())));
-  async function setUserModulePerm(user,moduleId,newPerm){
-    const key=user.id+'_'+moduleId;
-    setSaving(p=>({...p,[key]:true}));
-    const updated={...(user.module_perms||{})};
-    if(newPerm===null||newPerm===undefined)delete updated[moduleId];
-    else updated[moduleId]=newPerm;
-    try{await db.update('pf_users',user.id,{module_perms:updated});setUsers(p=>p.map(u=>u.id===user.id?{...u,module_perms:updated}:u));}
-    catch(e){console.error(e);}
-    setSaving(p=>({...p,[key]:false}));
-  }
-  function cyclePerm(user,moduleId){
+
+  function getEffective(user,moduleId){
+    const userDraft=draft[user.id];
+    if(userDraft&&moduleId in userDraft)return userDraft[moduleId];
     const overrides=user.module_perms||{};
-    const hasOverride=moduleId in overrides;
-    const cur=overrides[moduleId];
-    if(!hasOverride)setUserModulePerm(user,moduleId,'read');
-    else if(cur==='read')setUserModulePerm(user,moduleId,'editor');
-    else if(cur==='editor')setUserModulePerm(user,moduleId,'admin');
-    else if(cur==='admin')setUserModulePerm(user,moduleId,null);
-    else setUserModulePerm(user,moduleId,undefined);
+    if(moduleId in overrides)return overrides[moduleId];
+    return undefined;
   }
+
+  function hasPendingChanges(user){return Object.keys(draft[user.id]||{}).length>0;}
+
+  function cyclePerm(user,moduleId){
+    const current=getEffective(user,moduleId);
+    const savedVal=(user.module_perms||{})[moduleId];
+    let next;
+    if(current===undefined||current===null)next='read';
+    else if(current==='read')next='editor';
+    else if(current==='editor')next='admin';
+    else if(current==='admin')next=null;
+    else next=undefined;
+    setDraft(p=>{
+      const ud={...(p[user.id]||{})};
+      if(next===savedVal||(next===undefined&&!(moduleId in (user.module_perms||{})))){delete ud[moduleId];}
+      else{ud[moduleId]=next;}
+      if(Object.keys(ud).length===0){const nd={...p};delete nd[user.id];return nd;}
+      return{...p,[user.id]:ud};
+    });
+  }
+
+  async function saveUser(user){
+    setSaving(p=>({...p,[user.id]:true}));
+    setErrors(p=>({...p,[user.id]:''}));
+    const ud=draft[user.id]||{};
+    const base={...(user.module_perms||{})};
+    Object.entries(ud).forEach(([mod,val])=>{
+      if(val===undefined||val===null)delete base[mod];
+      else base[mod]=val;
+    });
+    try{
+      await db.update('pf_users',user.id,{module_perms:base});
+      setUsers(p=>p.map(u=>u.id===user.id?{...u,module_perms:base}:u));
+      setDraft(p=>{const nd={...p};delete nd[user.id];return nd;});
+      setSaved(p=>({...p,[user.id]:true}));
+      setTimeout(()=>setSaved(p=>({...p,[user.id]:false})),2000);
+    }catch(e){
+      const msg=e.message||'Save failed';
+      setErrors(p=>({...p,[user.id]:msg.includes('column')||msg.includes('does not exist')?'Run add_module_perms_column.sql in Supabase first':msg}));
+    }
+    setSaving(p=>({...p,[user.id]:false}));
+  }
+
+  function resetUser(user){setDraft(p=>{const nd={...p};delete nd[user.id];return nd;});}
+
+  const PERM_COLORS_MAP={
+    read:{bg:'rgba(59,130,246,.12)',color:'#3b82f6'},
+    editor:{bg:'rgba(245,158,11,.12)',color:'#d97706'},
+    admin:{bg:'rgba(16,122,85,.12)',color:'#10b981'},
+  };
+
   return el('div',null,
     el('div',{style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,padding:'12px 16px',marginBottom:16,fontSize:13,color:'var(--text2)',lineHeight:1.6}},
-      'Job title sets the default access. Click any cell to override for a specific person. ',
-      'Cycle: ',el('b',null,'Default'),
+      'Click any cell to cycle: ',
+      el('b',null,'Default'),
       ' \u2192 ',el('span',{style:{padding:'1px 8px',borderRadius:10,border:'1px solid #3b82f6',background:'rgba(59,130,246,.1)',color:'#3b82f6',fontSize:11,fontWeight:600}},'Read'),
       ' \u2192 ',el('span',{style:{padding:'1px 8px',borderRadius:10,border:'1px solid #d97706',background:'rgba(245,158,11,.1)',color:'#d97706',fontSize:11,fontWeight:600}},'Editor'),
       ' \u2192 ',el('span',{style:{padding:'1px 8px',borderRadius:10,border:'1px solid #10b981',background:'rgba(16,122,85,.1)',color:'#10b981',fontSize:11,fontWeight:600}},'Admin'),
       ' \u2192 ',el('span',{style:{padding:'1px 8px',borderRadius:10,border:'1px solid var(--border)',fontSize:11,fontWeight:600,color:'var(--text3)'}},'None'),
-      '. ',el('b',null,'Blue ring = active override.'),
+      '. Amber = unsaved. Click ',el('b',null,'Save'),' to commit. Blue ring = saved override.',
     ),
-    el('input',{placeholder:'Filter people\u2026',value:filter,onChange:ev=>setFilter(ev.target.value),style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 14px',color:'var(--text)',fontFamily:'inherit',fontSize:13,outline:'none',width:240,marginBottom:14,display:'block'}}),
+    el('div',{style:{display:'flex',gap:10,marginBottom:14,alignItems:'center'}},
+      el('input',{placeholder:'Filter people\u2026',value:filter,onChange:ev=>setFilter(ev.target.value),style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 14px',color:'var(--text)',fontFamily:'inherit',fontSize:13,outline:'none',width:240}}),
+      Object.keys(draft).length>0&&el('div',{style:{fontSize:12,color:'#d97706',fontWeight:600}},
+        Object.keys(draft).length+' person'+(Object.keys(draft).length===1?'':'s')+' with unsaved changes'
+      ),
+    ),
     el('div',{style:{overflowX:'auto'}},
-      el('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:900}},
+      el('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:960}},
         el('thead',null,el('tr',null,
           el('th',{style:{textAlign:'left',padding:'10px 14px',fontSize:11,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',borderBottom:'2px solid var(--border)',position:'sticky',left:0,background:'var(--surface)',minWidth:160,zIndex:2}},'Person'),
           el('th',{style:{textAlign:'left',padding:'10px 6px',fontSize:11,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',borderBottom:'2px solid var(--border)',minWidth:80}},'Role'),
-          ...MODULE_DEFS.map(m=>el('th',{key:m.id,style:{textAlign:'center',padding:'8px 4px',fontSize:10,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',borderBottom:'2px solid var(--border)',minWidth:88}},m.label))
+          ...MODULE_DEFS.map(m=>el('th',{key:m.id,style:{textAlign:'center',padding:'8px 4px',fontSize:10,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',borderBottom:'2px solid var(--border)',minWidth:88}},m.label)),
+          el('th',{style:{textAlign:'center',padding:'8px 10px',fontSize:10,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',borderBottom:'2px solid var(--border)',minWidth:110}},'Actions')
         )),
-        el('tbody',null,visibleUsers.map((user,ri)=>el('tr',{key:user.id,style:{background:ri%2===0?'transparent':'var(--surface2)'}},
-          el('td',{style:{padding:'10px 14px',fontWeight:600,fontSize:13,position:'sticky',left:0,background:ri%2===0?'var(--surface)':'var(--surface2)',zIndex:1,borderRight:'1px solid var(--border)',whiteSpace:'nowrap'}},user.name),
-          el('td',{style:{padding:'10px 6px',fontSize:10,color:'var(--text2)',whiteSpace:'nowrap'}},el('span',{style:{padding:'2px 7px',borderRadius:10,background:'var(--surface2)',border:'1px solid var(--border)',fontSize:10}},roleLabels(user).split(',')[0].trim())),
-          ...MODULE_DEFS.map(m=>{
-            const overrides=user.module_perms||{};
-            const hasOverride=m.id in overrides;
-            const ov=overrides[m.id];
-            const key=user.id+'_'+m.id;
-            const isSaving=saving[key];
-            const roleDefault=(()=>{const roles=userRoles(user);let best=null;for(const r of roles){const d=(ROLE_DEFAULT_PERMS[r]||{})[m.id]||null;if((PERM_RANK[d]||0)>(PERM_RANK[best]||0))best=d;}return best;})();
-            let cfg,label,hint;
-            if(!hasOverride){cfg={bg:'var(--surface2)',color:'var(--text3)',border:'var(--border)'};label='Default';hint='Role default: '+(roleDefault||'none');}
-            else if(ov===null){cfg={bg:'transparent',color:'var(--text3)',border:'var(--border)'};label='None';hint='Explicitly blocked';}
-            else{const pc=PERM_COLORS_MAP[ov]||{bg:'transparent',color:'var(--text3)'};cfg={bg:pc.bg,color:pc.color,border:pc.color};label=ov.charAt(0).toUpperCase()+ov.slice(1);hint='Override: '+ov+' (role default: '+(roleDefault||'none')+')';}
-            return el('td',{key:m.id,style:{padding:'7px 4px',textAlign:'center'}},
-              el('button',{onClick:()=>cyclePerm(user,m.id),disabled:isSaving,title:hint,
-                style:{padding:'4px 8px',borderRadius:14,border:'1px solid',fontSize:11,fontWeight:600,cursor:'pointer',
-                  background:cfg.bg,color:cfg.color,borderColor:cfg.border||'var(--border)',
-                  minWidth:68,opacity:isSaving?.5:1,transition:'all .15s',fontFamily:'inherit',
-                  boxShadow:hasOverride?'0 0 0 2px rgba(59,130,246,.2)':'none',
-                }
-              },isSaving?'...':label)
-            );
-          })
-        )))
+        el('tbody',null,visibleUsers.map((user,ri)=>{
+          const pending=hasPendingChanges(user);
+          const isSaving=saving[user.id];
+          const isJustSaved=saved[user.id];
+          const rowError=errors[user.id];
+          return el('tr',{key:user.id,style:{background:pending?'rgba(245,158,11,.05)':ri%2===0?'transparent':'var(--surface2)',transition:'background .2s'}},
+            el('td',{style:{padding:'10px 14px',fontWeight:600,fontSize:13,position:'sticky',left:0,background:pending?'rgba(245,158,11,.08)':ri%2===0?'var(--surface)':'var(--surface2)',zIndex:1,borderRight:'1px solid var(--border)',whiteSpace:'nowrap',transition:'background .2s'}},
+              el('div',null,user.name),
+              rowError&&el('div',{style:{fontSize:10,color:'var(--red)',marginTop:3,maxWidth:150,lineHeight:1.3}},rowError),
+            ),
+            el('td',{style:{padding:'10px 6px',fontSize:10,color:'var(--text2)',whiteSpace:'nowrap'}},
+              el('span',{style:{padding:'2px 7px',borderRadius:10,background:'var(--surface2)',border:'1px solid var(--border)',fontSize:10}},roleLabels(user).split(',')[0].trim())
+            ),
+            ...MODULE_DEFS.map(m=>{
+              const eff=getEffective(user,m.id);
+              const hasSavedOverride=m.id in (user.module_perms||{});
+              const isDirty=(draft[user.id]||{}).hasOwnProperty(m.id);
+              const roleDefault=(()=>{const roles=userRoles(user);let best=null;for(const r of roles){const d=(ROLE_DEFAULT_PERMS[r]||{})[m.id]||null;if((PERM_RANK[d]||0)>(PERM_RANK[best]||0))best=d;}return best;})();
+              let cfg,label,hint;
+              if(eff===undefined){cfg={bg:'var(--surface2)',color:'var(--text3)',border:'var(--border)'};label='Default';hint='Role default: '+(roleDefault||'none');}
+              else if(eff===null){cfg={bg:'transparent',color:'var(--text3)',border:'var(--border)'};label='None';hint='Explicitly blocked';}
+              else{const pc=PERM_COLORS_MAP[eff]||{bg:'transparent',color:'var(--text3)'};cfg={bg:pc.bg,color:pc.color,border:pc.color};label=eff.charAt(0).toUpperCase()+eff.slice(1);hint='Override: '+eff+' (role default: '+(roleDefault||'none')+')';}
+              return el('td',{key:m.id,style:{padding:'7px 4px',textAlign:'center'}},
+                el('button',{onClick:()=>cyclePerm(user,m.id),title:hint,
+                  style:{padding:'4px 8px',borderRadius:14,border:'2px solid',fontSize:11,fontWeight:600,cursor:'pointer',
+                    background:cfg.bg,color:cfg.color,
+                    borderColor:isDirty?'#f59e0b':cfg.border||'var(--border)',
+                    minWidth:68,transition:'all .15s',fontFamily:'inherit',
+                    boxShadow:hasSavedOverride&&!isDirty?'0 0 0 2px rgba(59,130,246,.2)':isDirty?'0 0 0 2px rgba(245,158,11,.3)':'none',
+                    outline:'none',
+                  }
+                },label)
+              );
+            }),
+            el('td',{style:{padding:'7px 10px',textAlign:'center',whiteSpace:'nowrap'}},
+              isJustSaved?el('span',{style:{fontSize:12,color:'#10b981',fontWeight:700}},'\u2713 Saved')
+              :pending?el('div',{style:{display:'flex',gap:6,justifyContent:'center'}},
+                el('button',{onClick:()=>saveUser(user),disabled:isSaving,
+                  style:{padding:'5px 14px',borderRadius:14,border:'none',background:'var(--accent)',color:'#fff',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',opacity:isSaving?.6:1,transition:'opacity .15s'}
+                },isSaving?'Saving...':'Save'),
+                el('button',{onClick:()=>resetUser(user),disabled:isSaving,
+                  style:{padding:'5px 10px',borderRadius:14,border:'1px solid var(--border)',background:'transparent',color:'var(--text3)',fontSize:12,cursor:'pointer',fontFamily:'inherit'}
+                },'Reset'),
+              )
+              :el('span',{style:{fontSize:11,color:'var(--text3)'}},'—')
+            )
+          );
+        }))
       )
     ),
-    el('div',{style:{marginTop:12,fontSize:11,color:'var(--text3)'}},'Changes save instantly. Hover any cell to see the role default. Admin always has full access.'),
+    el('div',{style:{marginTop:12,fontSize:11,color:'var(--text3)'}},'Amber highlight = unsaved change. Press Save to commit. Blue ring = saved override. Admin always has full access.'),
   );
 }
 
@@ -5612,7 +5683,7 @@ const COGS_CATEGORIES=[
 // Common cannabis-manufacturing raw materials \u2014 shown as one-click "quick
 // add" suggestions in the Raw Ingredients Price tab so these don't need to
 // be retyped from scratch every time.
-const COGS_COMMON_INGREDIENTS=['Distillate','THCA','Live Resin','HTE','Flower','Trim','Kief','Terpene'];
+const COGS_COMMON_INGREDIENTS=['Hardware & Packaging','Distillate','THCA','Live Resin','HTE','Flower','Trim','Kief','Terpene','Diamond','Labor'];
 function cogsNum(v){const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;}
 function lineTotal(row){return cogsNum(row.qty)*cogsNum(row.cost_per_unit);}
 function sumLines(rows){return (rows||[]).reduce((s,r)=>s+lineTotal(r),0);}
