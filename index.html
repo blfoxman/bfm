@@ -5606,12 +5606,30 @@ function AIReporter({cu,SUPA_URL,SUPA_KEY,H}){
 // from when building a calculation, and still override per-batch).
 const COGS_CATEGORIES=[
   {id:'raw_material',label:'Raw Materials',nameLabel:'Material',qtyLabel:'Qty',unitLabel:'Unit',rateLabel:'Cost / Unit'},
-  {id:'packaging',label:'Packaging',nameLabel:'Item',qtyLabel:'Qty',unitLabel:'Unit',rateLabel:'Cost / Unit'},
+  {id:'packaging',label:'Hardware & Packaging',nameLabel:'Item',qtyLabel:'Qty',unitLabel:'Unit',rateLabel:'Cost / Unit'},
   {id:'labor',label:'Labor',nameLabel:'Role / Task',qtyLabel:'Hours',unitLabel:'Unit',rateLabel:'Rate / Hour'},
 ];
+// Common cannabis-manufacturing raw materials \u2014 shown as one-click "quick
+// add" suggestions in the Raw Ingredients Price tab so these don't need to
+// be retyped from scratch every time.
+const COGS_COMMON_INGREDIENTS=['Distillate','THCA','Live Resin','HTE','Flower','Trim','Kief','Terpene'];
 function cogsNum(v){const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;}
 function lineTotal(row){return cogsNum(row.qty)*cogsNum(row.cost_per_unit);}
 function sumLines(rows){return (rows||[]).reduce((s,r)=>s+lineTotal(r),0);}
+// Pulls the real SKU list for a product type \u2014 checks the cascading
+// SKU/Flavor config first (Cartridges, Pre-Rolls, Gummies), falls back to
+// the plain SKU select field for everything else (Ethanol, BHO, Infused
+// Flower, Moon Rocks, Snow Caps) so Recipe is always tied to real SKUs.
+function cogsSkuOptions(productType){
+  if(SKU_FLAVOR_CONFIG[productType]) return SKU_FLAVOR_CONFIG[productType].skus||[];
+  const skuField=((LOG_TYPES[productType]||{}).fields||[]).find(f=>f.key==='sku');
+  return skuField?skuField.options||[]:[];
+}
+function cogsFlavorOptions(productType,sku){
+  const cfg=SKU_FLAVOR_CONFIG[productType];
+  if(!cfg) return [];
+  return cfg.flavors[sku]||[];
+}
 
 function CogsCalculator({cu,SUPA_URL,SUPA_KEY,H}){
   const[tab,setTab]=useState('calculations');
@@ -5722,7 +5740,7 @@ function CogsCalculator({cu,SUPA_URL,SUPA_KEY,H}){
       el('div',{style:{fontSize:12,opacity:.85}},'Cost of Goods Sold \u2014 raw materials, packaging, labor and testing per batch'),
     ),
     el('div',{style:{display:'flex',gap:4,marginBottom:18,background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--r)',padding:4,maxWidth:400}},
-      [{id:'calculations',label:'\uD83D\uDCCA Calculations'},{id:'formulations',label:'\uD83E\uDDEA Formulations'},{id:'library',label:'\uD83D\uDCDA Cost Library'}].map(t=>
+      [{id:'calculations',label:'\uD83D\uDCCA COG Calculation'},{id:'library',label:'\uD83E\uDDEA Raw Ingredients Price'},{id:'formulations',label:'\uD83D\uDCDD Recipe'}].map(t=>
         el('button',{key:t.id,onClick:()=>setTab(t.id),style:{flex:1,padding:'8px 14px',borderRadius:8,border:'none',background:tab===t.id?'#0f766e':'transparent',color:tab===t.id?'#fff':'var(--text2)',fontFamily:'inherit',fontSize:13,fontWeight:tab===t.id?700:500,cursor:'pointer',transition:'all .15s'}},t.label)
       )
     ),
@@ -5761,7 +5779,7 @@ function CogsCalcList({calcs,onNew,onView}){
               el('span',{style:{fontSize:12,fontWeight:700,color:lt?lt.color:'#0f766e'}},(lt?lt.icon+' '+lt.label:c.product_type)),
               el('span',{style:{fontSize:12,color:'var(--text2)'}},c.batch_label||''),
             ),
-            el('div',{style:{fontSize:11,color:'var(--text3)'}},(c.date||'')+' \u00B7 '+(c.created_by||'')+' \u00B7 Batch size: '+(c.batch_size||0)+' units'),
+            el('div',{style:{fontSize:11,color:'var(--text3)'}},(c.date||'')+(c.sku?' \u00B7 '+c.sku:'')+(c.flavor?' \u00B7 '+c.flavor:'')+' \u00B7 '+(c.created_by||'')+' \u00B7 Batch size: '+(c.batch_size||0)+' units'),
           ),
           el('div',{style:{display:'flex',gap:20,alignItems:'center'}},
             el('div',{style:{textAlign:'right'}},
@@ -5814,6 +5832,8 @@ function CogsLineItemEditor({rows,setRows,category,library,productType}){
 function CogsCalcEditor({calc,library,formulations,cu,onCancel,onSave}){
   const[f,setF]=useState({
     product_type:calc.product_type||BATCH_TYPE_IDS[0],
+    sku:calc.sku||'',
+    flavor:calc.flavor||'',
     batch_label:calc.batch_label||'',
     date:calc.date||new Date().toISOString().slice(0,10),
     raw_materials:calc.raw_materials||[],
@@ -5826,11 +5846,22 @@ function CogsCalcEditor({calc,library,formulations,cu,onCancel,onSave}){
     id:calc.id,
   });
   const[saving,setSaving]=useState(false);
+  const skuOptions=cogsSkuOptions(f.product_type);
+  const flavorOptions=cogsFlavorOptions(f.product_type,f.sku);
 
-  // Applying a saved Formulation copies its recipe (quantities) in, but tries
-  // to refresh each line's cost from the CURRENT Cost Library by matching
-  // name \u2014 so costs stay live even though the recipe is fixed. Falls back
-  // to whatever cost the formulation itself had saved if no library match.
+  function changeProductType(pt){
+    const newSkus=cogsSkuOptions(pt);
+    setF(p=>({...p,product_type:pt,sku:newSkus[0]||'',flavor:''}));
+  }
+  function changeSku(sku){
+    const newFlavors=cogsFlavorOptions(f.product_type,sku);
+    setF(p=>({...p,sku,flavor:newFlavors[0]||''}));
+  }
+
+  // Applying a saved Recipe copies its ingredients+quantities in, but tries
+  // to refresh each line's cost from the CURRENT Raw Ingredients Price list
+  // by matching name \u2014 so costs stay live even though the recipe is fixed.
+  // Falls back to whatever cost the recipe itself had saved if no match.
   function matchLibraryCost(row,categoryId){
     const match=(library||[]).find(l=>l.category===categoryId&&l.name.trim().toLowerCase()===String(row.name||'').trim().toLowerCase());
     return match?match.cost_per_unit:row.cost_per_unit;
@@ -5841,6 +5872,8 @@ function CogsCalcEditor({calc,library,formulations,cu,onCancel,onSave}){
     setF(p=>({
       ...p,
       product_type:form.product_type||p.product_type,
+      sku:form.sku||p.sku,
+      flavor:form.flavor||p.flavor,
       batch_size:form.batch_size||p.batch_size,
       batch_label:p.batch_label||form.name,
       raw_materials:(form.raw_materials||[]).map(r=>({...r,cost_per_unit:matchLibraryCost(r,'raw_material')})),
@@ -5876,12 +5909,12 @@ function CogsCalcEditor({calc,library,formulations,cu,onCancel,onSave}){
       el('button',{className:'btn b-ghost',onClick:onCancel},'\u2190 Back'),
     ),
     !calc.id&&(formulations||[]).length>0&&el('div',{style:{background:'rgba(15,118,110,.08)',border:'1px solid rgba(15,118,110,.25)',borderRadius:10,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}},
-      el('span',{style:{fontSize:13,fontWeight:700,color:'#0f766e'}},'\uD83E\uDDEA Start from a saved formulation:'),
+      el('span',{style:{fontSize:13,fontWeight:700,color:'#0f766e'}},'\uD83D\uDCDD Start from a saved recipe:'),
       el('select',{value:'',onChange:ev=>{if(ev.target.value)applyFormulation(ev.target.value);},style:{background:'#fff',border:'1px solid #0f766e40',borderRadius:8,padding:'7px 12px',fontFamily:'inherit',fontSize:13,color:'#0f766e',fontWeight:600}},
-        el('option',{value:''},'Choose a formulation\u2026'),
+        el('option',{value:''},'Choose a recipe\u2026'),
         (formulations||[]).map(fm=>{const flt=LOG_TYPES[fm.product_type];return el('option',{key:fm.id,value:fm.id},(flt?flt.label+' \u2014 ':'')+fm.name);})
       ),
-      el('span',{style:{fontSize:11,color:'var(--text3)'}},'Pre-fills product type, quantities, and pulls current costs from your library.'),
+      el('span',{style:{fontSize:11,color:'var(--text3)'}},'Pre-fills product type, SKU, ingredients, and pulls current costs from your Raw Ingredients Price list.'),
     ),
     el('div',{style:{display:'grid',gridTemplateColumns:'1fr 320px',gap:20,alignItems:'start'}},
       // Left: inputs
@@ -5889,12 +5922,25 @@ function CogsCalcEditor({calc,library,formulations,cu,onCancel,onSave}){
         el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}},
           el('div',null,
             el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Product Type'),
-            el('select',{value:f.product_type,onChange:ev=>setF(p=>({...p,product_type:ev.target.value})),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)'}},
+            el('select',{value:f.product_type,onChange:ev=>changeProductType(ev.target.value),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)'}},
               BATCH_TYPE_IDS.map(id=>el('option',{key:id,value:id},LOG_TYPES[id].label))
             ),
           ),
           el('div',null,
-            el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Batch / Recipe Name'),
+            el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'SKU'),
+            skuOptions.length>0?el('select',{value:f.sku,onChange:ev=>changeSku(ev.target.value),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)'}},
+              el('option',{value:''},'\u2014'),
+              skuOptions.map(s=>el('option',{key:s,value:s},s))
+            ):el('input',{value:f.sku,onChange:ev=>setF(p=>({...p,sku:ev.target.value})),placeholder:'SKU name',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)',boxSizing:'border-box'}}),
+          ),
+          flavorOptions.length>0&&el('div',null,
+            el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Terpene / Flavor'),
+            el('select',{value:f.flavor,onChange:ev=>setF(p=>({...p,flavor:ev.target.value})),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)'}},
+              flavorOptions.map(fl=>el('option',{key:fl,value:fl},fl))
+            ),
+          ),
+          el('div',null,
+            el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Batch / Calculation Name'),
             el('input',{value:f.batch_label,onChange:ev=>setF(p=>({...p,batch_label:ev.target.value})),placeholder:'e.g. Very Berry Gummies',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)',boxSizing:'border-box'}}),
           ),
           el('div',null,
@@ -5977,7 +6023,7 @@ function CogsCalcView({calc,onClose,onEdit,onDelete}){
       ),
     ),
     el('div',{style:{background:'#0f766e',borderRadius:14,padding:'20px 24px',marginBottom:16,color:'#fff'}},
-      el('div',{style:{fontSize:12,opacity:.8,fontWeight:700,textTransform:'uppercase'}},lt?lt.icon+' '+lt.label:calc.product_type),
+      el('div',{style:{fontSize:12,opacity:.8,fontWeight:700,textTransform:'uppercase'}},(lt?lt.icon+' '+lt.label:calc.product_type)+(calc.sku?' \u00B7 '+calc.sku:'')+(calc.flavor?' \u00B7 '+calc.flavor:'')),
       el('div',{style:{fontSize:22,fontWeight:800,marginTop:2}},calc.batch_label),
       el('div',{style:{fontSize:12,opacity:.85,marginTop:4}},(calc.date||'')+' \u00B7 '+(calc.created_by||'')+' \u00B7 Batch size: '+batchSize+' units'),
       el('div',{style:{display:'flex',gap:24,marginTop:16}},
@@ -6019,9 +6065,9 @@ function CogsFormulationManager({formulations,library,onSave,onDelete}){
   return el('div',null,
     el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}},
       el('div',{style:{fontSize:13,color:'var(--text2)'}},'Save a recipe once, reuse it for every future batch \u2014 costs pull live from your Cost Library when you use it.'),
-      el('button',{className:'btn b-blue',onClick:()=>setEditing({})},'+ Add Formulation'),
+      el('button',{className:'btn b-blue',onClick:()=>setEditing({})},'+ Add Recipe'),
     ),
-    formulations.length===0?el('div',{style:{textAlign:'center',padding:'40px 24px',background:'var(--surface)',borderRadius:12,border:'1px solid var(--border)',color:'var(--text3)'}},'No formulations yet. Save a recipe so you don\u2019t have to rebuild it every time you cost this product.')
+    formulations.length===0?el('div',{style:{textAlign:'center',padding:'40px 24px',background:'var(--surface)',borderRadius:12,border:'1px solid var(--border)',color:'var(--text3)'}},'No recipes yet. Save one per SKU so you don\u2019t have to rebuild it every time you cost this product.')
     :el('div',{style:{display:'flex',flexDirection:'column',gap:8}},
       formulations.map(f=>{
         const lt=LOG_TYPES[f.product_type];
@@ -6029,7 +6075,12 @@ function CogsFormulationManager({formulations,library,onSave,onDelete}){
         return el('div',{key:f.id,style:{background:'#fff',border:'1px solid var(--border)',borderRadius:10,padding:'12px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}},
           el('div',null,
             el('div',{style:{fontSize:13,fontWeight:700,color:'var(--text)'}},f.name),
-            el('div',{style:{fontSize:11,color:'var(--text3)',marginTop:2}},(lt?lt.icon+' '+lt.label:f.product_type)+' \u00B7 Batch size '+(f.batch_size||0)+' \u00B7 '+itemCount+' line items'),
+            el('div',{style:{fontSize:11,color:'var(--text3)',marginTop:2}},
+              (lt?lt.icon+' '+lt.label:f.product_type)
+              +(f.sku?' \u00B7 '+f.sku:'')
+              +(f.flavor?' \u00B7 '+f.flavor:'')
+              +' \u00B7 Batch size '+(f.batch_size||0)+' \u00B7 '+itemCount+' ingredients'
+            ),
           ),
           el('div',{style:{display:'flex',gap:6}},
             el('button',{onClick:()=>setEditing(f),className:'btn b-ghost btn-sm'},'Edit'),
@@ -6045,6 +6096,8 @@ function CogsFormulationEditor({formulation,library,onCancel,onSave}){
   const[f,setF]=useState({
     name:formulation.name||'',
     product_type:formulation.product_type||BATCH_TYPE_IDS[0],
+    sku:formulation.sku||'',
+    flavor:formulation.flavor||'',
     batch_size:formulation.batch_size||'',
     raw_materials:formulation.raw_materials||[],
     packaging:formulation.packaging||[],
@@ -6053,29 +6106,58 @@ function CogsFormulationEditor({formulation,library,onCancel,onSave}){
     id:formulation.id,
   });
   const[saving,setSaving]=useState(false);
+  const skuOptions=cogsSkuOptions(f.product_type);
+  const flavorOptions=cogsFlavorOptions(f.product_type,f.sku);
+
+  function changeProductType(pt){
+    const newSkus=cogsSkuOptions(pt);
+    setF(p=>({...p,product_type:pt,sku:newSkus[0]||'',flavor:''}));
+  }
+  function changeSku(sku){
+    const newFlavors=cogsFlavorOptions(f.product_type,sku);
+    setF(p=>({...p,sku,flavor:newFlavors[0]||''}));
+  }
+  function autoName(){
+    if(f.name.trim()) return;
+    const parts=[f.sku,f.flavor].filter(Boolean);
+    if(parts.length) setF(p=>({...p,name:parts.join(' \u2014 ')}));
+  }
 
   async function handleSave(){
-    if(!f.name.trim()){alert('Give this formulation a name.');return;}
+    if(!f.name.trim()) autoName();
+    const finalName=f.name.trim()||[f.sku,f.flavor].filter(Boolean).join(' \u2014 ');
+    if(!finalName){alert('Give this recipe a name, or pick a SKU first.');return;}
     setSaving(true);
-    await onSave({...f});
+    await onSave({...f,name:finalName});
     setSaving(false);
   }
 
   return el('div',{style:{padding:'0 0 48px'}},
     el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}},
-      el('div',{style:{fontSize:18,fontWeight:800,color:'var(--text)'}},formulation.id?'Edit Formulation':'New Formulation'),
+      el('div',{style:{fontSize:18,fontWeight:800,color:'var(--text)'}},formulation.id?'Edit Recipe':'New Recipe'),
       el('button',{className:'btn b-ghost',onClick:onCancel},'\u2190 Back'),
     ),
     el('div',{style:{background:'#fff',border:'1px solid var(--border)',borderRadius:12,padding:20,maxWidth:820}},
-      el('div',{style:{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:12,marginBottom:16}},
-        el('div',null,
-          el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Formulation Name'),
-          el('input',{value:f.name,onChange:ev=>setF(p=>({...p,name:ev.target.value})),placeholder:'e.g. Very Berry Gummies \u2014 Standard Recipe',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)',boxSizing:'border-box'}}),
-        ),
+      el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}},
         el('div',null,
           el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Product Type'),
-          el('select',{value:f.product_type,onChange:ev=>setF(p=>({...p,product_type:ev.target.value})),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)'}},
+          el('select',{value:f.product_type,onChange:ev=>changeProductType(ev.target.value),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)'}},
             BATCH_TYPE_IDS.map(id=>el('option',{key:id,value:id},LOG_TYPES[id].label))
+          ),
+        ),
+        el('div',null,
+          el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'SKU'),
+          skuOptions.length>0?el('select',{value:f.sku,onChange:ev=>changeSku(ev.target.value),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)'}},
+            el('option',{value:''},'\u2014'),
+            skuOptions.map(s=>el('option',{key:s,value:s},s))
+          ):el('input',{value:f.sku,onChange:ev=>setF(p=>({...p,sku:ev.target.value})),placeholder:'SKU name',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)',boxSizing:'border-box'}}),
+        ),
+      ),
+      el('div',{style:{display:'grid',gridTemplateColumns:flavorOptions.length>0?'1fr 1fr':'1fr',gap:12,marginBottom:16}},
+        flavorOptions.length>0&&el('div',null,
+          el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Terpene / Flavor'),
+          el('select',{value:f.flavor,onChange:ev=>setF(p=>({...p,flavor:ev.target.value})),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)'}},
+            flavorOptions.map(fl=>el('option',{key:fl,value:fl},fl))
           ),
         ),
         el('div',null,
@@ -6083,8 +6165,12 @@ function CogsFormulationEditor({formulation,library,onCancel,onSave}){
           el('input',{value:f.batch_size,onChange:ev=>setF(p=>({...p,batch_size:ev.target.value})),placeholder:'e.g. 1000',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)',boxSizing:'border-box'}}),
         ),
       ),
+      el('div',{style:{marginBottom:16}},
+        el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Recipe Name (optional \u2014 auto-fills from SKU + Terpene/Flavor)'),
+        el('input',{value:f.name,onChange:ev=>setF(p=>({...p,name:ev.target.value})),onBlur:autoName,placeholder:[f.sku,f.flavor].filter(Boolean).join(' \u2014 ')||'e.g. Very Berry Gummies \u2014 Standard Recipe',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)',boxSizing:'border-box'}}),
+      ),
       el('div',{style:{background:'rgba(15,118,110,.06)',border:'1px solid rgba(15,118,110,.2)',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:11,color:'var(--text2)'}},
-        '\uD83D\uDCA1 Enter quantities for this recipe. Cost/Unit here is just a reference \u2014 when you build a calculation from this formulation, costs are pulled fresh from your Cost Library by matching name.'
+        '\uD83D\uDCA1 Enter quantities for this recipe (3\u20135 ingredients is typical). Cost/Unit here is just a reference \u2014 when you build a calculation from this recipe, costs are pulled fresh from your Raw Ingredients Price list by matching name.'
       ),
       el(CogsLineItemEditor,{rows:f.raw_materials,setRows:rows=>setF(p=>({...p,raw_materials:rows})),category:COGS_CATEGORIES[0],library,productType:f.product_type}),
       el(CogsLineItemEditor,{rows:f.packaging,setRows:rows=>setF(p=>({...p,packaging:rows})),category:COGS_CATEGORIES[1],library,productType:f.product_type}),
@@ -6124,6 +6210,14 @@ function CogsLibraryManager({library,onSave,onDelete}){
         el('input',{placeholder:'Name (e.g. Distillate)',value:f.name,onChange:ev=>setF(p=>({...p,name:ev.target.value})),style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',fontFamily:'inherit',fontSize:13}}),
         el('input',{placeholder:'Unit (e.g. g, ml, hr)',value:f.unit,onChange:ev=>setF(p=>({...p,unit:ev.target.value})),style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',fontFamily:'inherit',fontSize:13}}),
         el('input',{placeholder:'Cost per unit',value:f.cost_per_unit,onChange:ev=>setF(p=>({...p,cost_per_unit:ev.target.value})),style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',fontFamily:'inherit',fontSize:13}}),
+      ),
+      f.category==='raw_material'&&!editing&&el('div',{style:{marginBottom:12}},
+        el('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:6}},'Quick add:'),
+        el('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},
+          COGS_COMMON_INGREDIENTS.map(name=>el('button',{key:name,onClick:()=>setF(p=>({...p,name})),
+            style:{padding:'4px 12px',borderRadius:14,border:'1px solid',borderColor:f.name===name?'#0f766e':'var(--border)',background:f.name===name?'#0f766e':'transparent',color:f.name===name?'#fff':'var(--text2)',fontFamily:'inherit',fontSize:11,fontWeight:600,cursor:'pointer'}
+          },name))
+        ),
       ),
       el('div',{style:{marginBottom:12}},
         el('div',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',marginBottom:6}},'Applies to (leave blank for all product types)'),
