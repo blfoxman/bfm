@@ -413,6 +413,7 @@ const RLABEL={
   sales_manager:'Sales Manager',
   production_lead:'Production Lead',
   admin:'Admin',
+  employee:'Employee',
 };
 const PERM_RANK={admin:3,editor:2,read:1};
 const MODULE_DEFS=[
@@ -441,6 +442,7 @@ const ROLE_DEFAULT_PERMS={
   production_lead:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
   team_member:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
   sanitation:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
+  employee:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
 };
 function modulePerm(u,mod){
   if(!u)return null;
@@ -505,7 +507,7 @@ function restrictedTier(u,isAdmin,isElevated){
   if(hasAnyRole(u,['inventory_manager','extraction_manager','security_manager'])||hasRole(u,'sales_manager')) return null;
   if(hasRole(u,'production_manager')) return 'pm';
   if(hasRole(u,'production_lead')) return 'lead';
-  if(hasRole(u,'team_member')) return 'member';
+  if(hasRole(u,'team_member')||u.role==='employee') return 'member';
   return null;
 }
 // The user's highest-priority ROLE_GROUPS label across all of their roles —
@@ -13250,7 +13252,7 @@ function App(){
     {id:'sops',ico:'\uD83D\uDCCB',label:'SOPs'},
     {id:'mydocs',ico:'\uD83D\uDCC1',label:'My Documents'},
     {id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
-    (restricted==='lead'||restricted==='pm')&&{id:'board',ico:'\u2B1B',label:'Task Board'},
+    {id:'board',ico:'\u2B1B',label:'Task Board'},
     (restricted==='lead'||restricted==='pm')&&{id:'batch',ico:'\uD83E\uDDEA',label:'Batch Tracker'},
   ]:[
     {id:'license',ico:'\uD83D\uDCDC',label:'License Chart'},
@@ -13466,7 +13468,7 @@ function App(){
       el('button',{className:'mnav-btn',onClick:()=>{if(window.confirm('Sign out?')){localStorage.removeItem('pf_session');localStorage.removeItem('pf_token');window.location.reload();}}},el('span',{className:'mnav-ico'},'\u23FB'),'Sign Out'),
     ),
     el('div',{className:'main'},
-      page==='board'&&(!restricted||restricted==='lead'||restricted==='pm')&&el(Board,{tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setPage,SUPA_URL,SUPA_KEY,H,restricted}),
+      page==='board'&&el(Board,{tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setPage,SUPA_URL,SUPA_KEY,H,restricted,boardPerm:modulePerm(cu,'board')}),
       page==='calendar'&&el(Calendar,{events,setEvents,tasks,cu,users,locFilter,meetingNotes,setMeetingNotes,onJoinCall:(room,title,meetLink)=>setActiveCall({room,title,meetLink})}),
       page==='sales'&&canAccessSales&&el(SalesMarketing,{salesTasks,setSalesTasks,cu,users,locFilter}),
       page==='license'&&el(LicenseChart,{}),
