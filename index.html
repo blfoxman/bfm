@@ -10289,7 +10289,7 @@ const LICENSE_CHART_TIERS=[
   ]},
   {label:'Production & operations',color:'#be185d',bg:'#fdf2f8',roles:[
     {title:'Production Manager',name:'Zak Knowles'},
-    {title:'Extraction Manager',name:'Juan Marmolejo'},
+    {title:'Extraction Manager',name:'Amir Yrigoyen'},
   ]},
 ];
 function LicenseChart(){
@@ -10377,8 +10377,18 @@ function LicenseChart(){
             el('div',{style:noteStyle},'Pre-rolls, cartridges, gummies, infused flower, packaging operations'),
           ),
           connectorV(12),
+          el('div',{style:cardStyle('#be185d',false)},
+            el('div',{style:titleStyle},'Production Lead'),
+            el('div',{style:nameStyle('#be185d')},'Sara Haarmann'),
+          ),
+          connectorV(12),
+          el('div',{style:cardStyle('#be185d',false)},
+            el('div',{style:titleStyle},'Sanitation'),
+            el('div',{style:nameStyle('#be185d')},'Jennifer Lindsey'),
+          ),
+          connectorV(12),
           el('div',{style:{background:'rgba(190,24,93,.04)',border:'1px dashed rgba(190,24,93,.3)',borderRadius:8,padding:'8px 12px',fontSize:10,color:'var(--text3)',textAlign:'center',maxWidth:220}},
-            'Production Leads \u00B7 Team Members \u00B7 Sanitation',
+            'Team Members',
           ),
         ),
         // Branch 3: Extraction
@@ -10387,7 +10397,7 @@ function LicenseChart(){
           sectionLabel('Extraction','#ea580c'),
           el('div',{style:cardStyle('#ea580c',false)},
             el('div',{style:titleStyle},'Extraction Manager'),
-            el('div',{style:nameStyle('#ea580c')},'Juan Marmolejo'),
+            el('div',{style:nameStyle('#ea580c')},'Amir Yrigoyen'),
             el('div',{style:noteStyle},'Ethanol extraction, BHO extraction, distillation, all solvent operations'),
           ),
           connectorV(12),
