@@ -3939,7 +3939,7 @@ const LOG_TYPES={
     {key:'agent_ids',label:'Agent ID(s) *',type:'text',placeholder:'DCR agent ID numbers'},
     {key:'category',label:'Category *',type:'select',options:['Concentrate','Flower','Vape Cartridges','Edibles','Infused Pre-Rolls']},
     {key:'strain',label:'Strain / Flavor',type:'text',placeholder:'Strain or flavor name'},
-    {key:'metrc_tag',label:'METRC Tag # *',type:'text',placeholder:'Enter last 7 digits',prefix:'1A40C03000060E100'},
+    {key:'waste_metrc_tags',label:'METRC Tag(s) *',type:'text',prefix:'1A40C03000060E100'},
     {key:'qty_unit',label:'Unit of Measure *',type:'select',options:['Grams','EA (Each)']},
     {key:'qty_expired',label:'Quantity of Waste / Expired Product *',type:'text',placeholder:'e.g. 14.2 or 50'},
     {key:'camera_1',label:'Camera #1 Name (Angle 1 of Destruction)',type:'text',defaultValue:'Waste 1'},
@@ -4461,7 +4461,39 @@ function exportLogPdf(logType,entries,dateFrom,dateTo){
         y+=15;
         return;
       }
-      const val=entry[f.key];if(!val||!String(val).trim())return;
+      const val=entry[f.key];
+      // Waste METRC tags: array of {tag, weight} - render each as full tag number + weight
+      if(f.key==='waste_metrc_tags'&&Array.isArray(val)&&val.length>0){
+        checkPage(22+val.length*15);
+        doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...SUBTEXT);
+        doc.text('METRC TAG(S)',margin+8,y);y+=14;
+        const PREFIX='1A40C03000060E100';
+        val.forEach((row,i)=>{
+          checkPage(15);
+          doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...TEXT);
+          const fullTag=PREFIX+(row&&row.tag||'');
+          const weight=(row&&row.weight)?'  \u00B7  Weight: '+row.weight:'';
+          doc.text((i+1)+'. '+fullTag+weight,margin+16,y);
+          y+=15;
+        });
+        y+=8;
+        return;
+      }
+      // Biomass tags: array of {tag, weight} - render each with weight
+      if(f.key==='biomass_tags'&&Array.isArray(val)&&val.length>0){
+        checkPage(22+val.length*15);
+        doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...SUBTEXT);
+        doc.text('BIOMASS TAGS',margin+8,y);y+=14;
+        val.forEach((row,i)=>{
+          checkPage(15);
+          doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...TEXT);
+          doc.text((i+1)+'. '+(row&&row.tag||'—')+'  \u00B7  Weight: '+(row&&row.weight||'—'),margin+16,y);
+          y+=15;
+        });
+        y+=8;
+        return;
+      }
+      if(!val||!String(val).trim())return;
       checkPage(22);
       const label=f.label.replace(' *','').toUpperCase();
       doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...SUBTEXT);
@@ -4526,6 +4558,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       else if(SKU_FLAVOR_CONFIG[logType]&&fl.key==='flavor')f[fl.key]=(SKU_FLAVOR_CONFIG[logType].flavors[SKU_FLAVOR_CONFIG[logType].skus[0]]||[])[0]||'';
       else if(logType==='ethanol_extraction'&&fl.key==='biomass_tags')f[fl.key]=[];
       else if(logType==='butane_extraction'&&fl.key==='biomass_tags')f[fl.key]=[];
+      else if(logType==='waste'&&fl.key==='waste_metrc_tags')f[fl.key]=[];
       else if(fl.type==='select')f[fl.key]=fl.options[0];
       else if(fl.defaultValue)f[fl.key]=fl.defaultValue;
       else f[fl.key]='';
@@ -4756,6 +4789,32 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       return el('div',{key:f.key,className:'fg'},
         el('label',null,f.label+' (auto-calculated)'),
         el('div',{style:{width:'100%',background:'var(--surface2)',border:'1px dashed var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,fontWeight:700,boxSizing:'border-box'}},form[f.key]||'0'),
+      );
+    }
+    // Waste log: unlimited METRC tags with prefix + weight per tag
+    if(logType==='waste'&&f.key==='waste_metrc_tags'){
+      const tags=Array.isArray(form.waste_metrc_tags)?form.waste_metrc_tags:[];
+      const PREFIX='1A40C03000060E100';
+      return el('div',{key:f.key,className:'fg'},
+        el('label',null,f.label+' \u2014 add as many as needed'),
+        el('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+          tags.map((row,i)=>el('div',{key:i,style:{display:'flex',gap:6,alignItems:'center'}},
+            el('input',{type:'text',value:(row&&row.weight)||'',placeholder:'Weight',onChange:ev=>{
+              const next=tags.map((r,idx)=>idx===i?{...r,weight:ev.target.value}:r);
+              setF('waste_metrc_tags',next);
+            },style:{width:90,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 10px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
+            el('span',{style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRight:'none',borderRadius:'var(--rs) 0 0 var(--rs)',padding:'8px 8px',color:'var(--text3)',fontFamily:'monospace',fontSize:11,whiteSpace:'nowrap',flexShrink:0}},PREFIX),
+            el('input',{type:'text',value:(row&&row.tag)||'',placeholder:'Last 7 digits',onChange:ev=>{
+              const next=tags.map((r,idx)=>idx===i?{...r,tag:ev.target.value}:r);
+              setF('waste_metrc_tags',next);
+            },style:{flex:1,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'0 var(--rs) var(--rs) 0',padding:'8px 10px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
+            el('div',{style:{fontSize:10,color:'var(--text3)',whiteSpace:'nowrap',minWidth:100,fontFamily:'monospace'}},PREFIX+(row&&row.tag||'')),
+            el('button',{type:'button',onClick:()=>setF('waste_metrc_tags',tags.filter((_,idx)=>idx!==i)),
+              style:{background:'#fee2e2',color:'#dc2626',border:'none',borderRadius:6,padding:'8px 12px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',flexShrink:0}},'\u2715'),
+          )),
+          el('button',{type:'button',onClick:()=>setF('waste_metrc_tags',[...tags,{tag:'',weight:''}]),
+            style:{background:'var(--accent)',color:'#fff',border:'none',borderRadius:8,padding:'9px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',alignSelf:'flex-start'}},'+ Add METRC Tag'),
+        ),
       );
     }
     if((logType==='ethanol_extraction'||logType==='butane_extraction')&&f.key==='biomass_tags'){
@@ -10234,24 +10293,120 @@ const LICENSE_CHART_TIERS=[
   ]},
 ];
 function LicenseChart(){
+  const cardStyle=(color,isTop)=>({
+    background:'#fff',
+    border:'2px solid '+color,
+    borderRadius:12,
+    padding:isTop?'16px 24px':'12px 18px',
+    textAlign:'center',
+    minWidth:isTop?220:180,
+    maxWidth:260,
+    boxShadow:'0 2px 8px rgba(15,23,42,.06)',
+    position:'relative',
+  });
+  const nameStyle=(color)=>({fontSize:15,fontWeight:800,color:color,marginBottom:2});
+  const titleStyle={fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'.5px'};
+  const noteStyle={fontSize:10,color:'var(--text3)',marginTop:6,lineHeight:1.4,textAlign:'left'};
+  const connectorV=(h)=>el('div',{style:{width:2,height:h||28,background:'var(--border)',margin:'0 auto'}});
+  const connectorH=()=>el('div',{style:{height:2,background:'var(--border)',flex:1,minWidth:20}});
+  const sectionLabel=(text,color)=>el('div',{style:{fontSize:10,fontWeight:800,color,textTransform:'uppercase',letterSpacing:'.8px',textAlign:'center',marginBottom:8,marginTop:4}},text);
+
   return el('div',null,
     el('div',{className:'ph'},
       el('div',null,
-        el('div',{className:'pt'},'License Chart'),
-        el('div',{className:'ps'},'Designated responsible parties \u2014 Missouri DCR (19 CSR 100) \u00B7 ISO 9001 / QMS'),
+        el('div',{className:'pt'},'\uD83C\uDFE2 Organization Chart'),
+        el('div',{className:'ps'},'Reporting structure & DCR-designated roles \u2014 Missouri DCR (19 CSR 100) \u00B7 ISO 9001'),
       ),
     ),
-    el('div',{style:{display:'flex',flexDirection:'column',gap:20,padding:'0 4px 20px'}},
-      LICENSE_CHART_TIERS.map(tier=>el('div',{key:tier.label},
-        el('div',{style:{background:'var(--surface2)',borderRadius:8,padding:'8px 14px',fontSize:11,fontWeight:800,color:'var(--accent)',textTransform:'uppercase',letterSpacing:'.6px',marginBottom:10}},tier.label),
-        el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:12}},
-          tier.roles.map((r,i)=>el('div',{key:r.title+i,style:{background:'#fff',border:'1px solid var(--border)',borderLeft:'4px solid '+tier.color,borderRadius:8,padding:'14px 16px'}},
-            el('div',{style:{fontSize:13,fontWeight:700,color:'var(--text)'}},r.title),
-            el('div',{style:{fontSize:14,fontWeight:600,color:tier.color,marginTop:4}},r.name),
-            r.note&&el('div',{style:{fontSize:11,color:'var(--text2)',marginTop:8,lineHeight:1.4}},r.note),
-          )),
+    el('div',{style:{padding:'0 4px 40px',overflowX:'auto'}},
+      // ── TIER 1: GM ────────────────────────────────────────────
+      el('div',{style:{display:'flex',justifyContent:'center'}},
+        el('div',{style:cardStyle('#7c3aed',true)},
+          el('div',{style:titleStyle},'General Manager'),
+          el('div',{style:nameStyle('#7c3aed')},'Saman Salari'),
+          el('div',{style:{fontSize:10,color:'var(--text3)',marginTop:4}},'License MAN000109 \u00B7 HMBF Management Inc'),
+          el('div',{style:{display:'flex',gap:6,justifyContent:'center',marginTop:8,flexWrap:'wrap'}},
+            el('span',{style:{fontSize:9,padding:'2px 8px',borderRadius:10,background:'rgba(8,145,178,.1)',color:'#0891b2',border:'1px solid rgba(8,145,178,.3)',fontWeight:700}},'Inventory Control'),
+            el('span',{style:{fontSize:9,padding:'2px 8px',borderRadius:10,background:'rgba(124,45,18,.1)',color:'#7c2d12',border:'1px solid rgba(124,45,18,.3)',fontWeight:700}},'19 CSR 100-1.130'),
+          ),
         ),
-      )),
+      ),
+      connectorV(28),
+      // ── TIER 2: AGM ───────────────────────────────────────────
+      el('div',{style:{display:'flex',justifyContent:'center'}},
+        el('div',{style:cardStyle('#7c3aed',false)},
+          el('div',{style:titleStyle},'Assistant General Manager'),
+          el('div',{style:nameStyle('#7c3aed')},'Liisa Pembroke'),
+          el('div',{style:{fontSize:10,color:'var(--text3)',marginTop:4}},'Reports to: General Manager'),
+        ),
+      ),
+      connectorV(28),
+      // ── HORIZONTAL SPLIT ──────────────────────────────────────
+      el('div',{style:{display:'flex',justifyContent:'center',alignItems:'flex-start',position:'relative'}},
+        el('div',{style:{position:'absolute',top:0,left:'50%',transform:'translateX(-50%)',width:'70%',maxWidth:600,height:2,background:'var(--border)'}}),
+      ),
+      el('div',{style:{height:2}}),
+      // ── TIER 3: Three branches ────────────────────────────────
+      el('div',{style:{display:'flex',justifyContent:'center',gap:24,flexWrap:'wrap',marginTop:0}},
+        // Branch 1: Compliance & Security
+        el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',flex:'1 1 200px',maxWidth:280}},
+          connectorV(20),
+          sectionLabel('Compliance & Security','#0891b2'),
+          el('div',{style:cardStyle('#0891b2',false)},
+            el('div',{style:titleStyle},'Compliance Officer'),
+            el('div',{style:nameStyle('#0891b2')},'Micah Heppermann'),
+            el('div',{style:noteStyle},'ISO 9001 / QMS oversight \u00B7 cGMP \u00B7 FSMA \u00B7 OSHA compliance'),
+          ),
+          connectorV(12),
+          el('div',{style:cardStyle('#0891b2',false)},
+            el('div',{style:titleStyle},'Security Manager'),
+            el('div',{style:nameStyle('#0891b2')},'Micah Heppermann'),
+            el('div',{style:noteStyle},'19 CSR 100-1.090(7)\u2013(8) \u2014 security audits, staff training, contractor credential review'),
+            el('div',{style:{display:'flex',justifyContent:'center',marginTop:6}},
+              el('span',{style:{fontSize:9,padding:'2px 8px',borderRadius:10,background:'rgba(8,145,178,.1)',color:'#0891b2',border:'1px solid rgba(8,145,178,.3)',fontWeight:700}},'DCR Designated'),
+            ),
+          ),
+        ),
+        // Branch 2: Production
+        el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',flex:'1 1 200px',maxWidth:280}},
+          connectorV(20),
+          sectionLabel('Production','#be185d'),
+          el('div',{style:cardStyle('#be185d',false)},
+            el('div',{style:titleStyle},'Production Manager'),
+            el('div',{style:nameStyle('#be185d')},'Zak Knowles'),
+            el('div',{style:noteStyle},'Pre-rolls, cartridges, gummies, infused flower, packaging operations'),
+          ),
+          connectorV(12),
+          el('div',{style:{background:'rgba(190,24,93,.04)',border:'1px dashed rgba(190,24,93,.3)',borderRadius:8,padding:'8px 12px',fontSize:10,color:'var(--text3)',textAlign:'center',maxWidth:220}},
+            'Production Leads \u00B7 Team Members \u00B7 Sanitation',
+          ),
+        ),
+        // Branch 3: Extraction
+        el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',flex:'1 1 200px',maxWidth:280}},
+          connectorV(20),
+          sectionLabel('Extraction','#ea580c'),
+          el('div',{style:cardStyle('#ea580c',false)},
+            el('div',{style:titleStyle},'Extraction Manager'),
+            el('div',{style:nameStyle('#ea580c')},'Juan Marmolejo'),
+            el('div',{style:noteStyle},'Ethanol extraction, BHO extraction, distillation, all solvent operations'),
+          ),
+          connectorV(12),
+          el('div',{style:{background:'rgba(234,88,12,.04)',border:'1px dashed rgba(234,88,12,.3)',borderRadius:8,padding:'8px 12px',fontSize:10,color:'var(--text3)',textAlign:'center',maxWidth:220}},
+            'Extraction Technicians',
+          ),
+        ),
+      ),
+      // ── REGULATORY CITATIONS ──────────────────────────────────
+      el('div',{style:{marginTop:32,background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 18px',maxWidth:700,margin:'32px auto 0'}},
+        el('div',{style:{fontSize:11,fontWeight:800,color:'var(--accent)',textTransform:'uppercase',letterSpacing:'.6px',marginBottom:8}},'Regulatory Citations'),
+        el('div',{style:{fontSize:12,color:'var(--text2)',lineHeight:1.7}},
+          el('b',null,'19 CSR 100-1.090'),': Security Manager designation \u2014 semi-annual audits, staff training, contractor credentials.',
+          el('br'),
+          el('b',null,'19 CSR 100-1.130(1)(A)'),': Written designation of Inventory Control agent for tracking systems/procedures.',
+          el('br'),
+          el('b',null,'ISO 9001:2015 \u00A75.3'),': Top management shall assign roles, responsibilities and authorities within the organization.',
+        ),
+      ),
     ),
   );
 }
