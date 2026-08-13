@@ -3939,11 +3939,14 @@ const LOG_TYPES={
     {key:'agent_ids',label:'Agent ID(s) *',type:'text',placeholder:'DCR agent ID numbers'},
     {key:'category',label:'Category *',type:'select',options:['Concentrate','Flower','Vape Cartridges','Edibles','Infused Pre-Rolls']},
     {key:'strain',label:'Strain / Flavor',type:'text',placeholder:'Strain or flavor name'},
-    {key:'metrc_tag',label:'METRC Tag # *',type:'text',placeholder:'24-digit METRC package tag number'},
+    {key:'metrc_tag',label:'METRC Tag # *',type:'text',placeholder:'Enter last 7 digits',prefix:'1A40C03000060E100'},
     {key:'qty_unit',label:'Unit of Measure *',type:'select',options:['Grams','EA (Each)']},
     {key:'qty_expired',label:'Quantity of Waste / Expired Product *',type:'text',placeholder:'e.g. 14.2 or 50'},
     {key:'camera_1',label:'Camera #1 Name (Angle 1 of Destruction)',type:'text',placeholder:'Camera name or ID'},
     {key:'camera_2',label:'Camera #2 Name (Angle 2 of Destruction)',type:'text',placeholder:'Camera name or ID'},
+    {key:'rendering_location',label:'Location of Rendering',type:'text',placeholder:'Waste Area',defaultValue:'Waste Area'},
+    {key:'method_used',label:'Method Used *',type:'select',options:['Blended 51% Woodchips 49% Cannabis','Soaked in Ethanol 51% Ethanol 49% Cannabis','Melted Down and Blended 49% Cannabis Material with 51% Cat Litter or Woodchips']},
+    {key:'method_volume',label:'Volume',type:'text',placeholder:'Volume amount'},
     {key:'qty_rendered',label:'Quantity of Rendered Waste',type:'text',placeholder:'Total weight/quantity after rendering'},
     {key:'disposal_date',label:'Date of Disposal',type:'date'},
     {key:'disposal_time',label:'Time of Disposal',type:'time'},
@@ -4523,7 +4526,9 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       else if(SKU_FLAVOR_CONFIG[logType]&&fl.key==='sku')f[fl.key]=SKU_FLAVOR_CONFIG[logType].skus[0];
       else if(SKU_FLAVOR_CONFIG[logType]&&fl.key==='flavor')f[fl.key]=(SKU_FLAVOR_CONFIG[logType].flavors[SKU_FLAVOR_CONFIG[logType].skus[0]]||[])[0]||'';
       else if(logType==='ethanol_extraction'&&fl.key==='biomass_tags')f[fl.key]=[];
+      else if(logType==='butane_extraction'&&fl.key==='biomass_tags')f[fl.key]=[];
       else if(fl.type==='select')f[fl.key]=fl.options[0];
+      else if(fl.defaultValue)f[fl.key]=fl.defaultValue;
       else f[fl.key]='';
     });
     // Prefill from the existing record when editing (fresh defaults above cover
@@ -4854,6 +4859,10 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
     el('label',null,f.label),
     f.type==='select'?el('select',{value:form[f.key]||f.options[0],onChange:ev=>setF(f.key,ev.target.value),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13}},f.options.map(o=>el('option',{key:o,value:o},o)))
     :f.type==='textarea'?el('textarea',{value:form[f.key]||'',onChange:ev=>setF(f.key,ev.target.value),placeholder:f.placeholder||'',rows:2,style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,resize:'vertical',boxSizing:'border-box'}})
+    :f.prefix?el('div',{style:{display:'flex',alignItems:'center',gap:0}},
+      el('span',{style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRight:'none',borderRadius:'var(--rs) 0 0 var(--rs)',padding:'9px 10px',color:'var(--text3)',fontFamily:'monospace',fontSize:12,whiteSpace:'nowrap',flexShrink:0}},f.prefix),
+      el('input',{type:'text',value:form[f.key]||'',onChange:ev=>setF(f.key,ev.target.value),placeholder:f.placeholder||'',style:{flex:1,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'0 var(--rs) var(--rs) 0',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
+    )
     :el('input',{type:f.type||'text',value:form[f.key]||'',onChange:ev=>setF(f.key,ev.target.value),placeholder:f.placeholder||'',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
     );
   };
