@@ -191,7 +191,7 @@ const el=React.createElement;
 const SUPA_URL='https://exaluooarsrlvhptvnhu.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV4YWx1b29hcnNybHZocHR2bmh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDcxOTksImV4cCI6MjA5NTM4MzE5OX0.mPOc6d1e8pjLNv2enJvFm_ABl96U53PEw64NJ96diIE';
 // Email handled via Supabase Edge Function (key stored server-side only)
-const APP_URL='https://blfoxman.github.io/BFM';
+const APP_URL='https://blfoxman.github.io/bfm';
 const H={headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}};
 
 function getSessionToken(){
@@ -4026,7 +4026,7 @@ const LOG_TYPES={
     {key:'visitor_name',label:'Visitor Full Name *',type:'text',placeholder:''},
     {key:'visitor_company',label:'Company / Organization',type:'text',placeholder:''},
     {key:'visitor_id',label:'ID Type & Number',type:'text',placeholder:'e.g. MO DL A123456789'},
-    {key:'purpose',label:'Purpose of Visit *',type:'select',options:['Regulatory inspection (DCR)','Regulatory inspection (other)','Vendor / delivery','Maintenance / repair','Audit','Business meeting','Other']},
+    {key:'purpose',label:'Purpose of Visit *',type:'select',options:['Regulatory inspection (DCR)','Regulatory inspection (other)','Vendor / delivery','Testing','Maintenance / repair','Audit','Business meeting','Other']},
     {key:'areas_accessed',label:'Areas Accessed *',type:'textarea',placeholder:'List all areas visitor entered'},
     {key:'escorted_by',label:'Escorted By *',type:'text',placeholder:'Employee who supervised visitor'},
     {key:'notes',label:'Notes',type:'textarea',placeholder:''},
@@ -4199,20 +4199,6 @@ const LOG_TYPES={
     {key:'primed_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'_s_primed_system_check',label:'--- SYSTEM CHECK ---',type:'section'},
     {key:'primed_check_result',label:'System Check',type:'display'},
-    {key:'_s_filled',label:'--- FILLED HARDWARE ---',type:'section'},
-    {key:'units_produced',label:'Cartridges Filled',type:'text',placeholder:'e.g. 800 units'},
-    {key:'filled_hardware_metrc',label:'Filled Hardware METRC Tag',type:'text',placeholder:'METRC tag for the filled hardware'},
-    {key:'oil_waste',label:'Oil Waste',type:'text',placeholder:'Oil lost/wasted during filling'},
-    {key:'oil_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
-    {key:'oil_remnant',label:'Oil Remnant',type:'text',placeholder:'Oil remaining/leftover after filling'},
-    {key:'cart_taken_testing',label:'Total Cart Taken for Testing',type:'text',placeholder:'Units pulled for lab testing'},
-    {key:'cart_waste',label:'Total Cart Waste',type:'text',placeholder:'Units wasted or rejected'},
-    {key:'cart_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
-    {key:'filled_rd1',label:'R&D Test',type:'text'},
-    {key:'filled_rd2',label:'R&D Test 2',type:'text'},
-    {key:'filled_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
-    {key:'_s_cart_system_check',label:'--- SYSTEM CHECK ---',type:'section'},
-    {key:'cart_system_check_result',label:'System Check',type:'display'},
     {key:'_s_packaged',label:'--- PACKAGED ---',type:'section'},
     {key:'cart_packaged',label:'Total Cart Packaged',type:'text',placeholder:'Final packaged unit count'},
     {key:'cart_packaged_metrc',label:'Total Cart Packaged METRC#',type:'text',placeholder:'METRC tag for packaged units'},
@@ -12883,7 +12869,7 @@ function VisitorKiosk(){
   const[cameraActive,setCameraActive]=React.useState(false);
   const setF=(k,v)=>setForm(p=>({...p,[k]:v}));
 
-  const PURPOSES=['Vendor / delivery','Maintenance / repair','Regulatory inspection (DCR)','Regulatory inspection (other)','Audit','Business meeting','Prospective employee','Other'];
+  const PURPOSES=['Vendor / delivery','Testing','Maintenance / repair','Regulatory inspection (DCR)','Regulatory inspection (other)','Audit','Business meeting','Prospective employee','Other'];
 
   // Camera for selfie
   async function startCamera(){
