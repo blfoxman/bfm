@@ -424,25 +424,26 @@ const MODULE_DEFS=[
   {id:'risks',label:'Risk Register'},
   {id:'logs',label:'Facility Logs'},
   {id:'batch',label:'Batch Tracker'},
+  {id:'formbank',label:'Formulation Bank'},
   {id:'cogs',label:'COGS Calculator'},
   {id:'mydocs',label:'My Documents'},
   {id:'sales',label:'Sales & Marketing'},
 ];
 const ROLE_DEFAULT_PERMS={
-  admin:{license:'admin',board:'admin',qms:'admin',compliance:'admin',risks:'admin',logs:'admin',batch:'admin',cogs:'admin',mydocs:'admin',sales:'admin'},
-  general_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
-  assistant_general_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
-  compliance_officer:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
-  security_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
-  security_officer:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
-  inventory_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
-  extraction_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
-  production_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
-  sales_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
-  production_lead:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
-  team_member:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
-  sanitation:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
-  employee:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,cogs:null,mydocs:'admin',sales:null},
+  admin:{license:'admin',board:'admin',qms:'admin',compliance:'admin',risks:'admin',logs:'admin',batch:'admin',formbank:'admin',cogs:'admin',mydocs:'admin',sales:'admin'},
+  general_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
+  assistant_general_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
+  compliance_officer:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
+  security_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
+  security_officer:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
+  inventory_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
+  extraction_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
+  production_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
+  sales_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
+  production_lead:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
+  team_member:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
+  sanitation:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
+  employee:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
 };
 function modulePerm(u,mod){
   if(!u)return null;
@@ -4602,7 +4603,12 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
 
   async function save(){
     const req=lt.fields.filter(f=>f.label.includes('*')&&f.type!=='section'&&f.type!=='checkbox');
-    for(const f of req){if(!form[f.key]?.trim()){alert(f.label.replace(' *','')+' is required.');return;}}
+    for(const f of req){
+      const val=form[f.key];
+      // Arrays (like waste_metrc_tags, biomass_tags) count as filled if they have at least one entry
+      if(Array.isArray(val)){if(val.length===0){alert(f.label.replace(' *','')+' is required.');return;}}
+      else if(!val?.toString().trim()){alert(f.label.replace(' *','')+' is required.');return;}
+    }
     if(requiresEditNote&&!editNote.trim()){alert('Please enter a reason for this change \u2014 it\u2019s logged to this batch\u2019s history.');return;}
     setSaving(true);
     try{
@@ -5753,6 +5759,140 @@ function cogsFlavorOptions(productType,sku){
   const cfg=SKU_FLAVOR_CONFIG[productType];
   if(!cfg) return [];
   return cfg.flavors[sku]||[];
+}
+
+// ── FORMULATION BANK ──────────────────────────────────────────────────────────
+// Standalone module (separately gated from COGS) for managing product recipes.
+// This is the facility's IP — formulations for every SKU/flavor across all
+// product types. Access is controlled independently via the Access Control matrix.
+function FormulationBank({cu,SUPA_URL,SUPA_KEY,H}){
+  const[formulations,setFormulations]=useState([]);
+  const[library,setLibrary]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[editing,setEditing]=useState(null);
+  const[filter,setFilter]=useState('all');
+  const[search,setSearch]=useState('');
+  const canEditForm=canEdit_(cu,'formbank');
+  const canDeleteForm=canDelete_(cu,'formbank');
+
+  React.useEffect(()=>{
+    setLoading(true);
+    Promise.all([
+      fetch(`${SUPA_URL}/rest/v1/pf_cogs_formulations?order=product_type.asc,name.asc`,{headers:H.headers}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+      fetch(`${SUPA_URL}/rest/v1/pf_cogs_library?order=category.asc,name.asc`,{headers:H.headers}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+    ]).then(([fm,lib])=>{setFormulations(Array.isArray(fm)?fm:[]);setLibrary(Array.isArray(lib)?lib:[]);setLoading(false);});
+  },[]);
+
+  async function saveFormulation(item){
+    try{
+      if(item.id){
+        await db.update('pf_cogs_formulations',item.id,item);
+        setFormulations(p=>p.map(i=>i.id===item.id?{...i,...item}:i));
+      }else{
+        const rec={...item,id:'form-'+Date.now(),created_by:cu.name,created_at:new Date().toISOString()};
+        await db.insert('pf_cogs_formulations',rec);
+        setFormulations(p=>[...p,rec]);
+      }
+      setEditing(null);
+      return true;
+    }catch(e){
+      alert('Could not save: '+e.message);
+      return false;
+    }
+  }
+  async function deleteFormulation(id){
+    if(!window.confirm('Delete this formulation?')) return;
+    try{await db.remove('pf_cogs_formulations',id);setFormulations(p=>p.filter(i=>i.id!==id));}
+    catch(e){alert('Could not delete: '+e.message);}
+  }
+
+  if(loading) return el('div',{style:{textAlign:'center',padding:60,color:'var(--text3)'}},'Loading\u2026');
+
+  if(editing) return el(CogsFormulationEditor,{
+    formulation:editing,library,
+    onCancel:()=>setEditing(null),
+    onSave:saveFormulation,
+  });
+
+  // Group formulations by product type for organized display
+  const grouped={};
+  const filtered=formulations.filter(f=>{
+    if(filter!=='all'&&f.product_type!==filter) return false;
+    if(search&&!f.name.toLowerCase().includes(search.toLowerCase())&&!(f.sku||'').toLowerCase().includes(search.toLowerCase())&&!(f.flavor||'').toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  filtered.forEach(f=>{
+    const key=f.product_type||'other';
+    if(!grouped[key]) grouped[key]=[];
+    grouped[key].push(f);
+  });
+
+  return el('div',{style:{padding:'0 0 48px'}},
+    el('div',{style:{background:'#7c3aed',borderRadius:14,padding:'20px 24px',marginBottom:20,color:'#fff'}},
+      el('div',{style:{fontSize:20,fontWeight:800,marginBottom:4}},'\uD83E\uDDEA Formulation Bank'),
+      el('div',{style:{fontSize:12,opacity:.85}},'Product recipes and formulations \u2014 controlled access for authorized personnel only'),
+    ),
+    el('div',{style:{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap',alignItems:'center'}},
+      el('input',{placeholder:'Search formulations\u2026',value:search,onChange:ev=>setSearch(ev.target.value),style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 14px',color:'var(--text)',fontFamily:'inherit',fontSize:13,outline:'none',width:240}}),
+      el('select',{value:filter,onChange:ev=>setFilter(ev.target.value),style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 12px',color:'var(--text)',fontFamily:'inherit',fontSize:13}},
+        el('option',{value:'all'},'All Product Types'),
+        BATCH_TYPE_IDS.map(id=>el('option',{key:id,value:id},LOG_TYPES[id].label))
+      ),
+      el('div',{style:{fontSize:12,color:'var(--text3)'}},(filtered.length)+' formulation'+(filtered.length===1?'':'s')),
+      canEditForm&&el('button',{className:'btn b-blue',onClick:()=>setEditing({}),style:{marginLeft:'auto'}},'+ New Formulation'),
+    ),
+    Object.keys(grouped).length===0?el('div',{style:{textAlign:'center',padding:'48px 24px',background:'var(--surface)',borderRadius:12,border:'1px solid var(--border)'}},
+      el('div',{style:{fontSize:36,marginBottom:12}},'\uD83E\uDDEA'),
+      el('div',{style:{fontSize:15,fontWeight:700,color:'var(--text)',marginBottom:6}},'No formulations yet'),
+      el('div',{style:{fontSize:13,color:'var(--text3)',marginBottom:12}},'Add your product recipes to keep them organized and controlled.'),
+      canEditForm&&el('button',{onClick:()=>setEditing({}),style:{background:'#7c3aed',color:'#fff',border:'none',borderRadius:8,padding:'10px 24px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'+ New Formulation'),
+    ):el('div',{style:{display:'flex',flexDirection:'column',gap:20}},
+      Object.entries(grouped).map(([type,items])=>{
+        const lt=LOG_TYPES[type];
+        return el('div',{key:type},
+          el('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:10}},
+            el('span',{style:{fontSize:16}},lt?lt.icon:'\uD83D\uDCE6'),
+            el('span',{style:{fontSize:14,fontWeight:800,color:lt?lt.color:'var(--text)'}},lt?lt.label:type),
+            el('span',{style:{fontSize:11,color:'var(--text3)',background:'var(--surface2)',padding:'2px 8px',borderRadius:10}},items.length+' recipe'+(items.length===1?'':'s')),
+          ),
+          el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))',gap:10}},
+            items.map(f=>{
+              const ingredientCount=(f.raw_materials||[]).length+(f.packaging||[]).length+(f.labor||[]).length;
+              // Find the terpene/flavor line if any
+              const terpLine=(f.raw_materials||[]).find(r=>r.name&&r.name.toLowerCase().includes('terp'));
+              return el('div',{key:f.id,style:{background:'#fff',border:'1px solid var(--border)',borderRadius:12,padding:'14px 16px',boxShadow:'0 1px 3px rgba(15,23,42,.04)'}},
+                el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}},
+                  el('div',null,
+                    el('div',{style:{fontSize:14,fontWeight:700,color:'var(--text)'}},f.name),
+                    el('div',{style:{fontSize:11,color:'var(--text3)',marginTop:2}},
+                      (f.sku||'')+(f.flavor?' \u00B7 \uD83C\uDF3F '+f.flavor:'')
+                    ),
+                  ),
+                  el('div',{style:{display:'flex',gap:4}},
+                    canEditForm&&el('button',{onClick:()=>setEditing(f),style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:6,padding:'4px 10px',fontSize:11,cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'var(--text2)'}},'Edit'),
+                    canDeleteForm&&el('button',{onClick:()=>deleteFormulation(f.id),style:{background:'#fee2e2',border:'1px solid #fecaca',borderRadius:6,padding:'4px 8px',fontSize:11,cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#dc2626'}},'\u2715'),
+                  ),
+                ),
+                el('div',{style:{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}},
+                  el('span',{style:{fontSize:10,padding:'2px 8px',borderRadius:10,background:'rgba(124,58,237,.08)',color:'#7c3aed',border:'1px solid rgba(124,58,237,.2)',fontWeight:600}},ingredientCount+' ingredients'),
+                  f.batch_size&&el('span',{style:{fontSize:10,padding:'2px 8px',borderRadius:10,background:'var(--surface2)',border:'1px solid var(--border)',fontWeight:600,color:'var(--text3)'}},'Batch: '+f.batch_size+' units'),
+                  terpLine&&el('span',{style:{fontSize:10,padding:'2px 8px',borderRadius:10,background:'rgba(16,185,129,.08)',color:'#059669',border:'1px solid rgba(16,185,129,.2)',fontWeight:600}},'\uD83C\uDF3F '+terpLine.name+(terpLine.qty?' \u00B7 '+terpLine.qty+(terpLine.unit?' '+terpLine.unit:''):'')),
+                ),
+                (f.raw_materials||[]).length>0&&el('div',{style:{fontSize:11,color:'var(--text2)',lineHeight:1.6}},
+                  (f.raw_materials||[]).slice(0,4).map((r,i)=>el('div',{key:i,style:{display:'flex',justifyContent:'space-between'}},
+                    el('span',null,r.name),
+                    el('span',{style:{color:'var(--text3)'}},r.qty?(r.qty+(r.unit?' '+r.unit:'')):''),
+                  )),
+                  (f.raw_materials||[]).length>4&&el('div',{style:{color:'var(--text3)',fontStyle:'italic'}},'+'+(f.raw_materials.length-4)+' more\u2026'),
+                ),
+                f.notes&&el('div',{style:{fontSize:10,color:'var(--text3)',marginTop:6,paddingTop:6,borderTop:'1px solid var(--border)'}},f.notes),
+              );
+            })
+          ),
+        );
+      })
+    ),
+  );
 }
 
 function CogsCalculator({cu,SUPA_URL,SUPA_KEY,H}){
@@ -13249,6 +13389,7 @@ function App(){
   const canAccessLogs=isAdmin||isElevated||canRead(cu,'logs');
   const canAccessBatch=isAdmin||isElevated||canRead(cu,'batch');
   const canAccessCogs=isAdmin||canRead(cu,'cogs');
+  const canAccessFormBank=isAdmin||canRead(cu,'formbank');
   const canAccessRisks=isAdmin||isElevated||canRead(cu,'risks');
   const canAccessCompliance=isAdmin||isElevated||canRead(cu,'compliance');
   const canAccessSales=isAdmin||hasRole(cu,'sales_manager')||canRead(cu,'sales');
@@ -13274,6 +13415,7 @@ function App(){
     canAccessRisks&&{id:'risks',ico:'\u26A0\uFE0F',label:'Risk Register'},
     canAccessLogs&&{id:'logs',ico:'\uD83D\uDCCB',label:'Facility Logs'},
     canAccessBatch&&{id:'batch',ico:'\uD83E\uDDEA',label:'Batch Tracker'},
+    canAccessFormBank&&{id:'formbank',ico:'\uD83E\uDDEA',label:'Formulation Bank'},
     canAccessCogs&&{id:'cogs',ico:'\uD83D\uDCB0',label:'COGS Calculator'},
     {id:'mydocs',ico:'\uD83D\uDCC1',label:'My Documents'},
     canAccessSales&&{id:'sales',ico:'\uD83C\uDFEA',label:'Sales & Marketing'},
@@ -13487,6 +13629,7 @@ function App(){
       page==='risks'&&canAccessRisks&&el(RiskRegister,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
       page==='logs'&&canAccessLogs&&el(FacilityLogs,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
       page==='batch'&&canAccessBatch&&el(BatchTracker,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn:modulePerm.bind(null,cu)}),
+      page==='formbank'&&canAccessFormBank&&el(FormulationBank,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='cogs'&&canAccessCogs&&el(CogsCalculator,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='reporter'&&canAccessQms&&el(AIReporter,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='qms'&&!restricted&&canAccessQms&&el(QMS,{cu,users,tasks,sops,setSops,
