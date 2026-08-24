@@ -336,7 +336,7 @@ function notifyTask({task, actor, subject, body, skipId=null}){
 }
 
 // \u2500\u2500 CONSTANTS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-const LOCS=['Missouri'];
+const LOCS=['Missouri','Michigan'];
 // \u2500\u2500 DEPARTMENT HIERARCHY (Grandmother \u2192 Mother \u2192 Child) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 const DEPT_TREE={
   'Facility':{},
@@ -9202,6 +9202,7 @@ function Scoreboard({tasks,cu,users}){
 // \u2500\u2500 LICENSE & REGULATORY CONSTANTS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 const LICENSES=[
   {id:'bfm',name:'Black Fox Manufacturing',state:'Missouri',license_type:'Comprehensive Facility License',license_number:'MAN000109'},
+  {id:'bfm_mi',name:'Black Fox Michigan',state:'Michigan',license_type:'Processor License',license_number:'TBD-PENDING'},
 ];
 
 const STATE_REGS={
