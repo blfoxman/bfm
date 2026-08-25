@@ -6556,6 +6556,10 @@ function CogsFormulationManager({formulations,library,onSave,onDelete}){
             ),
           ),
           el('div',{style:{display:'flex',gap:6}},
+            el('button',{onClick:()=>{
+              // Duplicate: copy everything except id/name/flavor, open in editor as new
+              setEditing({...f,id:undefined,name:f.name+' (copy)',flavor:''});
+            },className:'btn b-ghost btn-sm'},'Duplicate'),
             el('button',{onClick:()=>setEditing(f),className:'btn b-ghost btn-sm'},'Edit'),
             el('button',{onClick:()=>onDelete(f.id),className:'btn b-ghost btn-sm',style:{color:'#dc2626'}},'Delete'),
           ),
