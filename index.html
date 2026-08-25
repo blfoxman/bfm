@@ -6079,6 +6079,7 @@ function FormulationBank({cu,SUPA_URL,SUPA_KEY,H}){
                   ),
                   el('div',{style:{display:'flex',gap:4}},
                     canEditForm&&el('button',{onClick:()=>setEditing(f),style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:6,padding:'4px 10px',fontSize:11,cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'var(--text2)'}},'Edit'),
+                    canEditForm&&el('button',{onClick:()=>setEditing({...f,id:undefined,name:f.name+' (copy)',flavor:''}),style:{background:'rgba(124,58,237,.06)',border:'1px solid rgba(124,58,237,.2)',borderRadius:6,padding:'4px 10px',fontSize:11,cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#7c3aed'}},'Duplicate'),
                     canDeleteForm&&el('button',{onClick:()=>deleteFormulation(f.id),style:{background:'#fee2e2',border:'1px solid #fecaca',borderRadius:6,padding:'4px 8px',fontSize:11,cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#dc2626'}},'\u2715'),
                   ),
                 ),
