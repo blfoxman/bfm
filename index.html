@@ -5527,6 +5527,218 @@ const REPORTER_TABLE_MAP={
 };
 const ALL_REPORTER_TABLES=['pf_batch_tracker','pf_sops','pf_qms_capas','pf_qms_corrective','pf_qms_deviations','pf_qms_audits','pf_qms_suppliers','pf_qms_complaints','pf_qms_changes','pf_compliance_checks','pf_tasks','pf_log_sanitation','pf_log_visitor','pf_log_waste','pf_log_pest','pf_log_equipment','pf_log_temperature','pf_log_security','pf_risk_register','pf_users_safe'];
 
+// ── PRODUCTION PLANNER ───────────────────────────────────────────────────────
+// AI-powered ingredient calculator. User picks product type, SKU, flavors,
+// and units per flavor. The system pulls saved recipes from pf_cogs_formulations,
+// sends everything to Claude, and gets back a per-flavor ingredient breakdown.
+function ProductionPlanner({cu,SUPA_URL,SUPA_KEY,H}){
+  const[productType,setProductType]=useState(BATCH_TYPE_IDS[0]);
+  const[sku,setSku]=useState('');
+  const[selectedFlavors,setSelectedFlavors]=useState([]);
+  const[unitsPerFlavor,setUnitsPerFlavor]=useState('');
+  const[customInstructions,setCustomInstructions]=useState('');
+  const[result,setResult]=useState(null);
+  const[loading,setLoading]=useState(false);
+  const[error,setError]=useState('');
+  const[recipes,setRecipes]=useState([]);
+
+  // Load saved recipes
+  React.useEffect(()=>{
+    fetch(`${SUPA_URL}/rest/v1/pf_cogs_formulations?select=*`,{headers:H.headers})
+      .then(r=>r.ok?r.json():[]).then(d=>setRecipes(Array.isArray(d)?d:[])).catch(()=>[]);
+  },[]);
+
+  const skuOptions=cogsSkuOptions(productType);
+  const flavorOptions=cogsFlavorOptions(productType,sku);
+  const allFlavorsSelected=flavorOptions.length>0&&selectedFlavors.length===flavorOptions.length;
+
+  function changeProductType(pt){
+    setProductType(pt);
+    const newSkus=cogsSkuOptions(pt);
+    setSku(newSkus[0]||'');
+    setSelectedFlavors([]);
+    setResult(null);
+  }
+  function changeSku(s){
+    setSku(s);
+    setSelectedFlavors([]);
+    setResult(null);
+  }
+  function toggleFlavor(f){
+    setSelectedFlavors(p=>p.includes(f)?p.filter(x=>x!==f):[...p,f]);
+  }
+  function selectAllFlavors(){
+    setSelectedFlavors(allFlavorsSelected?[]:flavorOptions.slice());
+  }
+
+  async function calculate(){
+    if(!sku){setError('Select a SKU.');return;}
+    if(selectedFlavors.length===0&&flavorOptions.length>0){setError('Select at least one flavor.');return;}
+    if(!unitsPerFlavor||isNaN(parseInt(unitsPerFlavor))){setError('Enter units per flavor.');return;}
+    setError('');setLoading(true);setResult(null);
+
+    // Find matching recipes
+    const matchingRecipes=recipes.filter(r=>r.product_type===productType&&(r.sku===sku||!r.sku));
+    const recipeData=matchingRecipes.length>0?JSON.stringify(matchingRecipes.map(r=>({
+      name:r.name,sku:r.sku,flavor:r.flavor,batch_size:r.batch_size,
+      raw_materials:r.raw_materials,packaging:r.packaging,labor:r.labor
+    }))):'No saved recipes found for this product type.';
+
+    const lt=LOG_TYPES[productType];
+    const flavorsToCalc=flavorOptions.length>0?selectedFlavors:['(no flavors - single product)'];
+    const prompt=`You are a cannabis production planning assistant for Black Fox Manufacturing.
+
+TASK: Calculate the exact ingredient quantities needed for a production run.
+
+PRODUCT: ${lt?lt.label:productType}
+SKU: ${sku}
+FLAVORS: ${flavorsToCalc.join(', ')}
+UNITS PER FLAVOR: ${unitsPerFlavor}
+TOTAL UNITS: ${flavorsToCalc.length * parseInt(unitsPerFlavor)}
+
+SAVED RECIPES (from our formulation database):
+${recipeData}
+
+${customInstructions?'ADDITIONAL INSTRUCTIONS: '+customInstructions:''}
+
+Please provide:
+1. **Per-Flavor Breakdown** \u2014 for EACH flavor, list every ingredient and the exact quantity needed for ${unitsPerFlavor} units
+2. **Grand Total** \u2014 sum of ALL ingredients across all ${flavorsToCalc.length} flavors
+3. **Notes** \u2014 any scaling considerations, waste allowances, or things to watch for
+
+If saved recipes exist, use those exact ratios scaled to the requested batch size. If no recipes exist, estimate based on standard cannabis manufacturing ratios and clearly note these are estimates.
+
+Format the response with clear headers and tables. Use ** for bold headers.`;
+
+    try{
+      const res=await fetch(`${SUPA_URL}/functions/v1/claude-proxy`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
+        body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:3000,messages:[{role:'user',content:prompt}]}),
+      });
+      let data;
+      try{data=await res.json();}catch{throw new Error('Proxy error HTTP '+res.status);}
+      if(!res.ok||data.error)throw new Error((data.error&&(data.error.message||JSON.stringify(data.error)))||'AI failed');
+      const text=(data.content||[]).map(b=>b.type==='text'?b.text:'').join('');
+      setResult(text);
+    }catch(e){
+      setError('Calculation failed: '+e.message);
+    }
+    setLoading(false);
+  }
+
+  // Simple markdown-ish renderer for the AI response
+  function renderResult(text){
+    return text.split('\n').map((ln,i)=>{
+      if(ln.startsWith('## ')) return el('div',{key:i,style:{fontWeight:700,fontSize:15,color:'var(--accent)',marginTop:i>0?16:0,marginBottom:4}},ln.slice(3));
+      if(ln.startsWith('# ')) return el('div',{key:i,style:{fontWeight:800,fontSize:17,color:'var(--text)',marginTop:i>0?18:0,marginBottom:6}},ln.slice(2));
+      if(ln.startsWith('### ')) return el('div',{key:i,style:{fontWeight:700,fontSize:13,color:'var(--text)',marginTop:10,marginBottom:2}},ln.slice(4));
+      if(ln.startsWith('- ')||ln.startsWith('* ')) return el('div',{key:i,style:{display:'flex',gap:8,marginBottom:3,paddingLeft:8}},
+        el('span',{style:{color:'var(--accent)',flexShrink:0}},'\u2022'),
+        el('span',{style:{fontSize:13,lineHeight:1.5}},ln.slice(2))
+      );
+      if(/^\d+\.\s/.test(ln)) return el('div',{key:i,style:{display:'flex',gap:8,marginBottom:3,paddingLeft:8}},
+        el('span',{style:{color:'var(--accent)',fontWeight:600,fontSize:12}},ln.match(/^\d+/)[0]+'.'),
+        el('span',{style:{fontSize:13,lineHeight:1.5}},ln.replace(/^\d+\.\s/,''))
+      );
+      if(ln.startsWith('|')&&ln.includes('|')){
+        const cells=ln.split('|').filter(Boolean).map(c=>c.trim());
+        if(cells.every(c=>/^[-:]+$/.test(c))) return null;
+        const isHeader=i>0&&text.split('\n')[i+1]?.trim().startsWith('|')&&text.split('\n')[i+1]?.includes('---');
+        return el('div',{key:i,style:{display:'flex',gap:0,borderBottom:'1px solid var(--border)'}},
+          cells.map((c,j)=>el('div',{key:j,style:{flex:j===0?2:1,padding:'6px 10px',fontSize:12,fontWeight:isHeader?700:400,background:isHeader?'var(--surface2)':'transparent',color:isHeader?'var(--text)':'var(--text2)'}},c))
+        );
+      }
+      if(ln.includes('**')){
+        const parts=ln.split(/(\*\*[^*]+\*\*)/g);
+        return el('div',{key:i,style:{fontSize:13,lineHeight:1.6,marginBottom:2}},
+          parts.map((p,j)=>p.startsWith('**')&&p.endsWith('**')?el('strong',{key:j,style:{fontWeight:700,color:'var(--text)'}},p.slice(2,-2)):el('span',{key:j},p))
+        );
+      }
+      if(ln.trim()==='') return el('div',{key:i,style:{height:6}});
+      return el('div',{key:i,style:{fontSize:13,lineHeight:1.6,marginBottom:2,color:'var(--text)'}},ln);
+    });
+  }
+
+  const lt=LOG_TYPES[productType];
+
+  return el('div',{style:{display:'flex',flexDirection:'column',height:'calc(100vh - 80px)',overflow:'hidden'}},
+    el('div',{className:'ph',style:{flexShrink:0}},
+      el('div',null,
+        el('div',{className:'pt'},'\uD83C\uDFED Production Planner'),
+        el('div',{className:'ps'},'AI-powered ingredient calculator \u2014 tell it what to make, get exact quantities'),
+      ),
+    ),
+    el('div',{style:{flex:1,overflowY:'auto',padding:'16px 20px'}},
+      // Input form
+      el('div',{style:{background:'#fff',border:'1px solid var(--border)',borderRadius:12,padding:20,marginBottom:16}},
+        el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:16}},
+          el('div',null,
+            el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Product Type'),
+            el('select',{value:productType,onChange:ev=>changeProductType(ev.target.value),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)'}},
+              BATCH_TYPE_IDS.map(id=>el('option',{key:id,value:id},LOG_TYPES[id].label))
+            ),
+          ),
+          el('div',null,
+            el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'SKU'),
+            skuOptions.length>0?el('select',{value:sku,onChange:ev=>changeSku(ev.target.value),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)'}},
+              el('option',{value:''},'Select SKU\u2026'),
+              skuOptions.map(s=>el('option',{key:s,value:s},s))
+            ):el('input',{value:sku,onChange:ev=>setSku(ev.target.value),placeholder:'SKU name',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)',boxSizing:'border-box'}}),
+          ),
+          el('div',null,
+            el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Units Per Flavor'),
+            el('input',{value:unitsPerFlavor,onChange:ev=>setUnitsPerFlavor(ev.target.value),placeholder:'e.g. 2000',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)',boxSizing:'border-box'}}),
+          ),
+        ),
+        // Flavor selection
+        flavorOptions.length>0&&el('div',{style:{marginBottom:16}},
+          el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},
+            el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase'}},'Flavors ('+selectedFlavors.length+'/'+flavorOptions.length+' selected)'),
+            el('button',{onClick:selectAllFlavors,style:{fontSize:11,color:'var(--accent)',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',fontWeight:700}},allFlavorsSelected?'Deselect All':'Select All'),
+          ),
+          el('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},
+            flavorOptions.map(f=>{
+              const on=selectedFlavors.includes(f);
+              return el('button',{key:f,onClick:()=>toggleFlavor(f),
+                style:{padding:'5px 12px',borderRadius:14,border:'1px solid',borderColor:on?'var(--accent)':'var(--border)',background:on?'var(--accent)':'transparent',color:on?'#fff':'var(--text2)',fontFamily:'inherit',fontSize:11,fontWeight:600,cursor:'pointer',transition:'all .12s'}
+              },f);
+            })
+          ),
+        ),
+        // Custom instructions
+        el('div',{style:{marginBottom:16}},
+          el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Additional Instructions (optional)'),
+          el('textarea',{value:customInstructions,onChange:ev=>setCustomInstructions(ev.target.value),rows:2,placeholder:'e.g. "Add 5% waste buffer" or "Use 1.5g flower per joint instead of standard"',
+            style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)',boxSizing:'border-box',resize:'vertical'}}),
+        ),
+        el('div',{style:{display:'flex',gap:12,alignItems:'center'}},
+          el('button',{onClick:calculate,disabled:loading,
+            style:{background:'var(--accent)',color:'#fff',border:'none',borderRadius:8,padding:'11px 28px',fontFamily:'inherit',fontSize:14,fontWeight:700,cursor:loading?'wait':'pointer',opacity:loading?.6:1}
+          },loading?'\u23F3 Calculating\u2026':'\uD83C\uDFED Calculate Ingredients'),
+          recipes.filter(r=>r.product_type===productType).length>0
+            ?el('span',{style:{fontSize:11,color:'#059669',fontWeight:600}},'\u2705 '+recipes.filter(r=>r.product_type===productType).length+' saved recipe(s) found \u2014 will use actual ratios')
+            :el('span',{style:{fontSize:11,color:'#d97706'}},'\u26A0\uFE0F No saved recipes for '+(lt?lt.label:productType)+' \u2014 AI will estimate'),
+        ),
+        error&&el('div',{style:{background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.3)',borderRadius:8,padding:'10px 14px',fontSize:12,color:'var(--red)',marginTop:12}},error),
+      ),
+
+      // Result
+      result&&el('div',{style:{background:'#fff',border:'1px solid var(--border)',borderRadius:12,padding:24}},
+        el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}},
+          el('div',{style:{fontSize:16,fontWeight:800,color:'var(--text)'}},'\uD83D\uDCCB Production Plan: '+(lt?lt.label:productType)+' \u2014 '+sku),
+          el('button',{onClick:()=>{navigator.clipboard?.writeText(result);},
+            style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 14px',fontFamily:'inherit',fontSize:12,cursor:'pointer',color:'var(--text2)'}},'\uD83D\uDCCB Copy'),
+        ),
+        el('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:12}},
+          selectedFlavors.length+' flavor'+(selectedFlavors.length===1?'':'s')+' \u00D7 '+unitsPerFlavor+' units = '+(selectedFlavors.length*parseInt(unitsPerFlavor||0)).toLocaleString()+' total units'
+        ),
+        renderResult(result),
+      ),
+    ),
+  );
+}
+
 function AIReporter({cu,SUPA_URL,SUPA_KEY,H}){
   const[messages,setMessages]=useState([]);
   const[input,setInput]=useState('');
@@ -13408,6 +13620,7 @@ function App(){
     {id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
     canAccessQms&&{id:'qms',ico:'\uD83D\uDEE1\uFE0F',label:'QMS'},
     canAccessQms&&{id:'reporter',ico:'\uD83E\uDDE0',label:'AI Reporter'},
+    canAccessQms&&{id:'planner',ico:'\uD83C\uDFED',label:'Production Planner'},
     canAccessCompliance&&{id:'compliance',ico:'\u2705',label:'Compliance'},
     canAccessRisks&&{id:'risks',ico:'\u26A0\uFE0F',label:'Risk Register'},
     canAccessLogs&&{id:'logs',ico:'\uD83D\uDCCB',label:'Facility Logs'},
@@ -13629,6 +13842,7 @@ function App(){
       page==='formbank'&&canAccessFormBank&&el(FormulationBank,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='cogs'&&canAccessCogs&&el(CogsCalculator,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='reporter'&&canAccessQms&&el(AIReporter,{cu,SUPA_URL,SUPA_KEY,H}),
+      page==='planner'&&canAccessQms&&el(ProductionPlanner,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='qms'&&!restricted&&canAccessQms&&el(QMS,{cu,users,tasks,sops,setSops,
         deviations:qmsDeviations,setDeviations:setQmsDeviations,
         capas:qmsCAPAs,setCapas:setQmsCAPAs,
