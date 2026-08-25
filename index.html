@@ -336,7 +336,7 @@ function notifyTask({task, actor, subject, body, skipId=null}){
 }
 
 // \u2500\u2500 CONSTANTS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-const LOCS=['Missouri','Michigan'];
+const LOCS=['Missouri'];
 // \u2500\u2500 DEPARTMENT HIERARCHY (Grandmother \u2192 Mother \u2192 Child) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 const DEPT_TREE={
   'Facility':{},
@@ -2164,7 +2164,7 @@ function Board({tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setP
     canAccessQms&&el(ComplianceSummaryWidget,{cu,setPage,SUPA_URL,SUPA_KEY,H}),
     el('div',{style:{display:'flex',gap:16,marginBottom:16,flexWrap:'wrap',alignItems:'center'}},
       el('div',{style:{display:'flex',gap:6}},
-        LOCS.map(l=>el('button',{key:l,onClick:()=>setLocFilter(l),style:{padding:'5px 14px',borderRadius:20,border:'1px solid',fontSize:12,fontWeight:500,cursor:'pointer',background:locFilter===l?'var(--accent)':'transparent',color:locFilter===l?'#fff':'var(--text2)',borderColor:locFilter===l?'var(--accent)':'var(--border)'}},l))
+        el('button',{onClick:()=>setLocFilter('Missouri'),style:{padding:'5px 14px',borderRadius:20,border:'1px solid',fontSize:12,fontWeight:500,cursor:'default',background:'var(--accent)',color:'#fff',borderColor:'var(--accent)'}},"\uD83C\uDFD7 Missouri")
       ),
       el('div',{style:{width:1,height:20,background:'var(--border)'}}),
       el('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
@@ -3207,7 +3207,7 @@ function SalesMarketing({salesTasks,setSalesTasks,cu,users,locFilter}){
           el('div',{className:'fg',style:{marginTop:13}},
             el('label',null,'State'),
             el('div',{style:{display:'flex',gap:8,marginTop:4}},
-              LOCS.map(s=>el('button',{key:s,onClick:()=>setF(p=>({...p,state:s,brand:'',location:''})),style:{flex:1,padding:'9px',borderRadius:'var(--rs)',border:'2px solid',borderColor:f.state===s?'var(--accent)':'var(--border)',background:f.state===s?'rgba(30,58,95,.08)':'transparent',color:f.state===s?'var(--accent)':'var(--text2)',fontFamily:'inherit',fontWeight:600,fontSize:13,cursor:'pointer',transition:'all .15s'}},'\uD83D\uDDFA '+s))
+              ['Missouri'].map(s=>el('button',{key:s,onClick:()=>setF(p=>({...p,state:s,brand:'',location:''})),style:{flex:1,padding:'9px',borderRadius:'var(--rs)',border:'2px solid',borderColor:f.state===s?'var(--accent)':'var(--border)',background:f.state===s?'rgba(30,58,95,.08)':'transparent',color:f.state===s?'var(--accent)':'var(--text2)',fontFamily:'inherit',fontWeight:600,fontSize:13,cursor:'pointer',transition:'all .15s'}},'\uD83D\uDDFA '+s))
             ),
           ),
           el('div',{className:'fg'},
@@ -4620,7 +4620,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         await db.update(lt.table,editData.id,update);
         onSave({...editData,...update});
       } else {
-        const rec={...form,id:'log-'+Date.now(),log_type:logType,loc:cu.loc||'Missouri',signature_image:sig||null,attachments:attachments.map(a=>({id:a.id,name:a.name,type:a.type,size:a.size,data:a.data})),submitted_by:cu.name,submitted_by_id:cu.id,created_at:new Date().toISOString()};
+        const rec={...form,id:'log-'+Date.now(),log_type:logType,signature_image:sig||null,attachments:attachments.map(a=>({id:a.id,name:a.name,type:a.type,size:a.size,data:a.data})),submitted_by:cu.name,submitted_by_id:cu.id,created_at:new Date().toISOString()};
         await db.insert(lt.table,rec);
         onSave(rec);
       }
@@ -5153,7 +5153,7 @@ function SecurityInspectionForm({cu,onSave,onClose,editData,SUPA_URL,SUPA_KEY,H}
   );
 }
 
-function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,locFilter}){
+function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
   const[activeLog,setActiveLog]=React.useState(null);
   const[entries,setEntries]=React.useState([]);
   const[loading,setLoading]=React.useState(false);
@@ -5172,11 +5172,10 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,locFilter}){
     const lt=LOG_TYPES[activeLog];
     if(!lt||!lt.table)return;
     let url=`${SUPA_URL}/rest/v1/${lt.table}?select=*&order=created_at.desc`;
-    if(locFilter)url+=`&loc=eq.${encodeURIComponent(locFilter)}`;
     if(dateFrom)url+=`&created_at=gte.${dateFrom}`;
     if(dateTo)url+=`&created_at=lte.${dateTo}T23:59:59`;
     fetch(url,{headers:H.headers}).then(r=>r.ok?r.json():[]).then(rows=>{setEntries(Array.isArray(rows)?rows:[]);setLoading(false);}).catch(()=>setLoading(false));
-  },[activeLog,dateFrom,dateTo,locFilter]);
+  },[activeLog,dateFrom,dateTo]);
   const lt=activeLog?LOG_TYPES[activeLog]:null;
   const filtered=entries.filter(e=>!search||(JSON.stringify(e).toLowerCase().includes(search.toLowerCase())));
 
@@ -5340,7 +5339,7 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,locFilter}){
 // ══════════════════════════════════════════════════════════════════════════════
 // BATCH TRACKER \u2014 dropdown-selected batch type, list + create/edit/PDF, one shared table
 // ══════════════════════════════════════════════════════════════════════════════
-function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn,locFilter}){
+function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn}){
   const visibleBatchTypes=(restricted==='lead'||restricted==='pm')?['cartridges','gummies','pre_rolls','infused_flower','moon_rocks','snow_caps']:BATCH_TYPE_IDS;
   const[activeType,setActiveType]=React.useState(visibleBatchTypes[0]);
   const[entries,setEntries]=React.useState([]);
@@ -5367,11 +5366,10 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn
   React.useEffect(()=>{
     setLoading(true);setEntries([]);
     let url=`${SUPA_URL}/rest/v1/${lt.table}?select=*&log_type=eq.${activeType}&order=created_at.desc`;
-    if(locFilter)url+=`&loc=eq.${encodeURIComponent(locFilter)}`;
     if(dateFrom)url+=`&created_at=gte.${dateFrom}`;
     if(dateTo)url+=`&created_at=lte.${dateTo}T23:59:59`;
     fetch(url,{headers:H.headers}).then(r=>r.ok?r.json():[]).then(rows=>{setEntries(Array.isArray(rows)?rows:[]);setLoading(false);}).catch(()=>setLoading(false));
-  },[activeType,dateFrom,dateTo,locFilter]);
+  },[activeType,dateFrom,dateTo]);
 
   const filtered=entries.filter(e=>!search||JSON.stringify(e).toLowerCase().includes(search.toLowerCase()));
 
@@ -6525,7 +6523,7 @@ function CogsLibraryManager({library,onSave,onDelete}){
   );
 }
 
-function RiskRegister({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,locFilter}){
+function RiskRegister({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
   const[risks,setRisks]=React.useState([]);
   const[loading,setLoading]=React.useState(true);
   const[showForm,setShowForm]=React.useState(false);
@@ -6757,7 +6755,7 @@ const COMPLIANCE_FRAMEWORKS={
   ]},
 };
 
-function ComplianceModule({cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db,locFilter}){
+function ComplianceModule({cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db}){
   const[framework,setFramework]=React.useState('iso9001');
   const[checks,setChecks]=React.useState({});
   const[notes,setNotes]=React.useState({});
@@ -8276,7 +8274,7 @@ function QMS({cu,users,tasks,sops,setSops,deviations,setDeviations,capas,setCapa
     ),
 
     // \u2500\u2500 DASHBOARD \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    tab==='sops'&&el(SOPs,{sops,setSops,cu,users,locFilter}),
+    tab==='sops'&&el(SOPs,{sops,setSops,cu,users}),
     tab==='dashboard'&&el('div',null,
       el('div',{className:'g4',style:{marginBottom:20}},
         [{l:'Open Deviations',v:openDeviations.length,c:openDeviations.length>0?'var(--red)':'var(--green)',ico:'\u26A0\uFE0F'},
@@ -9204,7 +9202,6 @@ function Scoreboard({tasks,cu,users}){
 // \u2500\u2500 LICENSE & REGULATORY CONSTANTS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 const LICENSES=[
   {id:'bfm',name:'Black Fox Manufacturing',state:'Missouri',license_type:'Comprehensive Facility License',license_number:'MAN000109'},
-  {id:'bfm_mi',name:'Black Fox Michigan',state:'Michigan',license_type:'Processor License',license_number:'TBD-PENDING'},
 ];
 
 const STATE_REGS={
@@ -9745,7 +9742,7 @@ function SOPEditModal({sop,cu,onClose,onSave,users}){
         el('div',{className:'fg'},
           el('label',null,'State *'),
           el('div',{style:{display:'flex',gap:8}},
-            LOCS.map(s=>el('button',{key:s,
+            ['Missouri'].map(s=>el('button',{key:s,
               onClick:()=>setEf(p=>({...p,state:s,license_ids:[]})),
               style:{flex:1,padding:'9px',borderRadius:'var(--rs)',border:'2px solid',borderColor:ef.state===s?'var(--accent)':'var(--border)',background:ef.state===s?'rgba(30,58,95,.08)':'transparent',color:ef.state===s?'var(--accent)':'var(--text2)',fontFamily:'inherit',fontWeight:600,fontSize:13,cursor:'pointer',transition:'all .15s'}
             },s))
@@ -11360,7 +11357,7 @@ Respond with ONLY this JSON (no markdown, be concise, this must NOT be truncated
               el('div',{className:'fg',style:{marginBottom:0}},
                 el('label',null,'State'),
                 el('div',{style:{display:'flex',gap:8,marginTop:4}},
-                  LOCS.map(s=>el('button',{key:s,
+                  ['Missouri'].map(s=>el('button',{key:s,
                     onClick:()=>setState(s),
                     style:{flex:1,padding:'9px',borderRadius:'var(--rs)',border:'2px solid',borderColor:state===s?'var(--accent)':'var(--border)',background:state===s?'rgba(30,58,95,.08)':'transparent',color:state===s?'var(--accent)':'var(--text2)',fontFamily:'inherit',fontWeight:600,fontSize:13,cursor:'pointer',transition:'all .15s'}
                   },'\uD83D\uDDFA '+s))
@@ -11594,7 +11591,7 @@ Respond with ONLY this JSON (no markdown, be concise, this must NOT be truncated
   );
 }
 
-function SOPs({sops,setSops,cu,users,locFilter}){
+function SOPs({sops,setSops,cu,users}){
   const[view,setView]=useState('list'); // list | detail
   const[sel,setSel]=useState(null);
   const[showNew,setNew]=useState(false);
@@ -12490,7 +12487,7 @@ function Calendar({events,setEvents,tasks,cu,users,locFilter,meetingNotes,setMee
               ))
             ),
           ),
-          el('div',{className:'fg'},el('label',null,'Location Filter'),el('select',{value:f.loc,onChange:ev=>setF(p=>({...p,loc:ev.target.value}))},LOCS.map(l=>el('option',{key:l,value:l},l)))),
+          el('div',{className:'fg'},el('label',null,'Location Filter'),el('select',{value:f.loc,onChange:ev=>setF(p=>({...p,loc:ev.target.value}))},['Missouri'].map(l=>el('option',{key:l,value:l},l)))),
         ),
         el('div',{className:'mf'},
           el('button',{className:'btn b-ghost',onClick:()=>setNew(false)},'Cancel'),
@@ -13627,15 +13624,15 @@ function App(){
       page==='calendar'&&el(Calendar,{events,setEvents,tasks,cu,users,locFilter,meetingNotes,setMeetingNotes,onJoinCall:(room,title,meetLink)=>setActiveCall({room,title,meetLink})}),
       page==='sales'&&canAccessSales&&el(SalesMarketing,{salesTasks,setSalesTasks,cu,users,locFilter}),
       page==='license'&&el(LicenseChart,{}),
-      page==='sops'&&restricted&&el(SOPs,{sops,setSops,cu,users,locFilter}),
-      page==='compliance'&&canAccessCompliance&&el(ComplianceModule,{cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db,locFilter}),
-      page==='risks'&&canAccessRisks&&el(RiskRegister,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,locFilter}),
-      page==='logs'&&canAccessLogs&&el(FacilityLogs,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,locFilter}),
-      page==='batch'&&canAccessBatch&&el(BatchTracker,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn:modulePerm.bind(null,cu),locFilter}),
+      page==='sops'&&restricted&&el(SOPs,{sops,setSops,cu,users}),
+      page==='compliance'&&canAccessCompliance&&el(ComplianceModule,{cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db}),
+      page==='risks'&&canAccessRisks&&el(RiskRegister,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
+      page==='logs'&&canAccessLogs&&el(FacilityLogs,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
+      page==='batch'&&canAccessBatch&&el(BatchTracker,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn:modulePerm.bind(null,cu)}),
       page==='formbank'&&canAccessFormBank&&el(FormulationBank,{cu,SUPA_URL,SUPA_KEY,H}),
-      page==='cogs'&&canAccessCogs&&el(CogsCalculator,{cu,SUPA_URL,SUPA_KEY,H,locFilter}),
-      page==='reporter'&&canAccessQms&&el(AIReporter,{cu,SUPA_URL,SUPA_KEY,H,locFilter}),
-      page==='qms'&&!restricted&&canAccessQms&&el(QMS,{cu,users,tasks,sops,setSops,locFilter,
+      page==='cogs'&&canAccessCogs&&el(CogsCalculator,{cu,SUPA_URL,SUPA_KEY,H}),
+      page==='reporter'&&canAccessQms&&el(AIReporter,{cu,SUPA_URL,SUPA_KEY,H}),
+      page==='qms'&&!restricted&&canAccessQms&&el(QMS,{cu,users,tasks,sops,setSops,
         deviations:qmsDeviations,setDeviations:setQmsDeviations,
         capas:qmsCAPAs,setCapas:setQmsCAPAs,
         audits:qmsAudits,setAudits:setQmsAudits,
