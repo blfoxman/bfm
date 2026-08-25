@@ -4786,21 +4786,18 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
     // Waste log: unlimited METRC tags with prefix + weight per tag
     if(logType==='waste'&&f.key==='waste_metrc_tags'){
       const tags=Array.isArray(form.waste_metrc_tags)?form.waste_metrc_tags:[];
-      const PREFIX='1A40C03000060E100';
       return el('div',{key:f.key,className:'fg'},
         el('label',null,f.label+' \u2014 add as many as needed'),
         el('div',{style:{display:'flex',flexDirection:'column',gap:8}},
           tags.map((row,i)=>el('div',{key:i,style:{display:'flex',gap:6,alignItems:'center'}},
-            el('input',{type:'text',value:(row&&row.weight)||'',placeholder:'Weight',onChange:ev=>{
+            el('input',{type:'text',value:(row&&row.weight)||'',placeholder:'Wt / Qty',onChange:ev=>{
               const next=tags.map((r,idx)=>idx===i?{...r,weight:ev.target.value}:r);
               setF('waste_metrc_tags',next);
             },style:{width:90,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 10px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
-            el('span',{style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRight:'none',borderRadius:'var(--rs) 0 0 var(--rs)',padding:'8px 8px',color:'var(--text3)',fontFamily:'monospace',fontSize:11,whiteSpace:'nowrap',flexShrink:0}},PREFIX),
-            el('input',{type:'text',value:(row&&row.tag)||'',placeholder:'Last 7 digits',onChange:ev=>{
+            el('input',{type:'text',value:(row&&row.tag)||'',placeholder:'Full METRC Tag #',onChange:ev=>{
               const next=tags.map((r,idx)=>idx===i?{...r,tag:ev.target.value}:r);
               setF('waste_metrc_tags',next);
-            },style:{flex:1,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'0 var(--rs) var(--rs) 0',padding:'8px 10px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
-            el('div',{style:{fontSize:10,color:'var(--text3)',whiteSpace:'nowrap',minWidth:100,fontFamily:'monospace'}},PREFIX+(row&&row.tag||'')),
+            },style:{flex:1,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 10px',color:'var(--text)',fontFamily:'monospace',fontSize:13,boxSizing:'border-box'}}),
             el('button',{type:'button',onClick:()=>setF('waste_metrc_tags',tags.filter((_,idx)=>idx!==i)),
               style:{background:'#fee2e2',color:'#dc2626',border:'none',borderRadius:6,padding:'8px 12px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',flexShrink:0}},'\u2715'),
           )),
