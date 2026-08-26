@@ -5629,7 +5629,7 @@ Rules:
 
   function generatePdf(flavor){
     const{jsPDF}=window.jspdf;
-    const doc=wrapPdfDoc(new jsPDF('p','mm','letter'));
+    const doc=pdfSafeDoc(new jsPDF('p','mm','letter'));
     const W=215.9,margin=14;
     let y=14;
     const lt=LOG_TYPES[productType];
