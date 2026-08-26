@@ -426,24 +426,25 @@ const MODULE_DEFS=[
   {id:'batch',label:'Batch Tracker'},
   {id:'formbank',label:'Formulation Bank'},
   {id:'cogs',label:'COGS Calculator'},
+  {id:'planner',label:'Production Planner'},
   {id:'mydocs',label:'My Documents'},
   {id:'sales',label:'Sales & Marketing'},
 ];
 const ROLE_DEFAULT_PERMS={
-  admin:{license:'admin',board:'admin',qms:'admin',compliance:'admin',risks:'admin',logs:'admin',batch:'admin',formbank:'admin',cogs:'admin',mydocs:'admin',sales:'admin'},
-  general_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
-  assistant_general_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
-  compliance_officer:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
-  security_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
-  security_officer:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
-  inventory_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
-  extraction_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
-  production_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
-  sales_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
-  production_lead:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
-  team_member:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
-  sanitation:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
-  employee:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,mydocs:'admin',sales:null},
+  admin:{license:'admin',board:'admin',qms:'admin',compliance:'admin',risks:'admin',logs:'admin',batch:'admin',formbank:'admin',cogs:'admin',planner:'admin',mydocs:'admin',sales:'admin'},
+  general_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,planner:null,mydocs:'admin',sales:null},
+  assistant_general_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,planner:null,mydocs:'admin',sales:null},
+  compliance_officer:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,planner:null,mydocs:'admin',sales:null},
+  security_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,planner:null,mydocs:'admin',sales:null},
+  security_officer:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,planner:null,mydocs:'admin',sales:null},
+  inventory_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,planner:null,mydocs:'admin',sales:null},
+  extraction_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,planner:null,mydocs:'admin',sales:null},
+  production_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,planner:null,mydocs:'admin',sales:null},
+  sales_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,planner:null,mydocs:'admin',sales:null},
+  production_lead:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,planner:null,mydocs:'admin',sales:null},
+  team_member:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,planner:null,mydocs:'admin',sales:null},
+  sanitation:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,planner:null,mydocs:'admin',sales:null},
+  employee:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,planner:null,mydocs:'admin',sales:null},
 };
 function modulePerm(u,mod){
   if(!u)return null;
@@ -5537,12 +5538,13 @@ function ProductionPlanner({cu,SUPA_URL,SUPA_KEY,H}){
   const[selectedFlavors,setSelectedFlavors]=useState([]);
   const[unitsPerFlavor,setUnitsPerFlavor]=useState('');
   const[customInstructions,setCustomInstructions]=useState('');
-  const[result,setResult]=useState(null);
+  const[results,setResults]=useState(null); // {[flavor]: [{name,qty,unit},...]}
   const[loading,setLoading]=useState(false);
   const[error,setError]=useState('');
   const[recipes,setRecipes]=useState([]);
+  // Production tracking fields per flavor
+  const[tracking,setTracking]=useState({});
 
-  // Load saved recipes
   React.useEffect(()=>{
     fetch(`${SUPA_URL}/rest/v1/pf_cogs_formulations?select=*`,{headers:H.headers})
       .then(r=>r.ok?r.json():[]).then(d=>setRecipes(Array.isArray(d)?d:[])).catch(()=>[]);
@@ -5552,112 +5554,139 @@ function ProductionPlanner({cu,SUPA_URL,SUPA_KEY,H}){
   const flavorOptions=cogsFlavorOptions(productType,sku);
   const allFlavorsSelected=flavorOptions.length>0&&selectedFlavors.length===flavorOptions.length;
 
-  function changeProductType(pt){
-    setProductType(pt);
-    const newSkus=cogsSkuOptions(pt);
-    setSku(newSkus[0]||'');
-    setSelectedFlavors([]);
-    setResult(null);
-  }
-  function changeSku(s){
-    setSku(s);
-    setSelectedFlavors([]);
-    setResult(null);
-  }
-  function toggleFlavor(f){
-    setSelectedFlavors(p=>p.includes(f)?p.filter(x=>x!==f):[...p,f]);
-  }
-  function selectAllFlavors(){
-    setSelectedFlavors(allFlavorsSelected?[]:flavorOptions.slice());
-  }
+  function changeProductType(pt){setProductType(pt);setSku(cogsSkuOptions(pt)[0]||'');setSelectedFlavors([]);setResults(null);}
+  function changeSku(s){setSku(s);setSelectedFlavors([]);setResults(null);}
+  function toggleFlavor(f){setSelectedFlavors(p=>p.includes(f)?p.filter(x=>x!==f):[...p,f]);}
+  function selectAllFlavors(){setSelectedFlavors(allFlavorsSelected?[]:flavorOptions.slice());}
+  function setTrack(flavor,key,val){setTracking(p=>({...p,[flavor]:{...(p[flavor]||{}),[key]:val}}));}
+
+  const TRACK_FIELDS=[
+    {key:'infused_flower_wt',label:'Infused Flower Wt'},
+    {key:'infused_flower_waste',label:'Infused Flower Waste'},
+    {key:'infused_preroll_produced',label:'Infused Pre Roll Produced'},
+    {key:'kief_used',label:'Kief Used'},
+    {key:'infused_preroll_waste',label:'Infused Pre Roll Waste'},
+    {key:'infused_kiefed_produced',label:'Infused Kiefed Pre Roll Produced'},
+    {key:'infused_kiefed_waste',label:'Infused Kiefed Pre Roll Waste'},
+  ];
 
   async function calculate(){
     if(!sku){setError('Select a SKU.');return;}
-    if(selectedFlavors.length===0&&flavorOptions.length>0){setError('Select at least one flavor.');return;}
+    const flavors=flavorOptions.length>0?selectedFlavors:['Standard'];
+    if(flavors.length===0){setError('Select at least one flavor.');return;}
     if(!unitsPerFlavor||isNaN(parseInt(unitsPerFlavor))){setError('Enter units per flavor.');return;}
-    setError('');setLoading(true);setResult(null);
+    setError('');setLoading(true);setResults(null);
 
-    // Find matching recipes
     const matchingRecipes=recipes.filter(r=>r.product_type===productType&&(r.sku===sku||!r.sku));
     const recipeData=matchingRecipes.length>0?JSON.stringify(matchingRecipes.map(r=>({
       name:r.name,sku:r.sku,flavor:r.flavor,batch_size:r.batch_size,
-      raw_materials:r.raw_materials,packaging:r.packaging,labor:r.labor
-    }))):'No saved recipes found for this product type.';
+      raw_materials:(r.raw_materials||[]).map(m=>({name:m.name,qty:m.qty,unit:m.unit})),
+    }))):'No saved recipes.';
 
     const lt=LOG_TYPES[productType];
-    const flavorsToCalc=flavorOptions.length>0?selectedFlavors:['(no flavors - single product)'];
-    const prompt=`You are a cannabis production planning assistant for Black Fox Manufacturing.
-
-TASK: Calculate the exact ingredient quantities needed for a production run.
+    const prompt=`You are a cannabis production ingredient calculator for Black Fox Manufacturing.
 
 PRODUCT: ${lt?lt.label:productType}
 SKU: ${sku}
-FLAVORS: ${flavorsToCalc.join(', ')}
+FLAVORS: ${flavors.join(', ')}
 UNITS PER FLAVOR: ${unitsPerFlavor}
-TOTAL UNITS: ${flavorsToCalc.length * parseInt(unitsPerFlavor)}
 
-SAVED RECIPES (from our formulation database):
+SAVED RECIPES:
 ${recipeData}
 
-${customInstructions?'ADDITIONAL INSTRUCTIONS: '+customInstructions:''}
+${customInstructions?'NOTES: '+customInstructions:''}
 
-Please provide:
-1. **Per-Flavor Breakdown** \u2014 for EACH flavor, list every ingredient and the exact quantity needed for ${unitsPerFlavor} units
-2. **Grand Total** \u2014 sum of ALL ingredients across all ${flavorsToCalc.length} flavors
-3. **Notes** \u2014 any scaling considerations, waste allowances, or things to watch for
+RESPOND WITH ONLY a JSON object (no markdown, no backticks, no explanation). Format:
+{"flavors":{"FlavorName":[{"name":"Ingredient","qty":"amount","unit":"g"}],...},"grand_total":[{"name":"Ingredient","qty":"total","unit":"g"}]}
 
-If saved recipes exist, use those exact ratios scaled to the requested batch size. If no recipes exist, estimate based on standard cannabis manufacturing ratios and clearly note these are estimates.
-
-Format the response with clear headers and tables. Use ** for bold headers.`;
+Rules:
+- ONLY ingredients and quantities. No labor, no packaging, no costs.
+- Use saved recipe ratios scaled to ${unitsPerFlavor} units. If no recipe for a flavor, use the closest matching recipe and note the flavor-specific ingredient (like terpene name).
+- The terpene/flavor ingredient should be named specifically (e.g. "Terpene - Berry Blast" not just "Terpene").
+- Include ALL raw materials: flower, trim, THCA, kief, terpene, distillate, etc.
+- Grand total sums ALL flavors.`;
 
     try{
       const res=await fetch(`${SUPA_URL}/functions/v1/claude-proxy`,{
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
-        body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:3000,messages:[{role:'user',content:prompt}]}),
+        body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:4000,messages:[{role:'user',content:prompt}]}),
       });
-      let data;
-      try{data=await res.json();}catch{throw new Error('Proxy error HTTP '+res.status);}
+      let data;try{data=await res.json();}catch{throw new Error('Proxy error');}
       if(!res.ok||data.error)throw new Error((data.error&&(data.error.message||JSON.stringify(data.error)))||'AI failed');
-      const text=(data.content||[]).map(b=>b.type==='text'?b.text:'').join('');
-      setResult(text);
+      const text=(data.content||[]).map(b=>b.type==='text'?b.text:'').join('').replace(/```json|```/g,'').trim();
+      const parsed=JSON.parse(text);
+      setResults(parsed);
+      // Initialize tracking for each flavor
+      const tr={};
+      Object.keys(parsed.flavors||{}).forEach(f=>{tr[f]={};});
+      setTracking(tr);
     }catch(e){
       setError('Calculation failed: '+e.message);
     }
     setLoading(false);
   }
 
-  // Simple markdown-ish renderer for the AI response
-  function renderResult(text){
-    return text.split('\n').map((ln,i)=>{
-      if(ln.startsWith('## ')) return el('div',{key:i,style:{fontWeight:700,fontSize:15,color:'var(--accent)',marginTop:i>0?16:0,marginBottom:4}},ln.slice(3));
-      if(ln.startsWith('# ')) return el('div',{key:i,style:{fontWeight:800,fontSize:17,color:'var(--text)',marginTop:i>0?18:0,marginBottom:6}},ln.slice(2));
-      if(ln.startsWith('### ')) return el('div',{key:i,style:{fontWeight:700,fontSize:13,color:'var(--text)',marginTop:10,marginBottom:2}},ln.slice(4));
-      if(ln.startsWith('- ')||ln.startsWith('* ')) return el('div',{key:i,style:{display:'flex',gap:8,marginBottom:3,paddingLeft:8}},
-        el('span',{style:{color:'var(--accent)',flexShrink:0}},'\u2022'),
-        el('span',{style:{fontSize:13,lineHeight:1.5}},ln.slice(2))
-      );
-      if(/^\d+\.\s/.test(ln)) return el('div',{key:i,style:{display:'flex',gap:8,marginBottom:3,paddingLeft:8}},
-        el('span',{style:{color:'var(--accent)',fontWeight:600,fontSize:12}},ln.match(/^\d+/)[0]+'.'),
-        el('span',{style:{fontSize:13,lineHeight:1.5}},ln.replace(/^\d+\.\s/,''))
-      );
-      if(ln.startsWith('|')&&ln.includes('|')){
-        const cells=ln.split('|').filter(Boolean).map(c=>c.trim());
-        if(cells.every(c=>/^[-:]+$/.test(c))) return null;
-        const isHeader=i>0&&text.split('\n')[i+1]?.trim().startsWith('|')&&text.split('\n')[i+1]?.includes('---');
-        return el('div',{key:i,style:{display:'flex',gap:0,borderBottom:'1px solid var(--border)'}},
-          cells.map((c,j)=>el('div',{key:j,style:{flex:j===0?2:1,padding:'6px 10px',fontSize:12,fontWeight:isHeader?700:400,background:isHeader?'var(--surface2)':'transparent',color:isHeader?'var(--text)':'var(--text2)'}},c))
-        );
-      }
-      if(ln.includes('**')){
-        const parts=ln.split(/(\*\*[^*]+\*\*)/g);
-        return el('div',{key:i,style:{fontSize:13,lineHeight:1.6,marginBottom:2}},
-          parts.map((p,j)=>p.startsWith('**')&&p.endsWith('**')?el('strong',{key:j,style:{fontWeight:700,color:'var(--text)'}},p.slice(2,-2)):el('span',{key:j},p))
-        );
-      }
-      if(ln.trim()==='') return el('div',{key:i,style:{height:6}});
-      return el('div',{key:i,style:{fontSize:13,lineHeight:1.6,marginBottom:2,color:'var(--text)'}},ln);
+  function generatePdf(flavor){
+    const{jsPDF}=window.jspdf;
+    const doc=wrapPdfDoc(new jsPDF('p','mm','letter'));
+    const W=215.9,margin=14;
+    let y=14;
+    const lt=LOG_TYPES[productType];
+
+    // Header
+    doc.setFontSize(18);doc.setFont('helvetica','bold');
+    doc.text('Production Worksheet',margin,y);y+=7;
+    doc.setFontSize(10);doc.setFont('helvetica','normal');
+    doc.text('Black Fox Manufacturing | '+new Date().toLocaleDateString(),margin,y);y+=5;
+    doc.text((lt?lt.label:productType)+' | '+sku+' | '+flavor,margin,y);y+=5;
+    doc.text('Target: '+unitsPerFlavor+' units',margin,y);y+=8;
+    doc.setDrawColor(200);doc.line(margin,y,W-margin,y);y+=6;
+
+    // Ingredients table
+    doc.setFontSize(12);doc.setFont('helvetica','bold');
+    doc.text('Required Ingredients',margin,y);y+=6;
+    doc.setFontSize(9);doc.setFont('helvetica','bold');
+    doc.text('Ingredient',margin,y);
+    doc.text('Quantity',W-margin-10,y,{align:'right'});y+=4;
+    doc.setDrawColor(180);doc.line(margin,y,W-margin,y);y+=4;
+    doc.setFont('helvetica','normal');
+    const ingredients=(results.flavors||{})[flavor]||[];
+    ingredients.forEach(ing=>{
+      doc.text(ing.name||'',margin,y);
+      doc.text((ing.qty||'')+(ing.unit?' '+ing.unit:''),W-margin-10,y,{align:'right'});
+      y+=5;
     });
+    y+=4;doc.line(margin,y,W-margin,y);y+=8;
+
+    // Production tracking fields
+    doc.setFontSize(12);doc.setFont('helvetica','bold');
+    doc.text('Production Tracking',margin,y);y+=7;
+    doc.setFontSize(9);
+    const trk=tracking[flavor]||{};
+    TRACK_FIELDS.forEach(tf=>{
+      doc.setFont('helvetica','bold');
+      doc.text(tf.label+':',margin,y);
+      doc.setFont('helvetica','normal');
+      const val=trk[tf.key]||'';
+      doc.text(val||'____________________',margin+55,y);
+      y+=7;
+    });
+    y+=4;
+
+    // Signature line
+    y+=10;
+    doc.line(margin,y,margin+60,y);y+=4;
+    doc.setFontSize(8);doc.text('Operator Signature / Date',margin,y);
+    doc.line(W-margin-60,y-4,W-margin,y-4);
+    doc.text('Manager Signature / Date',W-margin-60,y);
+
+    doc.save(slug(sku)+'_'+slug(flavor)+'_production.pdf');
+  }
+
+  function generateAllPdfs(){
+    const flavors=Object.keys(results.flavors||{});
+    flavors.forEach((f,i)=>setTimeout(()=>generatePdf(f),i*300));
   }
 
   const lt=LOG_TYPES[productType];
@@ -5666,7 +5695,7 @@ Format the response with clear headers and tables. Use ** for bold headers.`;
     el('div',{className:'ph',style:{flexShrink:0}},
       el('div',null,
         el('div',{className:'pt'},'\uD83C\uDFED Production Planner'),
-        el('div',{className:'ps'},'AI-powered ingredient calculator \u2014 tell it what to make, get exact quantities'),
+        el('div',{className:'ps'},'Calculate ingredients per flavor and generate production worksheets'),
       ),
     ),
     el('div',{style:{flex:1,overflowY:'auto',padding:'16px 20px'}},
@@ -5691,10 +5720,9 @@ Format the response with clear headers and tables. Use ** for bold headers.`;
             el('input',{value:unitsPerFlavor,onChange:ev=>setUnitsPerFlavor(ev.target.value),placeholder:'e.g. 2000',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)',boxSizing:'border-box'}}),
           ),
         ),
-        // Flavor selection
         flavorOptions.length>0&&el('div',{style:{marginBottom:16}},
           el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},
-            el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase'}},'Flavors ('+selectedFlavors.length+'/'+flavorOptions.length+' selected)'),
+            el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase'}},'Flavors ('+selectedFlavors.length+'/'+flavorOptions.length+')'),
             el('button',{onClick:selectAllFlavors,style:{fontSize:11,color:'var(--accent)',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',fontWeight:700}},allFlavorsSelected?'Deselect All':'Select All'),
           ),
           el('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},
@@ -5706,10 +5734,9 @@ Format the response with clear headers and tables. Use ** for bold headers.`;
             })
           ),
         ),
-        // Custom instructions
-        el('div',{style:{marginBottom:16}},
+        el('div',{style:{marginBottom:12}},
           el('label',{style:{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',display:'block',marginBottom:5}},'Additional Instructions (optional)'),
-          el('textarea',{value:customInstructions,onChange:ev=>setCustomInstructions(ev.target.value),rows:2,placeholder:'e.g. "Add 5% waste buffer" or "Use 1.5g flower per joint instead of standard"',
+          el('textarea',{value:customInstructions,onChange:ev=>setCustomInstructions(ev.target.value),rows:2,placeholder:'e.g. "5% waste buffer" or "use 1.5g flower per joint"',
             style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',fontFamily:'inherit',fontSize:13,color:'var(--text)',boxSizing:'border-box',resize:'vertical'}}),
         ),
         el('div',{style:{display:'flex',gap:12,alignItems:'center'}},
@@ -5717,27 +5744,56 @@ Format the response with clear headers and tables. Use ** for bold headers.`;
             style:{background:'var(--accent)',color:'#fff',border:'none',borderRadius:8,padding:'11px 28px',fontFamily:'inherit',fontSize:14,fontWeight:700,cursor:loading?'wait':'pointer',opacity:loading?.6:1}
           },loading?'\u23F3 Calculating\u2026':'\uD83C\uDFED Calculate Ingredients'),
           recipes.filter(r=>r.product_type===productType).length>0
-            ?el('span',{style:{fontSize:11,color:'#059669',fontWeight:600}},'\u2705 '+recipes.filter(r=>r.product_type===productType).length+' saved recipe(s) found \u2014 will use actual ratios')
-            :el('span',{style:{fontSize:11,color:'#d97706'}},'\u26A0\uFE0F No saved recipes for '+(lt?lt.label:productType)+' \u2014 AI will estimate'),
+            ?el('span',{style:{fontSize:11,color:'#059669',fontWeight:600}},'\u2705 '+recipes.filter(r=>r.product_type===productType).length+' recipe(s) found')
+            :el('span',{style:{fontSize:11,color:'#d97706'}},'\u26A0\uFE0F No saved recipes \u2014 AI will estimate'),
         ),
         error&&el('div',{style:{background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.3)',borderRadius:8,padding:'10px 14px',fontSize:12,color:'var(--red)',marginTop:12}},error),
       ),
 
-      // Result
-      result&&el('div',{style:{background:'#fff',border:'1px solid var(--border)',borderRadius:12,padding:24}},
-        el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}},
-          el('div',{style:{fontSize:16,fontWeight:800,color:'var(--text)'}},'\uD83D\uDCCB Production Plan: '+(lt?lt.label:productType)+' \u2014 '+sku),
-          el('button',{onClick:()=>{navigator.clipboard?.writeText(result);},
-            style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 14px',fontFamily:'inherit',fontSize:12,cursor:'pointer',color:'var(--text2)'}},'\uD83D\uDCCB Copy'),
+      // Results
+      results&&el('div',null,
+        el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}},
+          el('div',{style:{fontSize:16,fontWeight:800,color:'var(--text)'}},(lt?lt.icon+' ':'')+sku+' \u2014 '+(Object.keys(results.flavors||{}).length)+' flavors \u00D7 '+unitsPerFlavor+' units'),
+          el('button',{onClick:generateAllPdfs,style:{background:'#dc2626',color:'#fff',border:'none',borderRadius:8,padding:'9px 20px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'\uD83D\uDCC4 Download All PDFs ('+Object.keys(results.flavors||{}).length+')'),
         ),
-        el('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:12}},
-          selectedFlavors.length+' flavor'+(selectedFlavors.length===1?'':'s')+' \u00D7 '+unitsPerFlavor+' units = '+(selectedFlavors.length*parseInt(unitsPerFlavor||0)).toLocaleString()+' total units'
+        // Grand total card
+        results.grand_total&&el('div',{style:{background:'#1e3a5f',borderRadius:12,padding:'16px 20px',marginBottom:16,color:'#fff'}},
+          el('div',{style:{fontSize:13,fontWeight:800,marginBottom:8,opacity:.85,textTransform:'uppercase',letterSpacing:'.5px'}},'Grand Total \u2014 All Flavors Combined'),
+          el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:8}},
+            (results.grand_total||[]).map((ing,i)=>el('div',{key:i,style:{background:'rgba(255,255,255,.1)',borderRadius:8,padding:'8px 12px'}},
+              el('div',{style:{fontSize:11,opacity:.7}},ing.name),
+              el('div',{style:{fontSize:16,fontWeight:800}},ing.qty+(ing.unit?' '+ing.unit:'')),
+            ))
+          ),
         ),
-        renderResult(result),
+        // Per-flavor cards
+        el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(360px,1fr))',gap:12}},
+          Object.entries(results.flavors||{}).map(([flavor,ingredients])=>{
+            const trk=tracking[flavor]||{};
+            return el('div',{key:flavor,style:{background:'#fff',border:'1px solid var(--border)',borderRadius:12,padding:16}},
+              el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}},
+                el('div',{style:{fontSize:14,fontWeight:800,color:'var(--text)'}},'\uD83C\uDF3F '+flavor),
+                el('button',{onClick:()=>generatePdf(flavor),style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:6,padding:'4px 12px',fontSize:11,cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'var(--text2)'}},'\uD83D\uDCC4 PDF'),
+              ),
+              el('div',{style:{fontSize:11,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',marginBottom:6}},'Ingredients'),
+              (ingredients||[]).map((ing,i)=>el('div',{key:i,style:{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',borderBottom:'1px solid var(--border)'}},
+                el('span',{style:{color:'var(--text2)'}},ing.name),
+                el('span',{style:{fontWeight:700,color:'var(--text)'}},ing.qty+(ing.unit?' '+ing.unit:'')),
+              )),
+              el('div',{style:{fontSize:11,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',marginTop:12,marginBottom:6}},'Production Tracking'),
+              TRACK_FIELDS.map(tf=>el('div',{key:tf.key,style:{display:'flex',gap:8,alignItems:'center',marginBottom:4}},
+                el('label',{style:{fontSize:11,color:'var(--text2)',width:180,flexShrink:0}},tf.label),
+                el('input',{value:trk[tf.key]||'',onChange:ev=>setTrack(flavor,tf.key,ev.target.value),
+                  style:{flex:1,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:6,padding:'5px 8px',fontSize:12,fontFamily:'inherit',color:'var(--text)'}}),
+              )),
+            );
+          })
+        ),
       ),
     ),
   );
 }
+
 
 function AIReporter({cu,SUPA_URL,SUPA_KEY,H}){
   const[messages,setMessages]=useState([]);
@@ -13603,6 +13659,7 @@ function App(){
   const canAccessLogs=isAdmin||isElevated||canRead(cu,'logs');
   const canAccessBatch=isAdmin||isElevated||canRead(cu,'batch');
   const canAccessCogs=isAdmin||canRead(cu,'cogs');
+  const canAccessPlanner=isAdmin||canRead(cu,'planner');
   const canAccessFormBank=isAdmin||canRead(cu,'formbank');
   const canAccessRisks=isAdmin||isElevated||canRead(cu,'risks');
   const canAccessCompliance=isAdmin||isElevated||canRead(cu,'compliance');
@@ -13625,7 +13682,7 @@ function App(){
     {id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
     canAccessQms&&{id:'qms',ico:'\uD83D\uDEE1\uFE0F',label:'QMS'},
     canAccessQms&&{id:'reporter',ico:'\uD83E\uDDE0',label:'AI Reporter'},
-    canAccessQms&&{id:'planner',ico:'\uD83C\uDFED',label:'Production Planner'},
+    canAccessPlanner&&{id:'planner',ico:'\uD83C\uDFED',label:'Production Planner'},
     canAccessCompliance&&{id:'compliance',ico:'\u2705',label:'Compliance'},
     canAccessRisks&&{id:'risks',ico:'\u26A0\uFE0F',label:'Risk Register'},
     canAccessLogs&&{id:'logs',ico:'\uD83D\uDCCB',label:'Facility Logs'},
@@ -13847,7 +13904,7 @@ function App(){
       page==='formbank'&&canAccessFormBank&&el(FormulationBank,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='cogs'&&canAccessCogs&&el(CogsCalculator,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='reporter'&&canAccessQms&&el(AIReporter,{cu,SUPA_URL,SUPA_KEY,H}),
-      page==='planner'&&canAccessQms&&el(ProductionPlanner,{cu,SUPA_URL,SUPA_KEY,H}),
+      page==='planner'&&canAccessPlanner&&el(ProductionPlanner,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='qms'&&!restricted&&canAccessQms&&el(QMS,{cu,users,tasks,sops,setSops,
         deviations:qmsDeviations,setDeviations:setQmsDeviations,
         capas:qmsCAPAs,setCapas:setQmsCAPAs,
