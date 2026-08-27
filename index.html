@@ -4559,7 +4559,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
   };
   const[form,setForm]=React.useState(init);
   const[sig,setSig]=React.useState(null);
-  const[attachments,setAttachments]=React.useState([]);
+  const[attachments,setAttachments]=React.useState(()=>Array.isArray(editData?.attachments)?editData.attachments:[]);
   const[saving,setSaving]=React.useState(false);
   const[editNote,setEditNote]=React.useState('');
   const setF=(k,v)=>{
@@ -4614,7 +4614,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
     setSaving(true);
     try{
       if(editData){
-        const update={...form,signature_image:sig||editData.signature_image||null,updated_by:cu.name,updated_at:new Date().toISOString()};
+        const update={...form,signature_image:sig||editData.signature_image||null,attachments:attachments.map(a=>({id:a.id,name:a.name,type:a.type,size:a.size,data:a.data})),updated_by:cu.name,updated_at:new Date().toISOString()};
         if(requiresEditNote){
           update.edit_history=[...(editData.edit_history||[]),{by:cu.name,at:update.updated_at,note:editNote.trim()}];
         }
