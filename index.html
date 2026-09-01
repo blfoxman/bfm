@@ -3816,9 +3816,9 @@ function recalcPreRoll(logType,f){
   const expected1=flowerUsed/w.filled;
   const expected2=w.kief?flowerUsed/w.kief:0;
   // Infused Flower check: sum of all ingredients that went into the flower
-  // (Flower + THCA + Terpene, plus Live Resin/Decarbed Cured Resin/Distillate
+  // (Flower + THCA + Terpene, plus Live Resin/HTE/Decarbed Cured Resin/Distillate
   // for SKUs that use them) should roughly equal Infused Flower Total WT, \u00B110%.
-  const ingredientsSum=num(f.flower_qty)+num(f.thca_qty)+num(f.terp_qty)+num(f.live_resin_qty)+num(f.decarbed_resin_qty)+num(f.distillate_qty);
+  const ingredientsSum=num(f.flower_qty)+num(f.thca_qty)+num(f.terp_qty)+num(f.live_resin_qty)+num(f.hte_qty)+num(f.decarbed_resin_qty)+num(f.distillate_qty);
   const flowerActual=num(f.infused_flower_total_wt);
   // Final Packaging check: for SKUs with a known units-per-package ratio,
   // Total Jar Packaged should roughly equal (joints available for packaging)
@@ -3864,17 +3864,17 @@ const SKU_FLAVOR_CONFIG={
 // to each SKU. THCA Infused uses Flower+Terp+THCA; Mates Reserve uses those
 // same three PLUS Live Resin, Decarbed Cured Resin, and Distillate; Shorties
 // isn't an infused product so none of these apply. 2G Infused Pre Roll uses
-// the same ingredients/process as THCA Infused. 1G Plain Pre Roll uses ONLY
-// flower \u2014 no THCA, no Terpene, nothing else. Flower and the infused-flower
-// totals stay visible for every SKU (not listed here, unconditional).
+// Flower+Terp+THCA PLUS Live Resin, HTE, and Distillate. 1G Plain Pre Roll
+// uses ONLY flower \u2014 no THCA, no Terpene, nothing else. Flower and the
+// infused-flower totals stay visible for every SKU (not listed here, unconditional).
 const PRE_ROLL_SKU_INGREDIENTS={
   'Muha Meds - Mates - THCA Infused 5 x 0.6g':['thca_metrc','thca_qty','terp_qty'],
   'Muha Meds - Mates Reserve - 5 x 0.6g':['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'],
   'Bodega Boyz - Shorties':[],
-  'Muha Meds 2G Infused Pre Roll':['thca_metrc','thca_qty','terp_qty'],
+  'Muha Meds 2G Infused Pre Roll':['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','hte_metrc','hte_qty','distillate_metrc','distillate_qty'],
   'Muha Meds 1G Plain Pre Roll':[],
 };
-const PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS=['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'];
+const PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS=['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','hte_metrc','hte_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'];
 // 1G Plain Pre Roll has no kiefing step at all \u2014 the entire Kiefed Preroll
 // section (and its System Check) is hidden for it, not just individual fields.
 const PRE_ROLL_NO_KIEF_SKUS=['Muha Meds 1G Plain Pre Roll'];
@@ -4138,6 +4138,8 @@ const LOG_TYPES={
     {key:'terp_qty',label:'Terpene Used',type:'text',placeholder:'e.g. 40g'},
     {key:'live_resin_metrc',label:'Live Resin METRC #',type:'text',placeholder:'METRC tag for the live resin used'},
     {key:'live_resin_qty',label:'Live Resin Used',type:'text',placeholder:'e.g. 150g'},
+    {key:'hte_metrc',label:'HTE METRC #',type:'text',placeholder:'METRC tag for the HTE used'},
+    {key:'hte_qty',label:'HTE Used',type:'text',placeholder:'e.g. 120g'},
     {key:'decarbed_resin_metrc',label:'Decarbed Cured Resin METRC #',type:'text',placeholder:'METRC tag for the decarbed cured resin'},
     {key:'decarbed_resin_qty',label:'Decarbed Cured Resin Used',type:'text',placeholder:'e.g. 100g'},
     {key:'distillate_metrc',label:'Distillate METRC #',type:'text',placeholder:'METRC tag for the distillate used'},
