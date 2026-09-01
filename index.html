@@ -4500,7 +4500,7 @@ function exportLogPdf(logType,entries,dateFrom,dateTo){
       } else {
         doc.text(label,margin+8,y);
         doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...TEXT);
-        const lines=doc.splitTextToSize(String(val),W-margin*2-130);
+        const lines=doc.splitTextToSize(String(val),W-margin*2-155);
         lines.forEach((l,li)=>{if(li>0){y+=14;checkPage(14);}doc.text(l,margin+155,y);});y+=20;
       }
     });
