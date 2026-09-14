@@ -4146,8 +4146,8 @@ const LOG_TYPES={
     {key:'distillate_qty',label:'Distillate Used',type:'text',placeholder:'e.g. 80g'},
     {key:'trim_metrc',label:'Trim METRC #',type:'text',placeholder:'METRC tag for the trim used'},
     {key:'trim_qty',label:'Trim Used',type:'text',placeholder:'e.g. 500g'},
-    {key:'thca_internal_metrc',label:'THCA Internal METRC #',type:'text',placeholder:'METRC tag for internally-sourced THCA'},
-    {key:'thca_internal_qty',label:'THCA Internal Used',type:'text',placeholder:'e.g. 200g'},
+    {key:'thca_internal_metrc',label:'THCA METRC #',type:'text',placeholder:'METRC tag for the THCA used'},
+    {key:'thca_internal_qty',label:'THCA Used',type:'text',placeholder:'e.g. 200g'},
     {key:'infused_flower_number',label:'Infused Flower #',type:'text',placeholder:'Infused flower batch/lot #'},
     {key:'infused_flower_total_wt',label:'Infused Flower Total WT',type:'text',placeholder:'e.g. 1,240g'},
     {key:'flower_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
@@ -4635,13 +4635,13 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
     setSaving(false);
   }
   const INP=(f)=>{
-    // Bodega Boyz - Shorties doesn't use kief \u2014 it uses THCA coating instead.
-    // Swap "Kief"/"Kiefed" to "THCA Coating"/"THCA Coated" in every label
+    // Bodega Boyz - Shorties doesn't use kief \u2014 it uses diamond coating instead.
+    // Swap "Kief"/"Kiefed" to "Diamond Coating"/"Diamond Coated" in every label
     // (including section headers) for this SKU only, without touching the
     // underlying field keys (so no new columns/SQL needed, and every other
     // SKU is unaffected). Must run before the section-type early return below.
     if(logType==='pre_rolls'&&form.sku==='Bodega Boyz - Shorties'&&/kief/i.test(f.label)){
-      const newLabel=f.label.replace(/Kiefed/g,'THCA Coated').replace(/KIEFED/g,'THCA COATED').replace(/Kief/g,'THCA Coating').replace(/KIEF/g,'THCA COATING');
+      const newLabel=f.label.replace(/Kiefed/g,'Diamond Coated').replace(/KIEFED/g,'DIAMOND COATED').replace(/Kief/g,'Diamond Coating').replace(/KIEF/g,'DIAMOND COATING');
       f={...f,label:newLabel};
     }
     if(f.type==='section'){
@@ -4752,7 +4752,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       const status=(isJoints?form.joints_check_status:form.kiefed_check_status)||'pass';
       const expected=(isJoints?form.joints_check_expected:form.kiefed_check_expected)||'0';
       const actual=(isJoints?form.total_joint_filled:form.total_kiefed_infused_joints)||'0';
-      const noun=isJoints?'joint':'kiefed joint';
+      const noun=isJoints?'joint':(form.sku==='Bodega Boyz - Shorties'?'diamond coated joint':'kiefed joint');
       const cfg={
         pass:{bg:'#16a34a',text:'\u2713 PASS',sub:'Weight per '+noun+' is on target'},
         under:{bg:'#dc2626',text:'\u26A0 UNDER WEIGHT',sub:'More '+noun+'s than expected \u2014 weight per '+noun+' is under target'},
