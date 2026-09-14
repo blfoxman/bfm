@@ -3818,7 +3818,7 @@ function recalcPreRoll(logType,f){
   // Infused Flower check: sum of all ingredients that went into the flower
   // (Flower + THCA + Terpene, plus Live Resin/HTE/Decarbed Cured Resin/Distillate
   // for SKUs that use them) should roughly equal Infused Flower Total WT, \u00B110%.
-  const ingredientsSum=num(f.flower_qty)+num(f.thca_qty)+num(f.terp_qty)+num(f.live_resin_qty)+num(f.hte_qty)+num(f.decarbed_resin_qty)+num(f.distillate_qty);
+  const ingredientsSum=num(f.flower_qty)+num(f.thca_qty)+num(f.terp_qty)+num(f.live_resin_qty)+num(f.hte_qty)+num(f.decarbed_resin_qty)+num(f.distillate_qty)+num(f.trim_qty)+num(f.thca_internal_qty);
   const flowerActual=num(f.infused_flower_total_wt);
   // Final Packaging check: for SKUs with a known units-per-package ratio,
   // Total Jar Packaged should roughly equal (joints available for packaging)
