@@ -3870,11 +3870,11 @@ const SKU_FLAVOR_CONFIG={
 const PRE_ROLL_SKU_INGREDIENTS={
   'Muha Meds - Mates - THCA Infused 5 x 0.6g':['thca_metrc','thca_qty','terp_qty'],
   'Muha Meds - Mates Reserve - 5 x 0.6g':['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'],
-  'Bodega Boyz - Shorties':[],
+  'Bodega Boyz - Shorties':['trim_metrc','trim_qty','thca_internal_metrc','thca_internal_qty','thca_out_metrc','thca_out_qty','distillate_metrc','distillate_qty','terp_qty'],
   'Muha Meds 2G Infused Pre Roll':['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','hte_metrc','hte_qty','distillate_metrc','distillate_qty'],
   'Muha Meds 1G Plain Pre Roll':[],
 };
-const PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS=['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','hte_metrc','hte_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'];
+const PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS=['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','hte_metrc','hte_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty','trim_metrc','trim_qty','thca_internal_metrc','thca_internal_qty','thca_out_metrc','thca_out_qty'];
 // 1G Plain Pre Roll has no kiefing step at all \u2014 the entire Kiefed Preroll
 // section (and its System Check) is hidden for it, not just individual fields.
 const PRE_ROLL_NO_KIEF_SKUS=['Muha Meds 1G Plain Pre Roll'];
@@ -4144,6 +4144,12 @@ const LOG_TYPES={
     {key:'decarbed_resin_qty',label:'Decarbed Cured Resin Used',type:'text',placeholder:'e.g. 100g'},
     {key:'distillate_metrc',label:'Distillate METRC #',type:'text',placeholder:'METRC tag for the distillate used'},
     {key:'distillate_qty',label:'Distillate Used',type:'text',placeholder:'e.g. 80g'},
+    {key:'trim_metrc',label:'Trim METRC #',type:'text',placeholder:'METRC tag for the trim used'},
+    {key:'trim_qty',label:'Trim Used',type:'text',placeholder:'e.g. 500g'},
+    {key:'thca_internal_metrc',label:'THCA Internal METRC #',type:'text',placeholder:'METRC tag for internally-sourced THCA'},
+    {key:'thca_internal_qty',label:'THCA Internal Used',type:'text',placeholder:'e.g. 200g'},
+    {key:'thca_out_metrc',label:'THCA Out METRC #',type:'text',placeholder:'METRC tag for externally-sourced THCA'},
+    {key:'thca_out_qty',label:'THCA Out Used',type:'text',placeholder:'e.g. 200g'},
     {key:'infused_flower_number',label:'Infused Flower #',type:'text',placeholder:'Infused flower batch/lot #'},
     {key:'infused_flower_total_wt',label:'Infused Flower Total WT',type:'text',placeholder:'e.g. 1,240g'},
     {key:'flower_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
@@ -4631,6 +4637,15 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
     setSaving(false);
   }
   const INP=(f)=>{
+    // Bodega Boyz - Shorties doesn't use kief \u2014 it uses THCA coating instead.
+    // Swap "Kief"/"Kiefed" to "THCA Coating"/"THCA Coated" in every label
+    // (including section headers) for this SKU only, without touching the
+    // underlying field keys (so no new columns/SQL needed, and every other
+    // SKU is unaffected). Must run before the section-type early return below.
+    if(logType==='pre_rolls'&&form.sku==='Bodega Boyz - Shorties'&&/kief/i.test(f.label)){
+      const newLabel=f.label.replace(/Kiefed/g,'THCA Coated').replace(/KIEFED/g,'THCA COATED').replace(/Kief/g,'THCA Coating').replace(/KIEF/g,'THCA COATING');
+      f={...f,label:newLabel};
+    }
     if(f.type==='section'){
       const isOptional=f.label.includes('Optional');
       return el('div',{key:f.key,style:{background:isOptional?'#7c3aed':'var(--accent)',color:'#fff',borderRadius:8,padding:'8px 14px',marginBottom:12,marginTop:8,fontSize:11,fontWeight:800,letterSpacing:'.5px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
