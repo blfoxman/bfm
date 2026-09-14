@@ -3870,11 +3870,11 @@ const SKU_FLAVOR_CONFIG={
 const PRE_ROLL_SKU_INGREDIENTS={
   'Muha Meds - Mates - THCA Infused 5 x 0.6g':['thca_metrc','thca_qty','terp_qty'],
   'Muha Meds - Mates Reserve - 5 x 0.6g':['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty'],
-  'Bodega Boyz - Shorties':['trim_metrc','trim_qty','thca_internal_metrc','thca_internal_qty','thca_out_metrc','thca_out_qty','distillate_metrc','distillate_qty','terp_qty'],
+  'Bodega Boyz - Shorties':['trim_metrc','trim_qty','thca_internal_metrc','thca_internal_qty','distillate_metrc','distillate_qty','terp_qty'],
   'Muha Meds 2G Infused Pre Roll':['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','hte_metrc','hte_qty','distillate_metrc','distillate_qty'],
   'Muha Meds 1G Plain Pre Roll':[],
 };
-const PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS=['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','hte_metrc','hte_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty','trim_metrc','trim_qty','thca_internal_metrc','thca_internal_qty','thca_out_metrc','thca_out_qty'];
+const PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS=['thca_metrc','thca_qty','terp_qty','live_resin_metrc','live_resin_qty','hte_metrc','hte_qty','decarbed_resin_metrc','decarbed_resin_qty','distillate_metrc','distillate_qty','trim_metrc','trim_qty','thca_internal_metrc','thca_internal_qty'];
 // 1G Plain Pre Roll has no kiefing step at all \u2014 the entire Kiefed Preroll
 // section (and its System Check) is hidden for it, not just individual fields.
 const PRE_ROLL_NO_KIEF_SKUS=['Muha Meds 1G Plain Pre Roll'];
@@ -4148,8 +4148,6 @@ const LOG_TYPES={
     {key:'trim_qty',label:'Trim Used',type:'text',placeholder:'e.g. 500g'},
     {key:'thca_internal_metrc',label:'THCA Internal METRC #',type:'text',placeholder:'METRC tag for internally-sourced THCA'},
     {key:'thca_internal_qty',label:'THCA Internal Used',type:'text',placeholder:'e.g. 200g'},
-    {key:'thca_out_metrc',label:'THCA Out METRC #',type:'text',placeholder:'METRC tag for externally-sourced THCA'},
-    {key:'thca_out_qty',label:'THCA Out Used',type:'text',placeholder:'e.g. 200g'},
     {key:'infused_flower_number',label:'Infused Flower #',type:'text',placeholder:'Infused flower batch/lot #'},
     {key:'infused_flower_total_wt',label:'Infused Flower Total WT',type:'text',placeholder:'e.g. 1,240g'},
     {key:'flower_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
