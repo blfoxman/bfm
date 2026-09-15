@@ -3813,8 +3813,12 @@ function recalcPreRoll(logType,f){
   const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
   const flowerUsed=num(f.infused_flower_used);
   const w=preRollJointWeight(f.sku);
-  const expected1=flowerUsed/w.filled;
-  const expected2=w.kief?flowerUsed/w.kief:0;
+  // Bodega Boyz - Shorties uses its own fixed divisors instead of the
+  // generic per-SKU weight table: Infused Joints = Flower Used \u00F7 0.65;
+  // Diamond Coated Joints = (Flower Used + Diamond Used) \u00F7 0.7.
+  const isShorties=f.sku==='Bodega Boyz - Shorties';
+  const expected1=isShorties?flowerUsed/0.65:flowerUsed/w.filled;
+  const expected2=isShorties?(flowerUsed+num(f.kief_qty_used))/0.7:(w.kief?flowerUsed/w.kief:0);
   // Infused Flower check: sum of all ingredients that went into the flower
   // (Flower + THCA + Terpene, plus Live Resin/HTE/Decarbed Cured Resin/Distillate
   // for SKUs that use them) should roughly equal Infused Flower Total WT, \u00B110%.
