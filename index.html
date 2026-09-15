@@ -4647,6 +4647,20 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       const newLabel=f.label.replace(/Kiefed/g,'Diamond Coated').replace(/KIEFED/g,'DIAMOND COATED').replace(/Kief/g,'Diamond Coating').replace(/KIEF/g,'DIAMOND COATING');
       f={...f,label:newLabel};
     }
+    // Muha Meds 1G Plain Pre Roll uses plain ground flower, not infused flower,
+    // and packages into mylars (1 joint per mylar) instead of jars. Swap the
+    // wording in every label/message for this SKU only \u2014 underlying field
+    // keys and the existing 1-per-package ratio are unchanged.
+    if(logType==='pre_rolls'&&form.sku==='Muha Meds 1G Plain Pre Roll'){
+      if(/infused flower/i.test(f.label)){
+        const newLabel=f.label.replace(/INFUSED FLOWER/g,'GROUND FLOWER').replace(/Infused Flower/g,'Ground Flower').replace(/Infused flower/g,'Ground flower');
+        f={...f,label:newLabel};
+      }
+      if(/jar/i.test(f.label)){
+        const newLabel=f.label.replace(/Jar/g,'Mylar').replace(/JAR/g,'MYLAR').replace(/jar/g,'mylar');
+        f={...f,label:newLabel};
+      }
+    }
     if(f.type==='section'){
       const isOptional=f.label.includes('Optional');
       return el('div',{key:f.key,style:{background:isOptional?'#7c3aed':'var(--accent)',color:'#fff',borderRadius:8,padding:'8px 14px',marginBottom:12,marginTop:8,fontSize:11,fontWeight:800,letterSpacing:'.5px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
@@ -4724,10 +4738,11 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
     if(logType==='pre_rolls'&&f.key==='packaging_check_result'){
       if(!PRE_ROLL_UNITS_PER_PACKAGE[form.sku]) return null;
       const status=form.packaging_check_status||'pass';
+      const pkgWord=form.sku==='Muha Meds 1G Plain Pre Roll'?'mylar':'package';
       const cfg={
-        pass:{bg:'#16a34a',text:'\u2713 PASS',sub:'Joints per package is on target'},
-        under:{bg:'#dc2626',text:'\u26A0 UNDER WEIGHT',sub:'More packages than expected \u2014 fewer joints made it into each package'},
-        over:{bg:'#f59e0b',text:'\u26A0 OVER WEIGHT',sub:'Fewer packages than expected \u2014 more joints went into each package'},
+        pass:{bg:'#16a34a',text:'\u2713 PASS',sub:'Joints per '+pkgWord+' is on target'},
+        under:{bg:'#dc2626',text:'\u26A0 UNDER WEIGHT',sub:'More '+pkgWord+'s than expected \u2014 fewer joints made it into each '+pkgWord},
+        over:{bg:'#f59e0b',text:'\u26A0 OVER WEIGHT',sub:'Fewer '+pkgWord+'s than expected \u2014 more joints went into each '+pkgWord},
       }[status];
       return el('div',{key:f.key,className:'fg'},
         el('div',{style:{background:cfg.bg,color:'#fff',borderRadius:10,padding:'14px 18px',textAlign:'center'}},
@@ -4738,10 +4753,11 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
     }
     if(logType==='pre_rolls'&&f.key==='flower_check_result'){
       const status=form.flower_check_status||'pass';
+      const flowerWord=form.sku==='Muha Meds 1G Plain Pre Roll'?'Ground':'Infused';
       const cfg={
-        pass:{bg:'#16a34a',text:'\u2713 PASS',sub:'Infused flower weight matches ingredients'},
-        under:{bg:'#dc2626',text:'\u26A0 UNDER WEIGHT',sub:'Infused flower weighs less than the ingredients that went in'},
-        over:{bg:'#f59e0b',text:'\u26A0 OVER WEIGHT',sub:'Infused flower weighs more than the ingredients that went in'},
+        pass:{bg:'#16a34a',text:'\u2713 PASS',sub:flowerWord+' flower weight matches ingredients'},
+        under:{bg:'#dc2626',text:'\u26A0 UNDER WEIGHT',sub:flowerWord+' flower weighs less than the ingredients that went in'},
+        over:{bg:'#f59e0b',text:'\u26A0 OVER WEIGHT',sub:flowerWord+' flower weighs more than the ingredients that went in'},
       }[status];
       return el('div',{key:f.key,className:'fg'},
         el('div',{style:{background:cfg.bg,color:'#fff',borderRadius:10,padding:'14px 18px',textAlign:'center'}},
