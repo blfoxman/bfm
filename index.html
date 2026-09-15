@@ -5629,12 +5629,27 @@ Rules:
       const res=await fetch(`${SUPA_URL}/functions/v1/claude-proxy`,{
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
-        body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:4000,messages:[{role:'user',content:prompt}]}),
+        body:JSON.stringify({
+          model:'claude-sonnet-4-6',max_tokens:6000,
+          system:'You output ONLY valid, parseable JSON. Never include any prose, explanation, preamble, or markdown formatting before or after the JSON \u2014 your entire response must be nothing but the JSON object itself, starting with { and ending with }.',
+          messages:[{role:'user',content:prompt}],
+        }),
       });
       let data;try{data=await res.json();}catch{throw new Error('Proxy error');}
       if(!res.ok||data.error)throw new Error((data.error&&(data.error.message||JSON.stringify(data.error)))||'AI failed');
-      const text=(data.content||[]).map(b=>b.type==='text'?b.text:'').join('').replace(/```json|```/g,'').trim();
-      const parsed=JSON.parse(text);
+      let text=(data.content||[]).map(b=>b.type==='text'?b.text:'').join('').replace(/```json|```/g,'').trim();
+      // Defensive: if the model still adds any stray text before/after the
+      // JSON despite instructions, extract just the {...} object rather
+      // than failing outright on the first non-JSON character.
+      const firstBrace=text.indexOf('{');
+      const lastBrace=text.lastIndexOf('}');
+      if(firstBrace===-1||lastBrace===-1||lastBrace<firstBrace){
+        throw new Error('AI response did not contain valid JSON. Try again, or simplify the request (fewer flavors at once).');
+      }
+      text=text.slice(firstBrace,lastBrace+1);
+      let parsed;
+      try{parsed=JSON.parse(text);}
+      catch(parseErr){throw new Error('Could not read the AI\u2019s response ('+parseErr.message+'). Try again \u2014 sometimes a smaller batch of flavors helps.');}
       setResults(parsed);
       // Initialize tracking for each flavor
       const tr={};
