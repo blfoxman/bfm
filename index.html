@@ -919,7 +919,7 @@ function Auth({onLogin}){
       const regRes=await fetch(`${SUPA_URL}/rest/v1/pf_users`,{
         method:'POST',
         headers:{...H.headers,'Content-Type':'application/json','Prefer':'return=minimal'},
-        body:JSON.stringify({id:'u'+Date.now(),name:fullName,first_name:f.firstName,last_name:f.lastName,email:f.email,pw:f.pw,role:'team_member',dept:(f.depts||[])[0]||'Production',depts:f.depts||[],licenses:f.licenses||[],loc:f.loc,approved:false,perms:[],managers:[],oversees_depts:[]}),
+        body:JSON.stringify({id:'u'+Date.now(),name:fullName,first_name:f.firstName,last_name:f.lastName,email:f.email,pw:f.pw,agent_id:f.agentId||null,role:'team_member',dept:(f.depts||[])[0]||'Production',depts:f.depts||[],licenses:f.licenses||[],loc:f.loc,approved:false,perms:[],managers:[],oversees_depts:[]}),
       });
       if(!regRes.ok){const t=await regRes.text();throw new Error(t);}
       setPend(true);
@@ -956,6 +956,7 @@ function Auth({onLogin}){
       ),
       el('div',{className:'fg'},el('label',null,'Email'),el('input',{type:'email',value:f.email,onChange:ev=>setF(p=>({...p,email:ev.target.value}))})),
       el('div',{className:'fg'},el('label',null,'Password'),el('input',{type:'password',value:f.pw,onChange:ev=>setF(p=>({...p,pw:ev.target.value}))})),
+      el('div',{className:'fg'},el('label',null,'Agent ID'),el('input',{placeholder:'State-issued METRC agent ID',value:f.agentId||'',onChange:ev=>setF(p=>({...p,agentId:ev.target.value}))})),
       el('div',{className:'fg'},
         el('label',null,'Location'),
         el('select',{value:f.loc,onChange:ev=>setF(p=>({...p,loc:ev.target.value})),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13}},
@@ -2363,6 +2364,7 @@ function Team({users,setUsers,cu}){
     const update={
       name:editU.name,
       email:editU.email,
+      agent_id:editU.agent_id||null,
       role:editU.role,
       roles:editU.roles&&editU.roles.length?editU.roles:(editU.role?[editU.role]:[]),
       dept:editU.dept,
@@ -2547,6 +2549,10 @@ function Team({users,setUsers,cu}){
             el('div',{className:'fg',style:{marginBottom:0}},
               el('label',null,'Email / Username'),
               el('input',{type:'email',value:editU.email||'',onChange:ev=>setEditU(p=>({...p,email:ev.target.value})),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
+            ),
+            el('div',{className:'fg',style:{marginBottom:0}},
+              el('label',null,'Agent ID'),
+              el('input',{value:editU.agent_id||'',onChange:ev=>setEditU(p=>({...p,agent_id:ev.target.value})),placeholder:'State-issued METRC agent ID',style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,boxSizing:'border-box'}}),
             ),
           ),
 
@@ -4537,7 +4543,7 @@ function exportLogPdf(logType,entries,dateFrom,dateTo){
   doc.save('BlackFox_'+lt.label.replace(/[^a-z0-9]/gi,'_')+'_'+new Date().toISOString().slice(0,10)+'.pdf');
 }
 
-function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lockFilledFields}){
+function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lockFilledFields,licActive}){
   const lt=LOG_TYPES[logType];
   // Snapshot the ORIGINAL values once at open, independent of live form state,
   // so we know which fields were already filled in when a restricted opener
@@ -4630,7 +4636,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         await db.update(lt.table,editData.id,update);
         onSave({...editData,...update});
       } else {
-        const rec={...form,id:'log-'+Date.now(),log_type:logType,signature_image:sig||null,attachments:attachments.map(a=>({id:a.id,name:a.name,type:a.type,size:a.size,data:a.data})),submitted_by:cu.name,submitted_by_id:cu.id,created_at:new Date().toISOString()};
+        const rec={...form,id:'log-'+Date.now(),log_type:logType,license_number:licActive||null,signature_image:sig||null,attachments:attachments.map(a=>({id:a.id,name:a.name,type:a.type,size:a.size,data:a.data})),submitted_by:cu.name,submitted_by_id:cu.id,created_at:new Date().toISOString()};
         await db.insert(lt.table,rec);
         onSave(rec);
       }
@@ -5186,7 +5192,7 @@ function SecurityInspectionForm({cu,onSave,onClose,editData,SUPA_URL,SUPA_KEY,H}
   );
 }
 
-function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
+function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive}){
   const[activeLog,setActiveLog]=React.useState(null);
   const[entries,setEntries]=React.useState([]);
   const[loading,setLoading]=React.useState(false);
@@ -5205,10 +5211,11 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
     const lt=LOG_TYPES[activeLog];
     if(!lt||!lt.table)return;
     let url=`${SUPA_URL}/rest/v1/${lt.table}?select=*&order=created_at.desc`;
+    if(licActive)url+=`&license_number=eq.${encodeURIComponent(licActive)}`;
     if(dateFrom)url+=`&created_at=gte.${dateFrom}`;
     if(dateTo)url+=`&created_at=lte.${dateTo}T23:59:59`;
     fetch(url,{headers:H.headers}).then(r=>r.ok?r.json():[]).then(rows=>{setEntries(Array.isArray(rows)?rows:[]);setLoading(false);}).catch(()=>setLoading(false));
-  },[activeLog,dateFrom,dateTo]);
+  },[activeLog,dateFrom,dateTo,licActive]);
   const lt=activeLog?LOG_TYPES[activeLog]:null;
   const filtered=entries.filter(e=>!search||(JSON.stringify(e).toLowerCase().includes(search.toLowerCase())));
 
@@ -5357,7 +5364,7 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
           ),
         ))
       ),
-    (showForm||editEntry)&&el(LogEntryForm,{logType:activeLog,cu,SUPA_URL,SUPA_KEY,H,
+    (showForm||editEntry)&&el(LogEntryForm,{logType:activeLog,cu,SUPA_URL,SUPA_KEY,H,licActive,
       editData:editEntry,
       onClose:()=>{setShowForm(false);setEditEntry(null);},
       onSave:(rec)=>{
@@ -5372,7 +5379,7 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}){
 // ══════════════════════════════════════════════════════════════════════════════
 // BATCH TRACKER \u2014 dropdown-selected batch type, list + create/edit/PDF, one shared table
 // ══════════════════════════════════════════════════════════════════════════════
-function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn}){
+function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn,licActive}){
   const visibleBatchTypes=(restricted==='lead'||restricted==='pm')?['cartridges','gummies','pre_rolls','infused_flower','moon_rocks','snow_caps']:BATCH_TYPE_IDS;
   const[activeType,setActiveType]=React.useState(visibleBatchTypes[0]);
   const[entries,setEntries]=React.useState([]);
@@ -5399,10 +5406,11 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn
   React.useEffect(()=>{
     setLoading(true);setEntries([]);
     let url=`${SUPA_URL}/rest/v1/${lt.table}?select=*&log_type=eq.${activeType}&order=created_at.desc`;
+    if(licActive)url+=`&license_number=eq.${encodeURIComponent(licActive)}`;
     if(dateFrom)url+=`&created_at=gte.${dateFrom}`;
     if(dateTo)url+=`&created_at=lte.${dateTo}T23:59:59`;
     fetch(url,{headers:H.headers}).then(r=>r.ok?r.json():[]).then(rows=>{setEntries(Array.isArray(rows)?rows:[]);setLoading(false);}).catch(()=>setLoading(false));
-  },[activeType,dateFrom,dateTo]);
+  },[activeType,dateFrom,dateTo,licActive]);
 
   const filtered=entries.filter(e=>!search||JSON.stringify(e).toLowerCase().includes(search.toLowerCase()));
 
@@ -5490,7 +5498,7 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn
           ),
         ))
       ),
-    (showForm||editEntry)&&el(LogEntryForm,{logType:activeType,cu,SUPA_URL,SUPA_KEY,H,
+    (showForm||editEntry)&&el(LogEntryForm,{logType:activeType,cu,SUPA_URL,SUPA_KEY,H,licActive,
       editData:editEntry,
       lockFilledFields:!canEdit&&canOpen,
       onClose:()=>{setShowForm(false);setEditEntry(null);},
@@ -8425,8 +8433,12 @@ function SupplierTab({cu,isElevated,suppliers,setSuppliers,filterByLic,handleSav
   return null;
 }
 
-function QMS({cu,users,tasks,sops,setSops,deviations,setDeviations,capas,setCapas,audits,setAudits,changes,setChanges,complaints,setComplaints,suppliers,setSuppliers,corrective,setCorrective}){
-  const[tab,setTab]=useState('dashboard');
+function QMS({cu,users,tasks,sops,setSops,deviations,setDeviations,capas,setCapas,audits,setAudits,changes,setChanges,complaints,setComplaints,suppliers,setSuppliers,corrective,setCorrective,initialTab}){
+  const[tab,setTab]=useState(initialTab||'dashboard');
+  // Sidebar "Management" items deep-link into a specific QMS tab. QMS
+  // doesn't remount between those clicks (page stays 'qms' throughout), so
+  // this keeps the tab in sync on every click, not just the first mount.
+  useEffect(()=>{if(initialTab)setTab(initialTab);},[initialTab]);
   const[showNew,setNew]=useState(false);
   const[sel,setSel]=useState(null);
   const[editing,setEditing]=useState(null);
@@ -9522,6 +9534,10 @@ function Scoreboard({tasks,cu,users}){
 // \u2500\u2500 LICENSE & REGULATORY CONSTANTS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 const LICENSES=[
   {id:'bfm',name:'Black Fox Manufacturing',state:'Missouri',license_type:'Comprehensive Facility License',license_number:'MAN000109'},
+  {id:'bfm2',name:'Black Fox Manufacturing 2',state:'Missouri',license_type:'Comprehensive Facility License',license_number:'MAN000085'},
+  {id:'cul22',name:'Black Fox Cultivation 22',state:'Missouri',license_type:'Cultivation License',license_number:'CUL000022'},
+  {id:'cul24',name:'Black Fox Cultivation 24',state:'Missouri',license_type:'Cultivation License',license_number:'CUL000024'},
+  {id:'cul60',name:'Black Fox Cultivation 60',state:'Missouri',license_type:'Cultivation License',license_number:'CUL000060'},
 ];
 
 const STATE_REGS={
@@ -13575,7 +13591,9 @@ function App(){
   const[inviteAlert,setInviteAlert]=useState(null);
   const[activeCall,setActiveCall]=useState(null);
   const[installPrompt,setInstallPrompt]=useState(null);
-  const[navOpen,setNavOpen]=useState({production:true,compliance:true});
+  const[navOpen,setNavOpen]=useState({production:true,compliance:true,management:true});
+  const[qmsTab,setQmsTab]=useState(null);
+  function goToQms(tabId){setQmsTab(tabId);setPage('qms');}
   const[showInstallBanner,setShowInstallBanner]=useState(false);
 
   // Capture the beforeinstallprompt event for PWA install
@@ -13588,6 +13606,17 @@ function App(){
     }
   },[cu]);
   const[locFilter,setLocFilter]=useState('Missouri');
+  // Which license's data is currently shown \u2014 same idea as locFilter, just
+  // for the 5 licenses sharing this one database. Defaults to the first
+  // license this person belongs to (their own cu.licenses), or the first
+  // license overall for admin / anyone with no licenses assigned yet.
+  const[licActive,setLicActive]=useState(()=>LICENSES[0]?.license_number||'');
+  useEffect(()=>{
+    if(!cu) return;
+    if(cu.role==='admin') return; // admin keeps whichever they last picked
+    const mine=(cu.licenses||[]).map(id=>LICENSES.find(l=>l.id===id)).filter(Boolean);
+    if(mine.length>0) setLicActive(mine[0].license_number);
+  },[cu]);
 
   // FIX 2: doRefresh with correct destructuring
   const doRefresh=useCallback(()=>{
@@ -13754,16 +13783,36 @@ function App(){
   const navCompliance=[
     canAccessQms&&{id:'qms',ico:'\uD83D\uDEE1\uFE0F',label:'QMS'},
     canAccessLogs&&{id:'logs',ico:'\uD83D\uDCCB',label:'Facility Logs'},
-    canAccessRisks&&{id:'risks',ico:'\u26A0\uFE0F',label:'Risk Register'},
     canAccessCompliance&&{id:'compliance',ico:'\u2705',label:'Compliance'},
+  ].filter(Boolean);
+  // Deviations/CAPAs/Change Control/Complaints/Suppliers/Corrective Actions
+  // all live as TABS inside the single QMS page (not separate routes) \u2014 so
+  // each item here deep-links into QMS at that specific tab via tabTarget.
+  // Risk Register IS its own page, so it keeps a plain id with no tabTarget.
+  const navManagement=[
+    canAccessQms&&{id:'qms',ico:'\u26A0\uFE0F',label:'Deviations',tabTarget:'deviations'},
+    canAccessQms&&{id:'qms',ico:'\uD83D\uDD27',label:'CAPAs',tabTarget:'capas'},
+    canAccessRisks&&{id:'risks',ico:'\u26A0\uFE0F',label:'Risk Register'},
+    canAccessQms&&{id:'qms',ico:'\uD83D\uDCDD',label:'Change Control',tabTarget:'changes'},
+    canAccessQms&&{id:'qms',ico:'\uD83D\uDCE3',label:'Complaints',tabTarget:'complaints'},
+    canAccessQms&&{id:'qms',ico:'\uD83C\uDFED',label:'Suppliers',tabTarget:'suppliers'},
+    canAccessQms&&{id:'qms',ico:'\u2696\uFE0F',label:'Corrective Actions',tabTarget:'corrective'},
   ].filter(Boolean);
   // Flattened, in the exact same order as before \u2014 anything that still
   // reads `nav` elsewhere keeps working unchanged.
-  const nav=restricted?navRestricted:[...navFlatTop,...navProduction,...navCompliance];
+  const nav=restricted?navRestricted:[...navFlatTop,...navProduction,...navCompliance,...navManagement];
 
   return el('div',{className:'app'},
     el('div',{className:'sb'},
       el(BFMlogo,{size:28,labelSize:18,className:'sb-logo',textColor:'#ffffff'}),
+      el('div',{style:{marginBottom:16}},
+        el('div',{className:'sb-label',style:{marginBottom:8}},'License'),
+        (cu.role==='admin'?LICENSES:LICENSES.filter(l=>(cu.licenses||[]).includes(l.id))).map(l=>
+          el('button',{key:l.license_number,className:`nav${licActive===l.license_number?' on':''}`,onClick:()=>setLicActive(l.license_number),title:l.name},
+            el('span',null,'\uD83C\uDFF7\uFE0F'),l.license_number
+          )
+        ),
+      ),
       el('div',{style:{marginBottom:16}},
         el('div',{className:'sb-label',style:{marginBottom:8}},'Location'),
         LOCS.map(l=>
@@ -13781,7 +13830,7 @@ function App(){
             navFlatTop.map(item=>el('button',{key:item.id,className:`nav${page===item.id?' on':''}`,onClick:()=>setPage(item.id)},
               el('span',null,item.ico),item.label,item.badge&&el('span',{className:'dot'},item.badge)
             )),
-            [['production','\uD83C\uDFED','Production',navProduction],['compliance','\u2705','Compliance',navCompliance]].map(([key,groupIco,groupLabel,items])=>
+            [['production','\uD83C\uDFED','Production',navProduction],['compliance','\u2705','Compliance',navCompliance],['management','\uD83D\uDCCB','Management',navManagement]].map(([key,groupIco,groupLabel,items])=>
               items.length===0?null:el('div',{key},
                 el('button',{
                   onClick:()=>setNavOpen(p=>({...p,[key]:!p[key]})),
@@ -13790,7 +13839,11 @@ function App(){
                   el('span',null,groupIco),groupLabel,
                   el('span',{style:{marginLeft:'auto',fontSize:10,opacity:.6}},navOpen[key]?'\u25B2':'\u25BC')
                 ),
-                navOpen[key]&&items.map(item=>el('button',{key:item.id,className:`nav${page===item.id?' on':''}`,style:{paddingLeft:28},onClick:()=>setPage(item.id)},
+                navOpen[key]&&items.map((item,idx)=>el('button',{key:item.id+'-'+(item.tabTarget||idx),
+                  className:`nav${page===item.id&&(!item.tabTarget||qmsTab===item.tabTarget)?' on':''}`,
+                  style:{paddingLeft:28},
+                  onClick:()=>item.tabTarget?goToQms(item.tabTarget):setPage(item.id)
+                },
                   el('span',null,item.ico),item.label,item.badge&&el('span',{className:'dot'},item.badge)
                 )),
               )
@@ -13986,8 +14039,8 @@ function App(){
       page==='sops'&&restricted&&el(SOPs,{sops,setSops,cu,users}),
       page==='compliance'&&canAccessCompliance&&el(ComplianceModule,{cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db}),
       page==='risks'&&canAccessRisks&&el(RiskRegister,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
-      page==='logs'&&canAccessLogs&&el(FacilityLogs,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
-      page==='batch'&&canAccessBatch&&el(BatchTracker,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn:modulePerm.bind(null,cu)}),
+      page==='logs'&&canAccessLogs&&el(FacilityLogs,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive}),
+      page==='batch'&&canAccessBatch&&el(BatchTracker,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn:modulePerm.bind(null,cu),licActive}),
       page==='formbank'&&canAccessFormBank&&el(FormulationBank,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='cogs'&&canAccessCogs&&el(CogsCalculator,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='reporter'&&canAccessQms&&el(AIReporter,{cu,SUPA_URL,SUPA_KEY,H}),
@@ -14000,6 +14053,7 @@ function App(){
         complaints:qmsComplaints,setComplaints:setQmsComplaints,
         suppliers:qmsSuppliers,setSuppliers:setQmsSuppliers,
         corrective:qmsCorrective,setCorrective:setQmsCorrective,
+        initialTab:qmsTab,
       }),
       page==='mydocs'&&el(MyDocuments,{cu,corrective:qmsCorrective,setCorrective:setQmsCorrective}),
       page==='team'&&isAdmin&&el(Team,{users,setUsers,cu}),
