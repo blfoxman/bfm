@@ -13575,6 +13575,7 @@ function App(){
   const[inviteAlert,setInviteAlert]=useState(null);
   const[activeCall,setActiveCall]=useState(null);
   const[installPrompt,setInstallPrompt]=useState(null);
+  const[navOpen,setNavOpen]=useState({production:true,compliance:true});
   const[showInstallBanner,setShowInstallBanner]=useState(false);
 
   // Capture the beforeinstallprompt event for PWA install
@@ -13719,30 +13720,46 @@ function App(){
   const myTasks=tasks.filter(t=>(t.assignees||[]).some(a=>a.id===cu.id)&&!['archived'].includes(t.status));
   const overdueCt=tasks.filter(t=>!['done','archived'].includes(t.status)&&t.due_date&&t.due_date<today).length;
 
-  const nav=(restricted?[
+  // Restricted users keep the original flat list untouched — only the
+  // full-access sidebar below gets the grouped layout.
+  const navRestricted=[
     {id:'license',ico:'\uD83D\uDCDC',label:'License Chart'},
     {id:'sops',ico:'\uD83D\uDCCB',label:'SOPs'},
     {id:'mydocs',ico:'\uD83D\uDCC1',label:'My Documents'},
     {id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
     {id:'board',ico:'\u2B1B',label:'Task Board'},
     (restricted==='lead'||restricted==='pm')&&{id:'batch',ico:'\uD83E\uDDEA',label:'Batch Tracker'},
-  ]:[
+  ].filter(Boolean);
+
+  // Full-access sidebar: same exact items, same exact ids/access-gates/
+  // onClick behavior as before \u2014 just visually bucketed into flat items
+  // up top plus two collapsible groups (Production, Compliance), mirroring
+  // the Michigan qms420 layout. Nothing about WHAT renders changed, only
+  // WHERE it's grouped.
+  const navFlatTop=[
     {id:'license',ico:'\uD83D\uDCDC',label:'License Chart'},
     {id:'board',ico:'\u2B1B',label:'Task Board'},
     {id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
-    canAccessQms&&{id:'qms',ico:'\uD83D\uDEE1\uFE0F',label:'QMS'},
     canAccessQms&&{id:'reporter',ico:'\uD83E\uDDE0',label:'AI Reporter'},
-    canAccessPlanner&&{id:'planner',ico:'\uD83C\uDFED',label:'Production Planner'},
-    canAccessCompliance&&{id:'compliance',ico:'\u2705',label:'Compliance'},
-    canAccessRisks&&{id:'risks',ico:'\u26A0\uFE0F',label:'Risk Register'},
-    canAccessLogs&&{id:'logs',ico:'\uD83D\uDCCB',label:'Facility Logs'},
-    canAccessBatch&&{id:'batch',ico:'\uD83E\uDDEA',label:'Batch Tracker'},
-    canAccessFormBank&&{id:'formbank',ico:'\uD83E\uDDEA',label:'Formulation Bank'},
-    canAccessCogs&&{id:'cogs',ico:'\uD83D\uDCB0',label:'COGS Calculator'},
     {id:'mydocs',ico:'\uD83D\uDCC1',label:'My Documents'},
     canAccessSales&&{id:'sales',ico:'\uD83C\uDFEA',label:'Sales & Marketing'},
     isAdmin&&{id:'team',ico:'\uD83D\uDC65',label:'Team & Access',badge:pending||null},
-  ]).filter(Boolean);
+  ].filter(Boolean);
+  const navProduction=[
+    canAccessPlanner&&{id:'planner',ico:'\uD83C\uDFED',label:'Production Planner'},
+    canAccessBatch&&{id:'batch',ico:'\uD83E\uDDEA',label:'Batch Tracker'},
+    canAccessFormBank&&{id:'formbank',ico:'\uD83E\uDDEA',label:'Formulation Bank'},
+    canAccessCogs&&{id:'cogs',ico:'\uD83D\uDCB0',label:'COGS Calculator'},
+  ].filter(Boolean);
+  const navCompliance=[
+    canAccessQms&&{id:'qms',ico:'\uD83D\uDEE1\uFE0F',label:'QMS'},
+    canAccessLogs&&{id:'logs',ico:'\uD83D\uDCCB',label:'Facility Logs'},
+    canAccessRisks&&{id:'risks',ico:'\u26A0\uFE0F',label:'Risk Register'},
+    canAccessCompliance&&{id:'compliance',ico:'\u2705',label:'Compliance'},
+  ].filter(Boolean);
+  // Flattened, in the exact same order as before \u2014 anything that still
+  // reads `nav` elsewhere keeps working unchanged.
+  const nav=restricted?navRestricted:[...navFlatTop,...navProduction,...navCompliance];
 
   return el('div',{className:'app'},
     el('div',{className:'sb'},
@@ -13756,9 +13773,29 @@ function App(){
         )
       ),
       el('div',{className:'sb-label',style:{marginBottom:8}},'Navigation'),
-      nav.map(item=>el('button',{key:item.id,className:`nav${page===item.id?' on':''}`,onClick:()=>setPage(item.id)},
-        el('span',null,item.ico),item.label,item.badge&&el('span',{className:'dot'},item.badge)
-      )),
+      restricted
+        ? nav.map(item=>el('button',{key:item.id,className:`nav${page===item.id?' on':''}`,onClick:()=>setPage(item.id)},
+            el('span',null,item.ico),item.label,item.badge&&el('span',{className:'dot'},item.badge)
+          ))
+        : el(React.Fragment,null,
+            navFlatTop.map(item=>el('button',{key:item.id,className:`nav${page===item.id?' on':''}`,onClick:()=>setPage(item.id)},
+              el('span',null,item.ico),item.label,item.badge&&el('span',{className:'dot'},item.badge)
+            )),
+            [['production','\uD83C\uDFED','Production',navProduction],['compliance','\u2705','Compliance',navCompliance]].map(([key,groupIco,groupLabel,items])=>
+              items.length===0?null:el('div',{key},
+                el('button',{
+                  onClick:()=>setNavOpen(p=>({...p,[key]:!p[key]})),
+                  style:{display:'flex',alignItems:'center',gap:9,padding:'9px 11px',borderRadius:'var(--rs)',cursor:'pointer',fontSize:13,fontWeight:700,color:'rgba(255,255,255,.9)',border:navOpen[key]?'1px solid rgba(255,255,255,.25)':'none',background:navOpen[key]?'rgba(255,255,255,.1)':'none',width:'100%',textAlign:'left',fontFamily:'inherit'}
+                },
+                  el('span',null,groupIco),groupLabel,
+                  el('span',{style:{marginLeft:'auto',fontSize:10,opacity:.6}},navOpen[key]?'\u25B2':'\u25BC')
+                ),
+                navOpen[key]&&items.map(item=>el('button',{key:item.id,className:`nav${page===item.id?' on':''}`,style:{paddingLeft:28},onClick:()=>setPage(item.id)},
+                  el('span',null,item.ico),item.label,item.badge&&el('span',{className:'dot'},item.badge)
+                )),
+              )
+            ),
+          ),
       el('div',{style:{margin:'16px 0',padding:'12px',background:'var(--surface2)',borderRadius:'var(--rs)'}},
         el('div',{style:{fontSize:11,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:10}},'Quick Stats'),
         [{l:'My Tasks',v:myTasks.length,c:'var(--accent)'},{l:'Overdue',v:overdueCt,c:overdueCt>0?'var(--red)':'var(--text3)'}].map(({l,v,c})=>
