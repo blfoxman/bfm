@@ -4471,26 +4471,43 @@ function exportLogPdf(logType,entries,dateFrom,dateTo){
         y+=6;
       }
     } else {
+    let prevFieldLabel='';
     lt.fields.forEach(f=>{
+      // Skip fields that don't apply to this entry's SKU \u2014 same rules the
+      // entry form uses, so the PDF never prints blank METRC boxes for
+      // products that weren't made in this batch.
+      if(logType==='butane_extraction'&&f.key!==undefined){
+        if(entry.sku===BHO_DUAL_SKU&&BHO_SINGLE_PRODUCT_KEYS.includes(f.key)) return;
+        if(entry.sku!==BHO_DUAL_SKU&&BHO_DUAL_PRODUCT_KEYS.includes(f.key)) return;
+      }
+      if(logType==='pre_rolls'){
+        if(PRE_ROLL_CONDITIONAL_INGREDIENT_KEYS.includes(f.key)&&!(PRE_ROLL_SKU_INGREDIENTS[entry.sku]||[]).includes(f.key)) return;
+        if(PRE_ROLL_NO_KIEF_SKUS.includes(entry.sku)&&PRE_ROLL_KIEF_SECTION_KEYS.includes(f.key)) return;
+      }
       if(f.type==='section'){
-        checkPage(22);
+        checkPage(30);
+        y+=4;
         doc.setFillColor(...LIGHT);doc.rect(margin,y,W-margin*2,16,'F');
         doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(...NAVY);
         doc.text(f.label.replace(/^--- /,'').replace(/ ---$/,'').toUpperCase(),margin+8,y+11);
-        y+=22;
+        y+=28;
+        prevFieldLabel='';
         return;
       }
       if(f.type==='checkbox'){
         const checked=!!entry[f.key];
-        checkPage(15);
+        checkPage(20);
         doc.setFont('helvetica','bold');doc.setFontSize(9.5);
         doc.setTextColor(...(checked?[22,163,74]:[148,163,184]));
-        doc.text(checked?'[X]':'[ ]',margin+8,y+8);
-        doc.setFont('helvetica','normal');doc.setTextColor(...TEXT);
-        doc.text(f.label,margin+30,y+8);
-        y+=15;
+        doc.text(checked?'[X]':'[ ]',margin+8,y);
+        doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(...TEXT);
+        // Say WHICH quantity this box confirms, instead of a bare "Recorded on METRC?"
+        const ctx=prevFieldLabel?prevFieldLabel.replace(/ \*$/,'').replace(/ METRC #$/,'').replace(/ Batch$/,''):'';
+        doc.text(f.label+(ctx?'  \u2014  '+ctx:''),margin+30,y);
+        y+=20;
         return;
       }
+      if(f.type!=='display'&&f.type!=='checkbox') prevFieldLabel=f.label;
       const val=entry[f.key];
       // Waste METRC tags: array of {tag, weight} - render each as full tag number + weight
       if(f.key==='waste_metrc_tags'&&Array.isArray(val)&&val.length>0){
@@ -4542,7 +4559,7 @@ function exportLogPdf(logType,entries,dateFrom,dateTo){
         return;
       }
       if(!val||!String(val).trim())return;
-      checkPage(22);
+      checkPage(40);
       const label=f.label.replace(' *','').toUpperCase();
       doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...SUBTEXT);
       const labelWidth=doc.getTextWidth(label);
