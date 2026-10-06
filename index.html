@@ -3780,6 +3780,30 @@ const BHO_DUAL_SKU='THCA/HTE';
 // Crumble) \u2014 hidden when SKU is THCA/HTE, which uses the dual-product fields instead.
 const BHO_SINGLE_PRODUCT_KEYS=['product_inprogress_metrc','product_inprogress_qty','product_inprogress_metrc_confirmed','product_inprogress_waste','product_inprogress_waste_metrc_confirmed','product_final_metrc','product_final_qty','product_final_metrc_confirmed','product_final_waste','product_final_waste_metrc_confirmed'];
 const BHO_DUAL_PRODUCT_KEYS=['hte_inprogress_metrc','hte_inprogress_qty','hte_inprogress_metrc_confirmed','hte_inprogress_waste','hte_inprogress_waste_metrc_confirmed','thca_inprogress_metrc','thca_inprogress_qty','thca_inprogress_metrc_confirmed','thca_inprogress_waste','thca_inprogress_waste_metrc_confirmed','hte_final_metrc','hte_final_qty','hte_final_metrc_confirmed','hte_final_waste','hte_final_waste_metrc_confirmed','thca_final_metrc','thca_final_qty','thca_final_metrc_confirmed','thca_final_waste','thca_final_waste_metrc_confirmed'];
+// Yield for BHO batches: final product weight \u00F7 biomass used \u00D7 100.
+// Single-product SKUs use the one Final Qty; THCA/HTE makes two separate
+// products, so each gets its own yield plus a combined total. Computed
+// on the fly from the entry (not stored) so it always matches the numbers.
+function bhoYield(e){
+  if(!e) return null;
+  const num=v=>{const n=parseFloat(String(v==null?'':v).replace(/,/g,''));return isNaN(n)?0:n;};
+  let biomass=num(e.total_biomass_used);
+  if(!biomass&&Array.isArray(e.biomass_tags)) biomass=e.biomass_tags.reduce((s,r)=>s+num(r&&r.weight),0);
+  const pct=q=>biomass>0&&q>0?Math.round(q/biomass*10000)/100:null;
+  let rows;
+  if(e.sku===BHO_DUAL_SKU){
+    const t=num(e.thca_final_qty),h=num(e.hte_final_qty);
+    rows=[
+      {label:'THCA Final',qty:t,pct:pct(t)},
+      {label:'HTE Final',qty:h,pct:pct(h)},
+      {label:'Total Yield (THCA + HTE)',qty:t+h,pct:pct(t+h),total:true},
+    ];
+  } else {
+    const q=num(e.product_final_qty);
+    rows=[{label:(e.sku||'Product')+' Final',qty:q,pct:pct(q),total:true}];
+  }
+  return {biomass,rows};
+}
 function recalcBho(logType,f){
   if(logType!=='butane_extraction') return f;
   const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
@@ -4131,6 +4155,8 @@ const LOG_TYPES={
     {key:'thca_final_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'thca_final_waste',label:'THCA Final Waste',type:'text'},
     {key:'thca_final_waste_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'_s_bho_yield',label:'--- YIELD ---',type:'section'},
+    {key:'bho_yield_display',label:'Yield',type:'display'},
     {key:'status',label:'Status',type:'select',options:['In Progress','Purging','QC Hold','Passed','Failed','Completed']},
     {key:'notes',label:'Notes',type:'textarea',placeholder:'Any observations or issues'},
   ]},
@@ -4482,6 +4508,25 @@ function exportLogPdf(logType,entries,dateFrom,dateTo){
         y+=8;
         return;
       }
+      // BHO yield summary (computed from the entry's biomass + final quantities)
+      if(f.key==='bho_yield_display'){
+        const yd=bhoYield(entry);
+        if(!yd) return;
+        checkPage(26+yd.rows.length*16);
+        doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...SUBTEXT);
+        doc.text('BIOMASS USED',margin+8,y);
+        doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...TEXT);
+        doc.text(yd.biomass?yd.biomass+' g':'\u2014',margin+155,y);y+=16;
+        yd.rows.forEach(r=>{
+          checkPage(16);
+          doc.setFont('helvetica',r.total?'bold':'normal');doc.setFontSize(10);doc.setTextColor(...TEXT);
+          doc.text(r.label.toUpperCase()+(r.qty?'  ('+r.qty+' g)':''),margin+8,y);
+          doc.text(r.pct==null?'\u2014':r.pct+'%',W-margin-8,y,{align:'right'});
+          y+=16;
+        });
+        y+=6;
+        return;
+      }
       // Biomass tags: array of {tag, weight} - render each with weight
       if(f.key==='biomass_tags'&&Array.isArray(val)&&val.length>0){
         checkPage(22+val.length*15);
@@ -4754,6 +4799,19 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         el('div',{style:{background:cfg.bg,color:'#fff',borderRadius:10,padding:'14px 18px',textAlign:'center'}},
           el('div',{style:{fontSize:16,fontWeight:800}},cfg.text),
           el('div',{style:{fontSize:12,opacity:.9,marginTop:4}},cfg.sub+' \u2014 Expected \u2248 '+(form.packaging_check_expected||'0')+' \u00B110%, Actual: '+(form.total_jar_packaged||'0')),
+        ),
+      );
+    }
+    if(logType==='butane_extraction'&&f.key==='bho_yield_display'){
+      const y=bhoYield(form);
+      return el('div',{key:f.key,className:'fg'},
+        el('div',{style:{background:'#1e3a5f',color:'#fff',borderRadius:10,padding:'14px 18px'}},
+          el('div',{style:{fontSize:11,opacity:.75,marginBottom:8,textTransform:'uppercase',letterSpacing:'.5px',fontWeight:700}},'Biomass used: '+(y.biomass?y.biomass+' g':'\u2014')),
+          y.rows.map((r,i)=>el('div',{key:i,style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'6px 0',borderTop:i>0?'1px solid rgba(255,255,255,.2)':'none',fontWeight:r.total?800:600}},
+            el('span',{style:{fontSize:13}},r.label+(r.qty?' ('+r.qty+' g)':'')),
+            el('span',{style:{fontSize:r.total?20:16}},r.pct==null?'\u2014':r.pct+'%'),
+          )),
+          !y.biomass&&el('div',{style:{fontSize:11,opacity:.7,marginTop:8}},'Enter biomass tags and final quantities to see yield.'),
         ),
       );
     }
