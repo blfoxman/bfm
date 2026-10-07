@@ -3760,17 +3760,26 @@ function recalcEthanol(logType,f){
 // equal Total Packaged Infused Flower, \u00B110%. Same inverted count-vs-weight
 // direction as the rest of the app: more packages than expected \u2192 under
 // target weight each; fewer \u2192 over target weight each.
+// Infused Flower: filling/packaging is only recorded after the R&D Test passes
+// (same idea as Mandatory Testing). Old records that already have packaging
+// data keep showing it so nothing is hidden on existing batches.
+const IF_AFTER_RD_KEYS=['_s_packaging','infused_flower_used','units_produced','cart_waste','metrc_tag','packaging_check_result','packaging_metrc_confirmed'];
 function recalcInfusedFlower(logType,f){
   if(logType!=='infused_flower') return f;
   const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n;};
-  const bulkWeight=num(f.infused_flower_total_wt);
-  const waste=num(f.cart_waste);
+  // 1) Ingredients added together should roughly equal Infused Flower Total WT, +/-10%.
+  const ingredientsSum=num(f.flower_qty)+num(f.thca_qty)+num(f.live_resin_qty)+num(f.hte_qty)+num(f.decarbed_resin_qty)+num(f.distillate_qty)+num(f.terp_qty);
+  // 2) Bags: Infused Flower Used / bag size (3.5g or 7g from the SKU) should roughly
+  // equal Total Bags Filled, +/-10%. Same direction as the rest of the app: more
+  // bags than expected means under target weight each; fewer means over target weight each.
   const pkgSize=String(f.sku||'').includes('7g')?7:3.5;
-  const expected=(bulkWeight-waste)/pkgSize;
-  const actual=num(f.units_produced);
+  const expectedBags=num(f.infused_flower_used)/pkgSize;
+  const actualBags=num(f.units_produced);
   return{...f,
-    packaging_check_expected:String(Math.round(expected*100)/100),
-    packaging_check_status:preRollCheck(expected,actual),
+    flower_check_expected:String(Math.round(ingredientsSum*100)/100),
+    flower_check_status:directCheck(ingredientsSum,num(f.infused_flower_total_wt),PRE_ROLL_TOLERANCE),
+    packaging_check_expected:String(Math.round(expectedBags*100)/100),
+    packaging_check_status:preRollCheck(expectedBags,actualBags),
   };
 }
 // BHO/Butane: same biomass-tags-sum pattern as Ethanol, no yield-quality band
@@ -4383,21 +4392,27 @@ const LOG_TYPES={
     {key:'flower_qty',label:'Flower Used',type:'text',placeholder:'e.g. 1,000g'},
     {key:'thca_metrc',label:'THCA #',type:'text',placeholder:'METRC tag for the THCA used'},
     {key:'thca_qty',label:'THCA Used',type:'text',placeholder:'e.g. 200g'},
-    {key:'terp_qty',label:'Terpene Used',type:'text',placeholder:'e.g. 40g'},
     {key:'live_resin_metrc',label:'Live Resin METRC #',type:'text',placeholder:'METRC tag for the live resin used'},
     {key:'live_resin_qty',label:'Live Resin Used',type:'text',placeholder:'e.g. 150g'},
+    {key:'hte_metrc',label:'HTE METRC #',type:'text',placeholder:'METRC tag for the HTE used'},
+    {key:'hte_qty',label:'HTE Used',type:'text',placeholder:'e.g. 120g'},
     {key:'decarbed_resin_metrc',label:'Decarbed Cured Resin METRC #',type:'text',placeholder:'METRC tag for the decarbed cured resin'},
     {key:'decarbed_resin_qty',label:'Decarbed Cured Resin Used',type:'text',placeholder:'e.g. 100g'},
     {key:'distillate_metrc',label:'Distillate METRC #',type:'text',placeholder:'METRC tag for the distillate used'},
     {key:'distillate_qty',label:'Distillate Used',type:'text',placeholder:'e.g. 80g'},
-    {key:'infused_flower_total_wt',label:'Infused Flower Bulk Weight',type:'text',placeholder:'e.g. 1,240g'},
+    {key:'terp_qty',label:'Terpene Used',type:'text',placeholder:'e.g. 40g'},
+    {key:'infused_flower_number',label:'Infused Flower METRC Tag',type:'text',placeholder:'METRC tag for the infused flower produced'},
+    {key:'infused_flower_total_wt',label:'Infused Flower Total WT',type:'text',placeholder:'e.g. 1,240g'},
     {key:'flower_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
+    {key:'_s_if_check',label:'--- SYSTEM CHECK ---',type:'section'},
+    {key:'flower_check_result',label:'System Check',type:'display'},
     {key:'rd1_result',label:'R&D Test',type:'text'},
     {key:'rd2_result',label:'R&D Test 2',type:'text'},
-    {key:'_s_packaging',label:'--- PACKAGING ---',type:'section'},
-    {key:'cart_waste',label:'Infused Flower Material Waste',type:'text',placeholder:'Amount wasted'},
-    {key:'units_produced',label:'Total Packaged Infused Flower',type:'text',placeholder:'e.g. 300 units'},
-    {key:'metrc_tag',label:'Infused Flower Packaged METRC Tag',type:'text',placeholder:'METRC tag for the packaged product'},
+    {key:'_s_packaging',label:'--- FILLING & PACKAGING ---',type:'section'},
+    {key:'infused_flower_used',label:'Infused Flower Used',type:'text',placeholder:'Amount used for this run'},
+    {key:'units_produced',label:'Total Bags Filled',type:'text',placeholder:'e.g. 300 bags'},
+    {key:'cart_waste',label:'Infused Flower Waste',type:'text',placeholder:'Amount wasted'},
+    {key:'metrc_tag',label:'Final Packaging METRC Tag',type:'text',placeholder:'METRC tag for the packaged product'},
     {key:'packaging_check_result',label:'Validation',type:'display'},
     {key:'packaging_metrc_confirmed',label:'Recorded on METRC?',type:'checkbox'},
     {key:'mandatory_testing',label:'Mandatory Testing',type:'select',options:['Not Submitted','Submitted','Passed','Failed']},
@@ -4751,6 +4766,9 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
   // Reference card with the saved formulation for the chosen SKU + flavor.
   // Recipes are proprietary, so this is only fetched/shown for people who have
   // Formulation Bank access \u2014 everyone else sees the batch form exactly as before.
+  const ifRdPassed=form.rd1_result==='Passed'||form.rd2_result==='Passed';
+  const ifHasPkgData=!!editData&&IF_AFTER_RD_KEYS.some(k=>k!=='_s_packaging'&&String(editData[k]==null?'':editData[k]).trim()!=='');
+  const ifLocked=logType==='infused_flower'&&!ifRdPassed&&!ifHasPkgData;
   const[formul,setFormul]=React.useState(null);
   const showFormul=(logType==='cartridges'||logType==='pre_rolls'||logType==='infused_flower')&&(cu.role==='admin'||canRead(cu,'formbank'));
   React.useEffect(()=>{
@@ -4920,7 +4938,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       return el('div',{key:f.key,className:'fg'},
         el('div',{style:{background:cfg.bg,color:'#fff',borderRadius:10,padding:'14px 18px',textAlign:'center'}},
           el('div',{style:{fontSize:16,fontWeight:800}},cfg.text),
-          el('div',{style:{fontSize:12,opacity:.9,marginTop:4}},cfg.sub+' \u2014 Expected \u2248 '+(form.packaging_check_expected||'0')+' \u00B110%, Actual: '+(form.units_produced||'0')),
+          el('div',{style:{fontSize:12,opacity:.9,marginTop:4}},cfg.sub+' \u2014 Expected \u2248 '+(form.packaging_check_expected||'0')+' bags \u00B110% ('+(String(form.sku||'').includes('7g')?'7g':'3.5g')+' bags), Actual: '+(form.units_produced||'0')),
         ),
       );
     }
@@ -4973,7 +4991,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         ),
       );
     }
-    if(logType==='pre_rolls'&&f.key==='flower_check_result'){
+    if((logType==='pre_rolls'||logType==='infused_flower')&&f.key==='flower_check_result'){
       const status=form.flower_check_status||'pass';
       const flowerWord=form.sku==='Muha Meds 1G Plain Pre Roll'?'Ground':'Infused';
       const cfg={
@@ -5179,10 +5197,14 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       el('div',{className:'mbd'},
         el('div',{style:{background:'rgba(30,58,95,.04)',border:'1px solid rgba(30,58,95,.1)',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:'var(--text2)'}},'\uD83D\uDCCB Fields marked * are required. This record is timestamped and signed \u2014 legally valid for DCR inspections.'),
         lt.fields.filter(f=>
-          !(logType==='pre_rolls'&&PRE_ROLL_NO_KIEF_SKUS.includes(form.sku)&&PRE_ROLL_KIEF_SECTION_KEYS.includes(f.key))
+          !(ifLocked&&IF_AFTER_RD_KEYS.includes(f.key))
+          &&!(logType==='pre_rolls'&&PRE_ROLL_NO_KIEF_SKUS.includes(form.sku)&&PRE_ROLL_KIEF_SECTION_KEYS.includes(f.key))
           &&!(logType==='butane_extraction'&&form.sku===BHO_DUAL_SKU&&BHO_SINGLE_PRODUCT_KEYS.includes(f.key))
           &&!(logType==='butane_extraction'&&form.sku!==BHO_DUAL_SKU&&BHO_DUAL_PRODUCT_KEYS.includes(f.key))
-        ).map(f=>(f.key==='flavor'&&formul)
+        ).map(f=>(f.key==='rd2_result'&&ifLocked)
+          ?el(React.Fragment,{key:f.key},INP(f),
+              el('div',{style:{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:8,padding:'10px 14px',marginBottom:14,fontSize:12,color:'#92400e'}},'\uD83D\uDD12 Filling & Packaging unlocks once the R&D Test is marked Passed.'))
+          :(f.key==='flavor'&&formul)
           ?el(React.Fragment,{key:f.key},INP(f),
               el('div',{style:{background:'rgba(124,58,237,.06)',border:'1px solid rgba(124,58,237,.25)',borderRadius:10,padding:'12px 14px',marginBottom:14}},
                 el('div',{style:{fontSize:11,fontWeight:800,color:'#7c3aed',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:6}},'\uD83E\uDDEA Formulation \u2014 '+form.sku+' \u00B7 '+form.flavor),
@@ -5831,7 +5853,14 @@ function ProductionPlanner({cu,SUPA_URL,SUPA_KEY,H}){
   function selectAllFlavors(){setSelectedFlavors(allFlavorsSelected?[]:flavorOptions.slice());}
   function setTrack(flavor,key,val){setTracking(p=>({...p,[flavor]:{...(p[flavor]||{}),[key]:val}}));}
 
-  const TRACK_FIELDS=[
+  // Infused Flower gets its own production-log spots; the other types keep the pre-roll set.
+  const IF_PKG=String(sku||'').includes('7g')?7:3.5;
+  const TRACK_FIELDS=productType==='infused_flower'?[
+    {key:'if_total_weight',label:'Total Infused Flower Weight'},
+    {key:'if_bags_filled',label:'Total Bags Filled'},
+    {key:'if_waste',label:'Total Infused Flower Waste'},
+    {key:'if_remaining',label:'Remaining Infused Flower'},
+  ]:[
     {key:'infused_flower_wt',label:'Infused Flower Wt'},
     {key:'infused_flower_waste',label:'Infused Flower Waste'},
     {key:'infused_preroll_produced',label:'Infused Pre Roll Produced'},
@@ -5840,6 +5869,19 @@ function ProductionPlanner({cu,SUPA_URL,SUPA_KEY,H}){
     {key:'infused_kiefed_produced',label:'Infused Kiefed Pre Roll Produced'},
     {key:'infused_kiefed_waste',label:'Infused Kiefed Pre Roll Waste'},
   ];
+
+  // Remaining Infused Flower = total weight - (bags filled x bag size) - waste.
+  // Filled in automatically once the other three are entered; typing over it wins.
+  function tval(flavor,key){
+    const trk=tracking[flavor]||{};
+    if(key==='if_remaining'&&(trk.if_remaining===undefined||trk.if_remaining==='')){
+      const n=v=>{const x=parseFloat(String(v==null?'':v).replace(/,/g,''));return isNaN(x)?null:x;};
+      const w=n(trk.if_total_weight),b=n(trk.if_bags_filled),ws=n(trk.if_waste);
+      if(w!==null&&b!==null&&ws!==null) return String(Math.round((w-b*IF_PKG-ws)*100)/100);
+      return '';
+    }
+    return trk[key]||'';
+  }
 
   async function calculate(){
     if(!sku){setError('Select a SKU.');return;}
@@ -6005,7 +6047,7 @@ Rules:
       doc.setFont('helvetica','bold');
       doc.text(tf.label+':',margin,y);
       doc.setFont('helvetica','normal');
-      const val=trk[tf.key]||'';
+      const val=tval(flavor,tf.key);
       doc.text(val||'____________________',margin+55,y);
       y+=7;
     });
@@ -6128,7 +6170,7 @@ Rules:
               el('div',{style:{fontSize:11,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',marginTop:12,marginBottom:6}},'Production Tracking'),
               TRACK_FIELDS.map(tf=>el('div',{key:tf.key,style:{display:'flex',gap:8,alignItems:'center',marginBottom:4}},
                 el('label',{style:{fontSize:11,color:'var(--text2)',width:180,flexShrink:0}},tf.label),
-                el('input',{value:trk[tf.key]||'',onChange:ev=>setTrack(flavor,tf.key,ev.target.value),
+                el('input',{value:tval(flavor,tf.key),placeholder:tf.key==='if_remaining'?'auto: weight - bags x '+IF_PKG+' - waste':'',onChange:ev=>setTrack(flavor,tf.key,ev.target.value),
                   style:{flex:1,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:6,padding:'5px 8px',fontSize:12,fontFamily:'inherit',color:'var(--text)'}}),
               )),
             );
@@ -6367,8 +6409,12 @@ function cogsSkuOptions(productType){
 }
 function cogsFlavorOptions(productType,sku){
   const cfg=SKU_FLAVOR_CONFIG[productType];
-  if(!cfg) return [];
-  return cfg.flavors[sku]||[];
+  if(cfg) return cfg.flavors[sku]||[];
+  // Batch types that keep their flavors as a plain dropdown on the batch form
+  // (Infused Flower) rather than the SKU-to-Flavor cascade: use that list so
+  // the Planner and Recipe editors can offer the same flavors.
+  const ff=((LOG_TYPES[productType]||{}).fields||[]).find(f=>f.key==='flavor'&&f.type==='select'&&(f.options||[]).length>0);
+  return ff?ff.options:[];
 }
 
 // ── FORMULATION BANK ──────────────────────────────────────────────────────────
