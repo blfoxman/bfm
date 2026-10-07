@@ -3811,9 +3811,53 @@ function recalcBho(logType,f){
   const totalBiomass=tags.reduce((sum,row)=>sum+num(row&&row.weight),0);
   return{...f,total_biomass_used:String(Math.round(totalBiomass*100)/100)};
 }
+// Weekly scale calibration check. Everything is computed from the entry so
+// the form, the saved result and the PDF always agree.
+//  - each test-weight point: reading minus nominal, compared to the
+//    acceptance tolerance the facility's approved method sets
+//  - annual certification: 19 CSR 100-1.130(C) requires recalibration by a
+//    certified entity at least yearly, so >1 year since the last
+//    certification is treated as a FAIL no matter what the weights say
+function scaleCheck(e){
+  if(!e) return null;
+  const num=v=>{const n=parseFloat(String(v==null?'':v).replace(/,/g,''));return isNaN(n)?null:n;};
+  const pad=n=>String(n).padStart(2,'0');
+  const fmt=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+  const tol=num(e.scale_tolerance);
+  const pts=[1,2,3].map(i=>{
+    const nom=num(e['tw'+i+'_nominal']),rd=num(e['tw'+i+'_reading']);
+    if(nom===null||rd===null) return {i,nom,rd,diff:null,ok:null};
+    const diff=Math.round((rd-nom)*10000)/10000;
+    return {i,nom,rd,diff,ok:tol===null?null:Math.abs(diff)<=tol+1e-9};
+  });
+  let cert={status:'unknown',days:null,due:''};
+  if(e.last_cert_date){
+    const d=new Date(e.last_cert_date+'T00:00:00');
+    if(!isNaN(d.getTime())){
+      const due=new Date(d.getTime());due.setFullYear(due.getFullYear()+1);
+      const today=new Date();today.setHours(0,0,0,0);
+      const days=Math.round((due.getTime()-today.getTime())/86400000);
+      cert={status:days<0?'overdue':days<=30?'due-soon':'current',days,due:fmt(due)};
+    }
+  }
+  const entered=pts.filter(p=>p.nom!==null&&p.rd!==null);
+  const evaluated=pts.filter(p=>p.ok!==null);
+  const anyFail=evaluated.some(p=>!p.ok);
+  let result='';
+  if(cert.status==='overdue'||anyFail) result='Fail';
+  else if(entered.length===3&&evaluated.length===3) result='Pass';
+  let nextDue='';
+  if(e.date){const d=new Date(e.date+'T00:00:00');if(!isNaN(d.getTime())){d.setDate(d.getDate()+7);nextDue=fmt(d);}}
+  return {pts,cert,result,nextDue,unit:e.scale_unit||'g',tol};
+}
+function recalcScale(logType,f){
+  if(logType!=='scale_calibration') return f;
+  const c=scaleCheck(f);
+  return {...f,scale_result:c?c.result:''};
+}
 // Runs every batch-type auto-calculation; each one is a no-op for the wrong logType.
 function recalcBatch(logType,f){
-  return recalcBho(logType,recalcInfusedFlower(logType,recalcEthanol(logType,recalcPreRoll(logType,recalcCartridge(logType,recalcGummy(logType,f))))));
+  return recalcScale(logType,recalcBho(logType,recalcInfusedFlower(logType,recalcEthanol(logType,recalcPreRoll(logType,recalcCartridge(logType,recalcGummy(logType,f)))))));
 }
 // Pre-Rolls has TWO System Check checkpoints against the same Infused Flower
 // Used figure, at different grams-per-joint targets for each production stage.
@@ -4044,6 +4088,42 @@ const LOG_TYPES={
     {key:'downtime_hours',label:'Downtime (hours)',type:'text',placeholder:'e.g. 2.5'},
     {key:'pass_fail',label:'Equipment Status After',type:'select',options:['Pass \u2014 returned to service','Conditional \u2014 monitor closely','Fail \u2014 out of service','Pending parts / repair']},
     {key:'next_maintenance',label:'Next Scheduled Maintenance',type:'date'},
+    {key:'notes',label:'Notes',type:'textarea',placeholder:''},
+  ]},
+  scale_calibration:{id:'scale_calibration',label:'Scale Calibration Log',icon:'\u2696\uFE0F',color:'#0f766e',bg:'#f0fdfa',table:'pf_log_scale_calibration',dcr:'Missouri 19 CSR 100-1.130(C) \u2014 NTEP scale, yearly certification, logged accuracy check \u00B7 NIST Handbook 44',freq:'Weekly, and each time the scale is moved',fields:[
+    {key:'date',label:'Date *',type:'date'},{key:'time',label:'Time *',type:'time'},
+    {key:'scale_id',label:'Scale ID / Asset Tag *',type:'text',placeholder:'e.g. SCALE-03'},
+    {key:'scale_location',label:'Location / Room *',type:'text',placeholder:'e.g. Production floor, Extraction lab'},
+    {key:'scale_make_model',label:'Make / Model',type:'text',placeholder:'e.g. Ohaus Ranger 7000'},
+    {key:'scale_capacity',label:'Capacity / Readability',type:'text',placeholder:'e.g. 6 kg x 0.1 g'},
+    {key:'ntep_cc',label:'NTEP Certificate of Conformance #',type:'text',placeholder:'NTEP CC number from the scale label'},
+    {key:'_s_scale_cert',label:'--- ANNUAL CERTIFICATION ---',type:'section'},
+    {key:'last_cert_date',label:'Last Annual Certification Date *',type:'date'},
+    {key:'cert_company',label:'Certified By (Service Company / Registered Serviceperson)',type:'text',placeholder:'Company or technician name'},
+    {key:'cert_seal_present',label:'Certification seal / sticker is present and current',type:'checkbox'},
+    {key:'_s_scale_pre',label:'--- PRE-CHECKS ---',type:'section'},
+    {key:'check_clean',label:'Scale and weighing pan are clean',type:'checkbox'},
+    {key:'check_level',label:'Scale is level and on a stable surface',type:'checkbox'},
+    {key:'check_shield',label:'No draft, vibration or debris affecting the reading',type:'checkbox'},
+    {key:'check_zero',label:'Display reads zero with an empty pan',type:'checkbox'},
+    {key:'check_moved',label:'Scale moved since the last check? *',type:'select',options:['No','Yes \u2014 full verification performed']},
+    {key:'_s_scale_weights',label:'--- TEST WEIGHTS ---',type:'section'},
+    {key:'scale_unit',label:'Unit',type:'select',options:['g','kg','lb','oz']},
+    {key:'test_weight_set_id',label:'Certified Test Weight Set ID / Cert # *',type:'text',placeholder:'ID from the test weight certificate'},
+    {key:'test_weight_cal_due',label:'Test Weight Calibration Due Date',type:'date'},
+    {key:'scale_tolerance',label:'Acceptance Tolerance \u00B1 (same unit) *',type:'text',placeholder:'Per your approved method / NIST HB 44 for this scale'},
+    {key:'tw1_nominal',label:'Point 1 \u2014 Test Weight, low range *',type:'text',placeholder:'e.g. 10'},
+    {key:'tw1_reading',label:'Point 1 \u2014 Scale Reading *',type:'text',placeholder:'e.g. 10.0'},
+    {key:'tw2_nominal',label:'Point 2 \u2014 Test Weight, mid range *',type:'text',placeholder:'e.g. 500'},
+    {key:'tw2_reading',label:'Point 2 \u2014 Scale Reading *',type:'text',placeholder:'e.g. 500.0'},
+    {key:'tw3_nominal',label:'Point 3 \u2014 Test Weight, high range *',type:'text',placeholder:'e.g. 2000'},
+    {key:'tw3_reading',label:'Point 3 \u2014 Scale Reading *',type:'text',placeholder:'e.g. 2000.0'},
+    {key:'scale_check_display',label:'Calibration Check Result',type:'display'},
+    {key:'_s_scale_result',label:'--- ACTION & SIGN-OFF ---',type:'section'},
+    {key:'out_of_service',label:'Scale status after check',type:'select',options:['In service \u2014 passed','Tagged out of service','Adjusted / repaired and re-verified']},
+    {key:'corrective_action',label:'Corrective Action (required if any point fails)',type:'textarea',placeholder:'What was done: re-level, clean, re-zero, service call, removed from service\u2026'},
+    {key:'performed_by',label:'Performed By *',type:'text',placeholder:'Facility agent name'},
+    {key:'verified_by',label:'Reviewed / Verified By',type:'text',placeholder:'Supervisor or QA'},
     {key:'notes',label:'Notes',type:'textarea',placeholder:''},
   ]},
   temperature:{id:'temperature',label:'Temp / Humidity Log',icon:'\uD83C\uDF21\uFE0F',color:'#0369a1',bg:'#f0f9ff',table:'pf_log_temperature',dcr:'cGMP / Product Integrity',freq:'Every shift',fields:[
@@ -4502,7 +4582,7 @@ function exportLogPdf(logType,entries,dateFrom,dateTo){
         doc.text(checked?'[X]':'[ ]',margin+8,y);
         doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(...TEXT);
         // Say WHICH quantity this box confirms, instead of a bare "Recorded on METRC?"
-        const ctx=prevFieldLabel?prevFieldLabel.replace(/ \*$/,'').replace(/ METRC #$/,'').replace(/ Batch$/,''):'';
+        const ctx=(prevFieldLabel&&f.label==='Recorded on METRC?')?prevFieldLabel.replace(/ \*$/,'').replace(/ METRC #$/,'').replace(/ Batch$/,''):'';
         doc.text(f.label+(ctx?'  \u2014  '+ctx:''),margin+30,y);
         y+=20;
         return;
@@ -4523,6 +4603,35 @@ function exportLogPdf(logType,entries,dateFrom,dateTo){
           y+=15;
         });
         y+=8;
+        return;
+      }
+      // Scale calibration result summary
+      if(f.key==='scale_check_display'){
+        const sc=scaleCheck(entry);
+        if(!sc) return;
+        checkPage(30+sc.pts.length*16+40);
+        doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...SUBTEXT);
+        doc.text('CALIBRATION CHECK',margin+8,y);y+=16;
+        sc.pts.forEach(p=>{
+          checkPage(16);
+          doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...TEXT);
+          doc.text('Point '+p.i+(p.nom!==null?':  test weight '+p.nom+' '+sc.unit:''),margin+8,y);
+          if(p.diff!==null){
+            doc.text('reads '+p.rd+'  ('+(p.diff>0?'+':'')+p.diff+')',margin+230,y);
+            doc.setFont('helvetica','bold');
+            doc.setTextColor(...(p.ok===false?[220,38,38]:p.ok?[22,163,74]:SUBTEXT));
+            doc.text(p.ok===null?'':p.ok?'PASS':'FAIL',W-margin-8,y,{align:'right'});
+          }
+          y+=16;
+        });
+        checkPage(40);
+        doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(...TEXT);
+        doc.text('Acceptance tolerance: '+(sc.tol===null?'\u2014':'\u00B1 '+sc.tol+' '+sc.unit),margin+8,y);y+=14;
+        doc.text('Annual certification: '+(sc.cert.status==='unknown'?'\u2014':(sc.cert.status==='overdue'?'OVERDUE \u2014 due ':'current \u2014 due ')+sc.cert.due),margin+8,y);y+=14;
+        if(sc.nextDue){doc.text('Next weekly check due: '+sc.nextDue,margin+8,y);y+=14;}
+        doc.setFont('helvetica','bold');doc.setFontSize(11);
+        doc.setTextColor(...(sc.result==='Fail'?[220,38,38]:sc.result==='Pass'?[22,163,74]:SUBTEXT));
+        doc.text('OVERALL RESULT: '+(sc.result?sc.result.toUpperCase():'INCOMPLETE'),margin+8,y);y+=22;
         return;
       }
       // BHO yield summary (computed from the entry's biomass + final quantities)
@@ -4816,6 +4925,26 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         el('div',{style:{background:cfg.bg,color:'#fff',borderRadius:10,padding:'14px 18px',textAlign:'center'}},
           el('div',{style:{fontSize:16,fontWeight:800}},cfg.text),
           el('div',{style:{fontSize:12,opacity:.9,marginTop:4}},cfg.sub+' \u2014 Expected \u2248 '+(form.packaging_check_expected||'0')+' \u00B110%, Actual: '+(form.total_jar_packaged||'0')),
+        ),
+      );
+    }
+    if(logType==='scale_calibration'&&f.key==='scale_check_display'){
+      const sc=scaleCheck(form);
+      const res=sc.result;
+      const bg=res==='Pass'?'#16a34a':res==='Fail'?'#dc2626':'#64748b';
+      const certTxt=sc.cert.status==='overdue'?'Annual certification OVERDUE (was due '+sc.cert.due+')'
+        :sc.cert.status==='due-soon'?'Annual certification due in '+sc.cert.days+' days ('+sc.cert.due+')'
+        :sc.cert.status==='current'?'Annual certification current (due '+sc.cert.due+')'
+        :'Enter the last certification date';
+      return el('div',{key:f.key,className:'fg'},
+        el('div',{style:{background:bg,color:'#fff',borderRadius:10,padding:'14px 18px'}},
+          el('div',{style:{fontSize:16,fontWeight:800,textAlign:'center',marginBottom:8}},res==='Pass'?'\u2713 PASS':res==='Fail'?'\u26A0 FAIL \u2014 take scale out of service until corrected':'Enter test weights and tolerance'),
+          sc.pts.map(p=>el('div',{key:p.i,style:{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',borderTop:'1px solid rgba(255,255,255,.25)'}},
+            el('span',null,'Point '+p.i+(p.nom!==null?' \u2014 '+p.nom+' '+sc.unit:'')),
+            el('span',{style:{fontWeight:700}},p.diff===null?'\u2014':((p.diff>0?'+':'')+p.diff+' '+sc.unit+(p.ok===null?'':p.ok?'  OK':'  OUT OF TOLERANCE'))),
+          )),
+          el('div',{style:{fontSize:11,opacity:.9,marginTop:8}},certTxt),
+          sc.nextDue&&el('div',{style:{fontSize:11,opacity:.9,marginTop:2}},'Next weekly check due: '+sc.nextDue),
         ),
       );
     }
@@ -5634,6 +5763,8 @@ const REPORTER_TABLE_MAP={
   waste:['pf_log_waste'],
   pest:['pf_log_pest'],
   equipment:['pf_log_equipment'],
+  scale:['pf_log_scale_calibration'],
+  calibration:['pf_log_scale_calibration'],
   temperature:['pf_log_temperature'],
   security:['pf_log_security'],
   log:['pf_log_sanitation','pf_log_visitor','pf_log_waste','pf_log_pest','pf_log_equipment','pf_log_temperature'],
@@ -5644,7 +5775,7 @@ const REPORTER_TABLE_MAP={
   staff:['pf_users_safe'],
   who:['pf_users_safe'],
 };
-const ALL_REPORTER_TABLES=['pf_batch_tracker','pf_sops','pf_qms_capas','pf_qms_corrective','pf_qms_deviations','pf_qms_audits','pf_qms_suppliers','pf_qms_complaints','pf_qms_changes','pf_compliance_checks','pf_tasks','pf_log_sanitation','pf_log_visitor','pf_log_waste','pf_log_pest','pf_log_equipment','pf_log_temperature','pf_log_security','pf_risk_register','pf_users_safe'];
+const ALL_REPORTER_TABLES=['pf_batch_tracker','pf_sops','pf_qms_capas','pf_qms_corrective','pf_qms_deviations','pf_qms_audits','pf_qms_suppliers','pf_qms_complaints','pf_qms_changes','pf_compliance_checks','pf_tasks','pf_log_sanitation','pf_log_visitor','pf_log_waste','pf_log_pest','pf_log_equipment','pf_log_scale_calibration','pf_log_temperature','pf_log_security','pf_risk_register','pf_users_safe'];
 
 // ── PRODUCTION PLANNER ───────────────────────────────────────────────────────
 // AI-powered ingredient calculator. User picks product type, SKU, flavors,
