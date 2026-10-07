@@ -3617,7 +3617,7 @@ const CARTRIDGE_SKUS=[
 ];
 const CARTRIDGE_FLAVORS={
   'Muha Meds 2G AIO':['Moroccan Peaches','Honey Melon','Strawberry Lava','Frozen Pomegranate','Pineapple Paradise','Gelato #33','Lemon Tart','Purple Punch','Blue Dream','Do-Si OG'],
-  'Muha Meds 1G Reserve AIO':['Golden Papaya','Grape Dosi','Lemon Kushmintz','Wedding Cake','OG Kush'],
+  'Muha Meds 1G Reserve AIO':['Golden Papaya','Grape Dosi','Lemon Kush Mintz','Wedding Cake','OG Kush'],
   'Muha Meds 1G Melted Diamond AIO':['Durban Delight','Grape Gas','Lemon Cherry Gelato','Mango Mirage','Orange Tangie'],
   'Muha Meds 1G 510 Cartridges':[],
   'Bodega Boyz 2G AIO':[],
@@ -4748,6 +4748,18 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
   const[attachments,setAttachments]=React.useState(()=>Array.isArray(editData?.attachments)?editData.attachments:[]);
   const[saving,setSaving]=React.useState(false);
   const[editNote,setEditNote]=React.useState('');
+  // Reference card with the saved formulation for the chosen SKU + flavor.
+  // Recipes are proprietary, so this is only fetched/shown for people who have
+  // Formulation Bank access \u2014 everyone else sees the batch form exactly as before.
+  const[formul,setFormul]=React.useState(null);
+  const showFormul=(logType==='cartridges'||logType==='pre_rolls'||logType==='infused_flower')&&(cu.role==='admin'||canRead(cu,'formbank'));
+  React.useEffect(()=>{
+    if(!showFormul||!form.sku||!form.flavor){setFormul(null);return;}
+    let dead=false;
+    fetch(`${SUPA_URL}/rest/v1/pf_cogs_formulations?select=name,sku,flavor,raw_materials&product_type=eq.${logType}&sku=eq.${encodeURIComponent(form.sku)}&flavor=eq.${encodeURIComponent(form.flavor)}&limit=1`,{headers:H.headers})
+      .then(r=>r.ok?r.json():[]).then(rows=>{if(!dead)setFormul(Array.isArray(rows)&&rows[0]?rows[0]:null);}).catch(()=>{if(!dead)setFormul(null);});
+    return()=>{dead=true;};
+  },[showFormul,logType,form.sku,form.flavor]);
   const setF=(k,v)=>{
     // Locked opener (Lead continuing a batch): never allow changing a field
     // that already had a value when the form was opened.
@@ -5170,7 +5182,17 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
           !(logType==='pre_rolls'&&PRE_ROLL_NO_KIEF_SKUS.includes(form.sku)&&PRE_ROLL_KIEF_SECTION_KEYS.includes(f.key))
           &&!(logType==='butane_extraction'&&form.sku===BHO_DUAL_SKU&&BHO_SINGLE_PRODUCT_KEYS.includes(f.key))
           &&!(logType==='butane_extraction'&&form.sku!==BHO_DUAL_SKU&&BHO_DUAL_PRODUCT_KEYS.includes(f.key))
-        ).map(f=>INP(f)),
+        ).map(f=>(f.key==='flavor'&&formul)
+          ?el(React.Fragment,{key:f.key},INP(f),
+              el('div',{style:{background:'rgba(124,58,237,.06)',border:'1px solid rgba(124,58,237,.25)',borderRadius:10,padding:'12px 14px',marginBottom:14}},
+                el('div',{style:{fontSize:11,fontWeight:800,color:'#7c3aed',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:6}},'\uD83E\uDDEA Formulation \u2014 '+form.sku+' \u00B7 '+form.flavor),
+                (formul.raw_materials||[]).map((m,i)=>el('div',{key:i,style:{display:'flex',justifyContent:'space-between',fontSize:12,padding:'2px 0'}},
+                  el('span',null,m.name),
+                  el('span',{style:{fontWeight:700}},m.pct!=null?m.pct+'%':''),
+                )),
+                el('div',{style:{fontSize:10,color:'var(--text3)',marginTop:6}},'Percent of finished product weight \u00B7 from the Formulation Bank (restricted access).'),
+              ))
+          :INP(f)),
         // File attachments
         el('div',{style:{borderTop:'1px solid var(--border)',paddingTop:16,marginTop:8,marginBottom:16}},
           el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
@@ -5821,10 +5843,51 @@ function ProductionPlanner({cu,SUPA_URL,SUPA_KEY,H}){
 
   async function calculate(){
     if(!sku){setError('Select a SKU.');return;}
-    const flavors=flavorOptions.length>0?selectedFlavors:['Standard'];
+    const allFlavors=flavorOptions.length>0?selectedFlavors:['Standard'];
+    let flavors=allFlavors;
     if(flavors.length===0){setError('Select at least one flavor.');return;}
     if(!unitsPerFlavor||isNaN(parseInt(unitsPerFlavor))){setError('Enter units per flavor.');return;}
     setError('');setLoading(true);setResults(null);
+
+    // Flavors that already have a saved formulation for this SKU are calculated
+    // directly (exact and instant): ingredient grams scale from the recipe's
+    // reference batch. Only flavors WITHOUT a saved formulation go to the AI.
+    const numv=v=>{const n=parseFloat(String(v==null?'':v).replace(/,/g,''));return isNaN(n)?0:n;};
+    const units=parseInt(unitsPerFlavor);
+    const ci=customInstructions.trim();
+    const bufM=ci.match(/(\d+(?:\.\d+)?)\s*%\s*(?:(?:waste|buffer|extra|overage|overrun|allowance)\b\s*)+/i);
+    const ciRest=bufM?ci.replace(bufM[0],''):ci;
+    // a plain "5% waste buffer" is applied exactly; any other instruction goes to the AI as before
+    const needsAiForNotes=/[a-z0-9]/i.test(ciRest.replace(/\b(add|and|plus|with|a|an|the|of|extra)\b/gi,''));
+    const bufMult=bufM?1+parseFloat(bufM[1])/100:1;
+    const localFlavors={};
+    const needAi=[];
+    allFlavors.forEach(fl=>{
+      const want=(fl==='Standard'?'':fl).toLowerCase();
+      const rec=needsAiForNotes?null:recipes.find(r=>r.product_type===productType&&r.sku===sku&&String(r.flavor||'').trim().toLowerCase()===want&&numv(r.batch_size)>0&&(r.raw_materials||[]).length>0);
+      if(rec){
+        const k=units/numv(rec.batch_size)*bufMult;
+        localFlavors[fl]=(rec.raw_materials||[]).filter(m=>m&&m.name).map(m=>({name:m.name,qty:String(Math.round(numv(m.qty)*k*100)/100),unit:m.unit||'g'}));
+      } else needAi.push(fl);
+    });
+    const buildGrand=(fm)=>{
+      const sums={};
+      Object.values(fm).forEach(list=>(list||[]).forEach(i=>{
+        const key=(i.name||'')+'|'+(i.unit||'g');
+        if(!sums[key]) sums[key]={name:i.name,unit:i.unit||'g',qty:0};
+        sums[key].qty+=numv(i.qty);
+      }));
+      return Object.values(sums).sort((a,b)=>String(a.name).localeCompare(String(b.name))).map(s=>({name:s.name,qty:String(Math.round(s.qty*100)/100),unit:s.unit}));
+    };
+    if(needAi.length===0){
+      const sources={};allFlavors.forEach(fl=>{sources[fl]='recipe';});
+      setResults({flavors:localFlavors,grand_total:buildGrand(localFlavors),sources});
+      const trl={};allFlavors.forEach(fl=>{trl[fl]={};});
+      setTracking(trl);
+      setLoading(false);
+      return;
+    }
+    flavors=needAi;
 
     const matchingRecipes=recipes.filter(r=>r.product_type===productType&&(r.sku===sku||!r.sku));
     const recipeData=matchingRecipes.length>0?JSON.stringify(matchingRecipes.map(r=>({
@@ -5880,10 +5943,20 @@ Rules:
       let parsed;
       try{parsed=JSON.parse(text);}
       catch(parseErr){throw new Error('Could not read the AI\u2019s response ('+parseErr.message+'). Try again \u2014 sometimes a smaller batch of flavors helps.');}
-      setResults(parsed);
+      // Merge: exact recipe results for flavors that had one, AI estimates for the rest
+      const aiMap=parsed.flavors||{};
+      const merged={},sources={};
+      allFlavors.forEach(fl=>{
+        if(localFlavors[fl]){merged[fl]=localFlavors[fl];sources[fl]='recipe';}
+        else{
+          const k=Object.keys(aiMap).find(x=>x.trim().toLowerCase()===fl.trim().toLowerCase());
+          merged[fl]=k?aiMap[k]:[];sources[fl]='ai';
+        }
+      });
+      setResults({flavors:merged,grand_total:buildGrand(merged),sources});
       // Initialize tracking for each flavor
       const tr={};
-      Object.keys(parsed.flavors||{}).forEach(f=>{tr[f]={};});
+      Object.keys(merged).forEach(f=>{tr[f]={};});
       setTracking(tr);
     }catch(e){
       setError('Calculation failed: '+e.message);
@@ -6007,9 +6080,15 @@ Rules:
           el('button',{onClick:calculate,disabled:loading,
             style:{background:'var(--accent)',color:'#fff',border:'none',borderRadius:8,padding:'11px 28px',fontFamily:'inherit',fontSize:14,fontWeight:700,cursor:loading?'wait':'pointer',opacity:loading?.6:1}
           },loading?'\u23F3 Calculating\u2026':'\uD83C\uDFED Calculate Ingredients'),
-          recipes.filter(r=>r.product_type===productType).length>0
-            ?el('span',{style:{fontSize:11,color:'#059669',fontWeight:600}},'\u2705 '+recipes.filter(r=>r.product_type===productType).length+' recipe(s) found')
-            :el('span',{style:{fontSize:11,color:'#d97706'}},'\u26A0\uFE0F No saved recipes \u2014 AI will estimate'),
+          (()=>{
+            const have=recipes.filter(r=>r.product_type===productType&&r.sku===sku);
+            const haveFlavors=new Set(have.map(r=>String(r.flavor||'').trim().toLowerCase()));
+            const covered=flavorOptions.length>0?selectedFlavors.filter(fl=>haveFlavors.has(fl.trim().toLowerCase())).length:(have.length>0?1:0);
+            const wanted=flavorOptions.length>0?selectedFlavors.length:1;
+            if(have.length===0) return el('span',{style:{fontSize:11,color:'#d97706'}},'\u26A0\uFE0F No saved formulation for this SKU \u2014 AI will estimate');
+            if(wanted>0&&covered===wanted) return el('span',{style:{fontSize:11,color:'#059669',fontWeight:600}},'\u2705 Exact amounts from saved formulations ('+have.length+' for this SKU)');
+            return el('span',{style:{fontSize:11,color:'#059669',fontWeight:600}},'\u2705 '+have.length+' saved for this SKU \u2014 '+covered+' of '+wanted+' selected flavors have one; the rest will be AI-estimated');
+          })(),
         ),
         error&&el('div',{style:{background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.3)',borderRadius:8,padding:'10px 14px',fontSize:12,color:'var(--red)',marginTop:12}},error),
       ),
@@ -6036,7 +6115,9 @@ Rules:
             const trk=tracking[flavor]||{};
             return el('div',{key:flavor,style:{background:'#fff',border:'1px solid var(--border)',borderRadius:12,padding:16}},
               el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}},
-                el('div',{style:{fontSize:14,fontWeight:800,color:'var(--text)'}},'\uD83C\uDF3F '+flavor),
+                el('div',{style:{fontSize:14,fontWeight:800,color:'var(--text)',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},'\uD83C\uDF3F '+flavor,
+                  results.sources&&el('span',{style:{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:10,background:results.sources[flavor]==='recipe'?'rgba(22,163,74,.12)':'rgba(217,119,6,.14)',color:results.sources[flavor]==='recipe'?'#16a34a':'#d97706'}},results.sources[flavor]==='recipe'?'FORMULATION':'AI ESTIMATE'),
+                ),
                 el('button',{onClick:()=>generatePdf(flavor),style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:6,padding:'4px 12px',fontSize:11,cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'var(--text2)'}},'\uD83D\uDCC4 PDF'),
               ),
               el('div',{style:{fontSize:11,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',marginBottom:6}},'Ingredients'),
@@ -6388,7 +6469,7 @@ function FormulationBank({cu,SUPA_URL,SUPA_KEY,H}){
             items.map(f=>{
               const ingredientCount=(f.raw_materials||[]).length+(f.packaging||[]).length+(f.labor||[]).length;
               // Find the terpene/flavor line if any
-              const terpLine=(f.raw_materials||[]).find(r=>r.name&&r.name.toLowerCase().includes('terp'));
+              const terpLines=(f.raw_materials||[]).filter(r=>r.name&&r.name.toLowerCase().includes('terp'));
               return el('div',{key:f.id,style:{background:'#fff',border:'1px solid var(--border)',borderRadius:12,padding:'14px 16px',boxShadow:'0 1px 3px rgba(15,23,42,.04)'}},
                 el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}},
                   el('div',null,
@@ -6406,12 +6487,12 @@ function FormulationBank({cu,SUPA_URL,SUPA_KEY,H}){
                 el('div',{style:{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}},
                   el('span',{style:{fontSize:10,padding:'2px 8px',borderRadius:10,background:'rgba(124,58,237,.08)',color:'#7c3aed',border:'1px solid rgba(124,58,237,.2)',fontWeight:600}},ingredientCount+' ingredients'),
                   f.batch_size&&el('span',{style:{fontSize:10,padding:'2px 8px',borderRadius:10,background:'var(--surface2)',border:'1px solid var(--border)',fontWeight:600,color:'var(--text3)'}},'Batch: '+f.batch_size+' units'),
-                  terpLine&&el('span',{style:{fontSize:10,padding:'2px 8px',borderRadius:10,background:'rgba(16,185,129,.08)',color:'#059669',border:'1px solid rgba(16,185,129,.2)',fontWeight:600}},'\uD83C\uDF3F '+terpLine.name+(terpLine.qty?' \u00B7 '+terpLine.qty+(terpLine.unit?' '+terpLine.unit:''):'')),
+                  terpLines.slice(0,3).map((terpLine,ti)=>el('span',{key:'t'+ti,style:{fontSize:10,padding:'2px 8px',borderRadius:10,background:'rgba(16,185,129,.08)',color:'#059669',border:'1px solid rgba(16,185,129,.2)',fontWeight:600}},'\uD83C\uDF3F '+terpLine.name.replace(/^Terpene\s*-\s*/i,'')+(terpLine.pct!=null?' \u00B7 '+terpLine.pct+'%':(terpLine.qty?' \u00B7 '+terpLine.qty+(terpLine.unit?' '+terpLine.unit:''):'')))),
                 ),
                 (f.raw_materials||[]).length>0&&el('div',{style:{fontSize:11,color:'var(--text2)',lineHeight:1.6}},
                   (f.raw_materials||[]).slice(0,4).map((r,i)=>el('div',{key:i,style:{display:'flex',justifyContent:'space-between'}},
                     el('span',null,r.name),
-                    el('span',{style:{color:'var(--text3)'}},r.qty?(r.qty+(r.unit?' '+r.unit:'')):''),
+                    el('span',{style:{color:'var(--text3)'}},(r.pct!=null?r.pct+'%  \u00B7  ':'')+(r.qty?(r.qty+(r.unit?' '+r.unit:'')):'')),
                   )),
                   (f.raw_materials||[]).length>4&&el('div',{style:{color:'var(--text3)',fontStyle:'italic'}},'+'+(f.raw_materials.length-4)+' more\u2026'),
                 ),
@@ -6657,7 +6738,11 @@ function CogsCalcEditor({calc,library,formulations,cu,onCancel,onSave}){
   // by matching name \u2014 so costs stay live even though the recipe is fixed.
   // Falls back to whatever cost the recipe itself had saved if no match.
   function matchLibraryCost(row,categoryId){
-    const match=(library||[]).find(l=>l.category===categoryId&&l.name.trim().toLowerCase()===String(row.name||'').trim().toLowerCase());
+    const nm=String(row.name||'').trim().toLowerCase();
+    let match=(library||[]).find(l=>l.category===categoryId&&l.name.trim().toLowerCase()===nm);
+    // Terpene lines are named per product ("Terpene - Ice (True Terpene)"). If that
+    // exact terpene has no price of its own, fall back to the general "Terpene" price.
+    if(!match&&nm.startsWith('terpene')) match=(library||[]).find(l=>l.category===categoryId&&l.name.trim().toLowerCase()==='terpene');
     return match?match.cost_per_unit:row.cost_per_unit;
   }
   function applyFormulation(formId){
