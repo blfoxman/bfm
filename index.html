@@ -3827,17 +3827,30 @@ function recalcBho(logType,f){
 //  - annual certification: 19 CSR 100-1.130(C) requires recalibration by a
 //    certified entity at least yearly, so >1 year since the last
 //    certification is treated as a FAIL no matter what the weights say
+const SCALE_POINTS=['Front Left','Front Right','Back Left','Back Right','Middle'];
+const SCALE_TOLERANCE=0.1; // grams, same for every scale
+const SCALE_LOCATIONS=['Production Floor','Storage Vault','Pre-Roll Production','BHO Production','Ethanol Production','Cart/Gummy Production','Testing Area'];
+const SCALE_MODELS=['OHAUS Ranger','OHAUS Scout','OHAUS Valor','FUZION','UNIWEIGH'];
+// Per model: the Capacity / Readability and NTEP Certificate of Conformance choices.
+// Fill these lists in; a model with an empty list shows a type-in box instead.
+const SCALE_MODEL_SPECS={
+  'OHAUS Ranger':{capacity:[],ntep:[]},
+  'OHAUS Scout':{capacity:[],ntep:[]},
+  'OHAUS Valor':{capacity:[],ntep:[]},
+  'FUZION':{capacity:[],ntep:[]},
+  'UNIWEIGH':{capacity:[],ntep:[]},
+};
 function scaleCheck(e){
   if(!e) return null;
   const num=v=>{const n=parseFloat(String(v==null?'':v).replace(/,/g,''));return isNaN(n)?null:n;};
   const pad=n=>String(n).padStart(2,'0');
   const fmt=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
-  const tol=num(e.scale_tolerance);
-  const pts=[1,2,3].map(i=>{
+  const tol=SCALE_TOLERANCE;
+  const pts=[1,2,3,4,5].map(i=>{
     const nom=num(e['tw'+i+'_nominal']),rd=num(e['tw'+i+'_reading']);
-    if(nom===null||rd===null) return {i,nom,rd,diff:null,ok:null};
+    if(nom===null||rd===null) return {i,name:SCALE_POINTS[i-1],nom,rd,diff:null,ok:null};
     const diff=Math.round((rd-nom)*10000)/10000;
-    return {i,nom,rd,diff,ok:tol===null?null:Math.abs(diff)<=tol+1e-9};
+    return {i,name:SCALE_POINTS[i-1],nom,rd,diff,ok:Math.abs(diff)<=tol+1e-9};
   });
   let cert={status:'unknown',days:null,due:''};
   if(e.last_cert_date){
@@ -3854,15 +3867,15 @@ function scaleCheck(e){
   const anyFail=evaluated.some(p=>!p.ok);
   let result='';
   if(cert.status==='overdue'||anyFail) result='Fail';
-  else if(entered.length===3&&evaluated.length===3) result='Pass';
+  else if(entered.length===5&&evaluated.length===5) result='Pass';
   let nextDue='';
   if(e.date){const d=new Date(e.date+'T00:00:00');if(!isNaN(d.getTime())){d.setDate(d.getDate()+7);nextDue=fmt(d);}}
-  return {pts,cert,result,nextDue,unit:e.scale_unit||'g',tol};
+  return {pts,cert,result,nextDue,unit:'g',tol};
 }
 function recalcScale(logType,f){
   if(logType!=='scale_calibration') return f;
   const c=scaleCheck(f);
-  return {...f,scale_result:c?c.result:''};
+  return {...f,scale_result:c?c.result:'',scale_unit:'g',scale_tolerance:String(SCALE_TOLERANCE)};
 }
 // Runs every batch-type auto-calculation; each one is a no-op for the wrong logType.
 function recalcBatch(logType,f){
@@ -4102,10 +4115,10 @@ const LOG_TYPES={
   scale_calibration:{id:'scale_calibration',label:'Scale Calibration Log',icon:'\u2696\uFE0F',color:'#0f766e',bg:'#f0fdfa',table:'pf_log_scale_calibration',dcr:'Missouri 19 CSR 100-1.130(C) \u2014 NTEP scale, yearly certification, logged accuracy check \u00B7 NIST Handbook 44',freq:'Weekly, and each time the scale is moved',fields:[
     {key:'date',label:'Date *',type:'date'},{key:'time',label:'Time *',type:'time'},
     {key:'scale_id',label:'Scale ID / Asset Tag *',type:'text',placeholder:'e.g. SCALE-03'},
-    {key:'scale_location',label:'Location / Room *',type:'text',placeholder:'e.g. Production floor, Extraction lab'},
-    {key:'scale_make_model',label:'Make / Model',type:'text',placeholder:'e.g. Ohaus Ranger 7000'},
-    {key:'scale_capacity',label:'Capacity / Readability',type:'text',placeholder:'e.g. 6 kg x 0.1 g'},
-    {key:'ntep_cc',label:'NTEP Certificate of Conformance #',type:'text',placeholder:'NTEP CC number from the scale label'},
+    {key:'scale_location',label:'Location / Room *',type:'select',options:['',...SCALE_LOCATIONS]},
+    {key:'scale_make_model',label:'Scale Make / Model *',type:'select',options:['',...SCALE_MODELS]},
+    {key:'scale_capacity',label:'Capacity / Readability',type:'text'},
+    {key:'ntep_cc',label:'NTEP Certificate of Conformance #',type:'text'},
     {key:'_s_scale_cert',label:'--- ANNUAL CERTIFICATION ---',type:'section'},
     {key:'last_cert_date',label:'Last Annual Certification Date *',type:'date'},
     {key:'cert_company',label:'Certified By (Service Company / Registered Serviceperson)',type:'text',placeholder:'Company or technician name'},
@@ -4117,16 +4130,17 @@ const LOG_TYPES={
     {key:'check_zero',label:'Display reads zero with an empty pan',type:'checkbox'},
     {key:'check_moved',label:'Scale moved since the last check? *',type:'select',options:['No','Yes \u2014 full verification performed']},
     {key:'_s_scale_weights',label:'--- TEST WEIGHTS ---',type:'section'},
-    {key:'scale_unit',label:'Unit',type:'select',options:['g','kg','lb','oz']},
-    {key:'test_weight_set_id',label:'Certified Test Weight Set ID / Cert # *',type:'text',placeholder:'ID from the test weight certificate'},
     {key:'test_weight_cal_due',label:'Test Weight Calibration Due Date',type:'date'},
-    {key:'scale_tolerance',label:'Acceptance Tolerance \u00B1 (same unit) *',type:'text',placeholder:'Per your approved method / NIST HB 44 for this scale'},
-    {key:'tw1_nominal',label:'Point 1 \u2014 Test Weight, low range *',type:'text',placeholder:'e.g. 10'},
-    {key:'tw1_reading',label:'Point 1 \u2014 Scale Reading *',type:'text',placeholder:'e.g. 10.0'},
-    {key:'tw2_nominal',label:'Point 2 \u2014 Test Weight, mid range *',type:'text',placeholder:'e.g. 500'},
-    {key:'tw2_reading',label:'Point 2 \u2014 Scale Reading *',type:'text',placeholder:'e.g. 500.0'},
-    {key:'tw3_nominal',label:'Point 3 \u2014 Test Weight, high range *',type:'text',placeholder:'e.g. 2000'},
-    {key:'tw3_reading',label:'Point 3 \u2014 Scale Reading *',type:'text',placeholder:'e.g. 2000.0'},
+    {key:'tw1_nominal',label:'Point 1 \u2014 Front Left \u2014 Test Weight *',type:'text',placeholder:'e.g. 500'},
+    {key:'tw1_reading',label:'Point 1 \u2014 Front Left \u2014 Scale Reading *',type:'text',placeholder:'e.g. 500.0'},
+    {key:'tw2_nominal',label:'Point 2 \u2014 Front Right \u2014 Test Weight *',type:'text',placeholder:'e.g. 500'},
+    {key:'tw2_reading',label:'Point 2 \u2014 Front Right \u2014 Scale Reading *',type:'text',placeholder:'e.g. 500.0'},
+    {key:'tw3_nominal',label:'Point 3 \u2014 Back Left \u2014 Test Weight *',type:'text',placeholder:'e.g. 500'},
+    {key:'tw3_reading',label:'Point 3 \u2014 Back Left \u2014 Scale Reading *',type:'text',placeholder:'e.g. 500.0'},
+    {key:'tw4_nominal',label:'Point 4 \u2014 Back Right \u2014 Test Weight *',type:'text',placeholder:'e.g. 500'},
+    {key:'tw4_reading',label:'Point 4 \u2014 Back Right \u2014 Scale Reading *',type:'text',placeholder:'e.g. 500.0'},
+    {key:'tw5_nominal',label:'Point 5 \u2014 Middle \u2014 Test Weight *',type:'text',placeholder:'e.g. 500'},
+    {key:'tw5_reading',label:'Point 5 \u2014 Middle \u2014 Scale Reading *',type:'text',placeholder:'e.g. 500.0'},
     {key:'scale_check_display',label:'Calibration Check Result',type:'display'},
     {key:'_s_scale_result',label:'--- ACTION & SIGN-OFF ---',type:'section'},
     {key:'out_of_service',label:'Scale status after check',type:'select',options:['In service \u2014 passed','Tagged out of service','Adjusted / repaired and re-verified']},
@@ -4495,7 +4509,7 @@ function exportScaleDaySheet(entries,date){
   const W=792,H=612,m=30;
   const TEAL=[15,118,110];
   const dfmt=d=>{const p=String(d||'').split('-');return p.length===3?p[1]+'-'+p[2]+'-'+p[0]:String(d||'');};
-  const cols=[['Scale ID',52],['Location',70],['Make / Model',78],['Capacity',58],['Time',32],['Pt 1\nweight / reading',66],['Pt 2\nweight / reading',66],['Pt 3\nweight / reading',66],['Tol. ±',30],['Annual cert.\ndue',52],['Result',38],['Status',62],['Checked by',54],['Init.',28]];
+  const cols=[['Scale ID',48],['Location',58],['Make / Model',56],['Capacity',50],['Time',28],['Front Left\nwt / reading',52],['Front Right\nwt / reading',52],['Back Left\nwt / reading',52],['Back Right\nwt / reading',52],['Middle\nwt / reading',52],['Tol. \u00B1',24],['Annual cert.\ndue',46],['Result',32],['Status',52],['Checked by',46],['Init.',24]];
   const tot=cols.reduce((a,c)=>a+c[1],0),sc=(W-2*m)/tot;
   cols.forEach(c=>c[1]=c[1]*sc);
   let y=0,page=0;
@@ -4504,7 +4518,7 @@ function exportScaleDaySheet(entries,date){
     doc.setFont('helvetica','bold');doc.setFontSize(15);doc.setTextColor(15,15,15);
     doc.text('Black Fox Manufacturing — Daily Scale Calibration Sheet',m,m+8);
     doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(75,85,99);
-    doc.text('Date: '+dfmt(date)+'     Scales checked: '+list.length+'     Ref: 19 CSR 100-1.130(C) · NIST Handbook 44',m,m+24);
+    doc.text('Date: '+dfmt(date)+'     Scales checked: '+list.length+'     All readings in grams (g)     Tolerance \u00B1'+SCALE_TOLERANCE+' g     Ref: 19 CSR 100-1.130(C) · NIST Handbook 44',m,m+24);
     y=m+36;
     doc.setFillColor(...TEAL);doc.rect(m,y,W-2*m,26,'F');
     doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(7);
@@ -4514,9 +4528,8 @@ function exportScaleDaySheet(entries,date){
   head();
   list.forEach(e=>{
     const sc2=scaleCheck(e);
-    const u=e.scale_unit||'g';
     const pt=i=>(e['tw'+i+'_nominal']||'')!==''||(e['tw'+i+'_reading']||'')!==''?(e['tw'+i+'_nominal']||'-')+' / '+(e['tw'+i+'_reading']||'-'):'-';
-    const cells=[e.scale_id||'',e.scale_location||'',e.scale_make_model||'',e.scale_capacity||'',e.time||'',pt(1)+' '+u,pt(2)+' '+u,pt(3)+' '+u,e.scale_tolerance||'',sc2&&sc2.cert.due?dfmt(sc2.cert.due):'',(sc2&&sc2.result)||'-',e.out_of_service||'',e.performed_by||'',''];
+    const cells=[e.scale_id||'',e.scale_location||'',e.scale_make_model||'',e.scale_capacity||'',e.time||'',pt(1),pt(2),pt(3),pt(4),pt(5),String(SCALE_TOLERANCE),sc2&&sc2.cert.due?dfmt(sc2.cert.due):'',(sc2&&sc2.result)||'-',e.out_of_service||'',e.performed_by||'',''];
     const lines=cells.map((c,i)=>doc.splitTextToSize(String(c),cols[i][1]-6));
     const rh=Math.max(24,Math.max(...lines.map(l=>l.length))*9+8);
     if(y+rh>H-m-110){head();}
@@ -4526,8 +4539,8 @@ function exportScaleDaySheet(entries,date){
     let x=m;
     cells.forEach((c,i)=>{
       doc.rect(x,y,cols[i][1],rh);
-      doc.setFont('helvetica',(i===0||i===10)?'bold':'normal');doc.setFontSize(7.5);
-      if(i===10) doc.setTextColor(...(fail?[185,28,28]:[21,128,61])); else doc.setTextColor(15,15,15);
+      doc.setFont('helvetica',(i===0||i===12)?'bold':'normal');doc.setFontSize(7.5);
+      if(i===12) doc.setTextColor(...(fail?[185,28,28]:[21,128,61])); else doc.setTextColor(15,15,15);
       doc.text(lines[i],x+3,y+11);
       x+=cols[i][1];
     });
@@ -4697,7 +4710,7 @@ function exportLogPdf(logType,entries,dateFrom,dateTo){
         sc.pts.forEach(p=>{
           checkPage(16);
           doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...TEXT);
-          doc.text('Point '+p.i+(p.nom!==null?':  test weight '+p.nom+' '+sc.unit:''),margin+8,y);
+          doc.text(p.name+(p.nom!==null?':  test weight '+p.nom+' '+sc.unit:''),margin+8,y);
           if(p.diff!==null){
             doc.text('reads '+p.rd+'  ('+(p.diff>0?'+':'')+p.diff+')',margin+230,y);
             doc.setFont('helvetica','bold');
@@ -5035,9 +5048,9 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         :'Enter the last certification date';
       return el('div',{key:f.key,className:'fg'},
         el('div',{style:{background:bg,color:'#fff',borderRadius:10,padding:'14px 18px'}},
-          el('div',{style:{fontSize:16,fontWeight:800,textAlign:'center',marginBottom:8}},res==='Pass'?'\u2713 PASS':res==='Fail'?'\u26A0 FAIL \u2014 take scale out of service until corrected':'Enter test weights and tolerance'),
+          el('div',{style:{fontSize:16,fontWeight:800,textAlign:'center',marginBottom:8}},res==='Pass'?'\u2713 PASS':res==='Fail'?'\u26A0 FAIL \u2014 take scale out of service until corrected':'Enter the 5 test weights and readings'),
           sc.pts.map(p=>el('div',{key:p.i,style:{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',borderTop:'1px solid rgba(255,255,255,.25)'}},
-            el('span',null,'Point '+p.i+(p.nom!==null?' \u2014 '+p.nom+' '+sc.unit:'')),
+            el('span',null,p.name+(p.nom!==null?' \u2014 '+p.nom+' '+sc.unit:'')),
             el('span',{style:{fontWeight:700}},p.diff===null?'\u2014':((p.diff>0?'+':'')+p.diff+' '+sc.unit+(p.ok===null?'':p.ok?'  OK':'  OUT OF TOLERANCE'))),
           )),
           el('div',{style:{fontSize:11,opacity:.9,marginTop:8}},certTxt),
@@ -5232,6 +5245,30 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       const rdPassed=form.rd1_result==='Passed'||form.rd2_result==='Passed';
       if(!rdPassed) return null;
       // fall through to generic select renderer below
+    }
+    if(logType==='scale_calibration'&&(f.key==='scale_location'||f.key==='scale_make_model'||f.key==='scale_capacity'||f.key==='ntep_cc')){
+      const selStyle={width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13};
+      const spec=SCALE_MODEL_SPECS[form.scale_make_model]||null;
+      let opts=null,ph='\u2014 Select \u2014';
+      if(f.key==='scale_location') opts=SCALE_LOCATIONS;
+      else if(f.key==='scale_make_model') opts=SCALE_MODELS;
+      else if(f.key==='scale_capacity'){ if(!form.scale_make_model) ph='Select the Make / Model first'; else if(spec&&spec.capacity.length) opts=spec.capacity; }
+      else { if(!form.scale_make_model) ph='Select the Make / Model first'; else if(spec&&spec.ntep.length) opts=spec.ntep; }
+      const onSel=ev=>{
+        const v=ev.target.value;
+        if(f.key==='scale_make_model'){
+          const sp=SCALE_MODEL_SPECS[v]||{capacity:[],ntep:[]};
+          setForm(p=>({...p,scale_make_model:v,scale_capacity:sp.capacity.length===1?sp.capacity[0]:'',ntep_cc:sp.ntep.length===1?sp.ntep[0]:''}));
+        } else setF(f.key,v);
+      };
+      const cur=form[f.key]||'';
+      if(opts) return el('div',{key:f.key,className:'fg'},el('label',null,f.label),
+        el('select',{value:cur,onChange:onSel,style:selStyle},
+          el('option',{value:''},ph),
+          cur&&!opts.includes(cur)&&el('option',{value:cur},cur),
+          opts.map(o=>el('option',{key:o,value:o},o))));
+      return el('div',{key:f.key,className:'fg'},el('label',null,f.label),
+        el('input',{type:'text',value:cur,disabled:!form.scale_make_model,onChange:ev=>setF(f.key,ev.target.value),placeholder:form.scale_make_model?'Type it in (no list set up for this model yet)':ph,style:selStyle}));
     }
     const origVal=originalRef.current&&originalRef.current[f.key];
     const isLocked=lockFilledFields&&(f.type==='text'||f.type==='textarea'||!f.type)&&typeof origVal==='string'&&origVal.trim();
