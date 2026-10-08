@@ -4483,6 +4483,73 @@ function pdfSafeDoc(doc){
   doc.splitTextToSize=(txt,...rest)=>_split(pdfSafe(txt),...rest);
   return doc;
 }
+function exportScaleDaySheet(entries,date){
+  const day=(entries||[]).filter(e=>e.date===date);
+  if(!day.length){alert('No scale calibration entries on '+date+'.');return;}
+  // latest entry per scale
+  const byScale={};
+  day.slice().sort((a,b)=>String(a.time||'').localeCompare(String(b.time||''))).forEach(e=>{byScale[String(e.scale_id||'?').trim()]=e;});
+  const list=Object.keys(byScale).sort().map(k=>byScale[k]);
+  const{jsPDF}=window.jspdf;
+  const doc=pdfSafeDoc(new jsPDF({unit:'pt',format:'letter',orientation:'landscape'}));
+  const W=792,H=612,m=30;
+  const TEAL=[15,118,110];
+  const dfmt=d=>{const p=String(d||'').split('-');return p.length===3?p[1]+'-'+p[2]+'-'+p[0]:String(d||'');};
+  const cols=[['Scale ID',52],['Location',70],['Make / Model',78],['Capacity',58],['Time',32],['Pt 1\nweight / reading',66],['Pt 2\nweight / reading',66],['Pt 3\nweight / reading',66],['Tol. ±',30],['Annual cert.\ndue',52],['Result',38],['Status',62],['Checked by',54],['Init.',28]];
+  const tot=cols.reduce((a,c)=>a+c[1],0),sc=(W-2*m)/tot;
+  cols.forEach(c=>c[1]=c[1]*sc);
+  let y=0,page=0;
+  function head(){
+    page++;if(page>1)doc.addPage();
+    doc.setFont('helvetica','bold');doc.setFontSize(15);doc.setTextColor(15,15,15);
+    doc.text('Black Fox Manufacturing — Daily Scale Calibration Sheet',m,m+8);
+    doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(75,85,99);
+    doc.text('Date: '+dfmt(date)+'     Scales checked: '+list.length+'     Ref: 19 CSR 100-1.130(C) · NIST Handbook 44',m,m+24);
+    y=m+36;
+    doc.setFillColor(...TEAL);doc.rect(m,y,W-2*m,26,'F');
+    doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(7);
+    let x=m;cols.forEach(c=>{doc.text(c[0].split('\n'),x+c[1]/2,y+10,{align:'center'});x+=c[1];});
+    y+=26;
+  }
+  head();
+  list.forEach(e=>{
+    const sc2=scaleCheck(e);
+    const u=e.scale_unit||'g';
+    const pt=i=>(e['tw'+i+'_nominal']||'')!==''||(e['tw'+i+'_reading']||'')!==''?(e['tw'+i+'_nominal']||'-')+' / '+(e['tw'+i+'_reading']||'-'):'-';
+    const cells=[e.scale_id||'',e.scale_location||'',e.scale_make_model||'',e.scale_capacity||'',e.time||'',pt(1)+' '+u,pt(2)+' '+u,pt(3)+' '+u,e.scale_tolerance||'',sc2&&sc2.cert.due?dfmt(sc2.cert.due):'',(sc2&&sc2.result)||'-',e.out_of_service||'',e.performed_by||'',''];
+    const lines=cells.map((c,i)=>doc.splitTextToSize(String(c),cols[i][1]-6));
+    const rh=Math.max(24,Math.max(...lines.map(l=>l.length))*9+8);
+    if(y+rh>H-m-110){head();}
+    const fail=sc2&&sc2.result==='Fail';
+    if(fail){doc.setFillColor(254,226,226);doc.rect(m,y,W-2*m,rh,'F');}
+    doc.setDrawColor(120,120,120);doc.setLineWidth(.5);
+    let x=m;
+    cells.forEach((c,i)=>{
+      doc.rect(x,y,cols[i][1],rh);
+      doc.setFont('helvetica',(i===0||i===10)?'bold':'normal');doc.setFontSize(7.5);
+      if(i===10) doc.setTextColor(...(fail?[185,28,28]:[21,128,61])); else doc.setTextColor(15,15,15);
+      doc.text(lines[i],x+3,y+11);
+      x+=cols[i][1];
+    });
+    y+=rh;
+  });
+  // corrective actions
+  const acts=list.filter(e=>e.corrective_action).map(e=>(e.scale_id||'?')+': '+e.corrective_action);
+  y+=14;
+  doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(15,15,15);
+  doc.text('Corrective action:',m,y);
+  doc.setFont('helvetica','normal');
+  const al=doc.splitTextToSize(acts.length?acts.join('   |   '):'None required.',W-2*m-90);
+  doc.text(al,m+90,y);
+  y+=Math.max(1,al.length)*11+26;
+  if(y>H-m-20){doc.addPage();y=m+20;}
+  const sw=(W-2*m-60)/3;
+  ['Performed by','Reviewed / Verified by','Date'].forEach((t,i)=>{
+    const x=m+i*(sw+30);doc.setDrawColor(0,0,0);doc.line(x,y,x+sw,y);
+    doc.setFontSize(8);doc.setTextColor(75,85,99);doc.text(t,x,y+11);
+  });
+  doc.save('Scale_Calibration_Daily_Sheet_'+date+'.pdf');
+}
 function exportLogPdf(logType,entries,dateFrom,dateTo){
   const{jsPDF}=window.jspdf;
   const doc=pdfSafeDoc(new jsPDF({unit:'pt',format:'letter'}));
@@ -5509,6 +5576,7 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive}){
         el('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
           el('button',{onClick:()=>{if(activeLog==='security_inspection'){setShowSecInsp(true);setEditSecInsp(null);}else setShowForm(true);},style:{background:'#fff',color:lt.color,border:'none',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'+ New Entry'),
           activeLog==='visitor'&&el('button',{onClick:()=>setShowQR(p=>!p),style:{background:'rgba(255,255,255,.15)',color:'#fff',border:'1px solid rgba(255,255,255,.4)',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'\uD83D\uDCF1 QR Code / Kiosk'),
+          activeLog==='scale_calibration'&&el('button',{onClick:()=>{const dd=window.prompt('Date for the daily sheet (YYYY-MM-DD):',dateTo||dateFrom||(entries[0]&&entries[0].date)||new Date().toISOString().slice(0,10));if(dd)exportScaleDaySheet(entries,dd.trim());},style:{background:'rgba(255,255,255,.2)',color:'#fff',border:'1px solid rgba(255,255,255,.4)',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'\uD83D\uDCCB Daily Sheet (all scales)'),
           el('button',{onClick:()=>exportLogPdf(activeLog,filtered,dateFrom,dateTo),style:{background:'rgba(255,255,255,.2)',color:'#fff',border:'1px solid rgba(255,255,255,.4)',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'\uD83D\uDCC4 Export PDF'),
           el('button',{onClick:()=>setActiveLog(null),className:'btn b-ghost btn-sm',style:{color:'#fff',borderColor:'rgba(255,255,255,.4)'}},'\u2190 All Logs'),
         ),
