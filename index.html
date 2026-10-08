@@ -3834,11 +3834,18 @@ const SCALE_MODELS=['OHAUS Ranger','OHAUS Scout','OHAUS Valor','FUZION','UNIWEIG
 // Per model: the Capacity / Readability and NTEP Certificate of Conformance choices.
 // Fill these lists in; a model with an empty list shows a type-in box instead.
 const SCALE_MODEL_SPECS={
-  'OHAUS Ranger':{capacity:[],ntep:[]},
-  'OHAUS Scout':{capacity:[],ntep:[]},
-  'OHAUS Valor':{capacity:[],ntep:[]},
-  'FUZION':{capacity:[],ntep:[]},
-  'UNIWEIGH':{capacity:[],ntep:[]},
+  'OHAUS Ranger':{models:{
+    'R31P30':{serials:['8345101606','8346152197','8345101604','8345114587'],capacity:[],ntep:[]},
+    'R31P15':{serials:['8345052119'],capacity:[],ntep:[]},
+  }},
+  'OHAUS Scout':{models:{
+    'SJX622N/E':{serials:['C448147787','C449196403','C449196405'],capacity:[],ntep:[]},
+  }},
+  'OHAUS Valor':{models:{
+    'V31XW6':{serials:['C522080295'],capacity:[],ntep:[]},
+  }},
+  'FUZION':{models:{}},
+  'UNIWEIGH':{models:{}},
 };
 function scaleCheck(e){
   if(!e) return null;
@@ -4117,6 +4124,8 @@ const LOG_TYPES={
     {key:'scale_id',label:'Scale ID / Asset Tag *',type:'text',placeholder:'e.g. SCALE-03'},
     {key:'scale_location',label:'Location / Room *',type:'select',options:['',...SCALE_LOCATIONS]},
     {key:'scale_make_model',label:'Scale Make / Model *',type:'select',options:['',...SCALE_MODELS]},
+    {key:'scale_model_number',label:'Model Number',type:'text'},
+    {key:'scale_serial',label:'Serial Number',type:'text'},
     {key:'scale_capacity',label:'Capacity / Readability',type:'text'},
     {key:'ntep_cc',label:'NTEP Certificate of Conformance #',type:'text'},
     {key:'_s_scale_cert',label:'--- ANNUAL CERTIFICATION ---',type:'section'},
@@ -4509,7 +4518,7 @@ function exportScaleDaySheet(entries,date){
   const W=792,H=612,m=30;
   const TEAL=[15,118,110];
   const dfmt=d=>{const p=String(d||'').split('-');return p.length===3?p[1]+'-'+p[2]+'-'+p[0]:String(d||'');};
-  const cols=[['Scale ID',48],['Location',58],['Make / Model',56],['Capacity',50],['Time',28],['Front Left\nwt / reading',52],['Front Right\nwt / reading',52],['Back Left\nwt / reading',52],['Back Right\nwt / reading',52],['Middle\nwt / reading',52],['Tol. \u00B1',24],['Annual cert.\ndue',46],['Result',32],['Status',52],['Checked by',46],['Init.',24]];
+  const cols=[['Scale ID',48],['Location',58],['Make / Model / S/N',70],['Capacity',50],['Time',28],['Front Left\nwt / reading',52],['Front Right\nwt / reading',52],['Back Left\nwt / reading',52],['Back Right\nwt / reading',52],['Middle\nwt / reading',52],['Tol. \u00B1',24],['Annual cert.\ndue',46],['Result',32],['Status',52],['Checked by',46],['Init.',24]];
   const tot=cols.reduce((a,c)=>a+c[1],0),sc=(W-2*m)/tot;
   cols.forEach(c=>c[1]=c[1]*sc);
   let y=0,page=0;
@@ -4529,7 +4538,7 @@ function exportScaleDaySheet(entries,date){
   list.forEach(e=>{
     const sc2=scaleCheck(e);
     const pt=i=>(e['tw'+i+'_nominal']||'')!==''||(e['tw'+i+'_reading']||'')!==''?(e['tw'+i+'_nominal']||'-')+' / '+(e['tw'+i+'_reading']||'-'):'-';
-    const cells=[e.scale_id||'',e.scale_location||'',e.scale_make_model||'',e.scale_capacity||'',e.time||'',pt(1),pt(2),pt(3),pt(4),pt(5),String(SCALE_TOLERANCE),sc2&&sc2.cert.due?dfmt(sc2.cert.due):'',(sc2&&sc2.result)||'-',e.out_of_service||'',e.performed_by||'',''];
+    const cells=[e.scale_id||'',e.scale_location||'',[e.scale_make_model,e.scale_model_number].filter(Boolean).join(' ')+(e.scale_serial?' S/N '+e.scale_serial:''),e.scale_capacity||'',e.time||'',pt(1),pt(2),pt(3),pt(4),pt(5),String(SCALE_TOLERANCE),sc2&&sc2.cert.due?dfmt(sc2.cert.due):'',(sc2&&sc2.result)||'-',e.out_of_service||'',e.performed_by||'',''];
     const lines=cells.map((c,i)=>doc.splitTextToSize(String(c),cols[i][1]-6));
     const rh=Math.max(24,Math.max(...lines.map(l=>l.length))*9+8);
     if(y+rh>H-m-110){head();}
@@ -5246,19 +5255,22 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
       if(!rdPassed) return null;
       // fall through to generic select renderer below
     }
-    if(logType==='scale_calibration'&&(f.key==='scale_location'||f.key==='scale_make_model'||f.key==='scale_capacity'||f.key==='ntep_cc')){
+    if(logType==='scale_calibration'&&['scale_location','scale_make_model','scale_model_number','scale_serial','scale_capacity','ntep_cc'].includes(f.key)){
       const selStyle={width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13};
-      const spec=SCALE_MODEL_SPECS[form.scale_make_model]||null;
-      let opts=null,ph='\u2014 Select \u2014';
+      const mk=SCALE_MODEL_SPECS[form.scale_make_model]||{models:{}};
+      const mdl=mk.models[form.scale_model_number]||null;
+      let opts=null,ph='\u2014 Select \u2014',need='';
       if(f.key==='scale_location') opts=SCALE_LOCATIONS;
       else if(f.key==='scale_make_model') opts=SCALE_MODELS;
-      else if(f.key==='scale_capacity'){ if(!form.scale_make_model) ph='Select the Make / Model first'; else if(spec&&spec.capacity.length) opts=spec.capacity; }
-      else { if(!form.scale_make_model) ph='Select the Make / Model first'; else if(spec&&spec.ntep.length) opts=spec.ntep; }
+      else if(f.key==='scale_model_number'){ need=form.scale_make_model?'':'Select the Make first'; const ks=Object.keys(mk.models); if(ks.length) opts=ks; }
+      else { need=!form.scale_make_model?'Select the Make first':(Object.keys(mk.models).length&&!mdl?'Select the Model Number first':'');
+        if(mdl){ const l=f.key==='scale_serial'?mdl.serials:f.key==='scale_capacity'?mdl.capacity:mdl.ntep; if(l&&l.length) opts=l; } }
       const onSel=ev=>{
         const v=ev.target.value;
-        if(f.key==='scale_make_model'){
-          const sp=SCALE_MODEL_SPECS[v]||{capacity:[],ntep:[]};
-          setForm(p=>({...p,scale_make_model:v,scale_capacity:sp.capacity.length===1?sp.capacity[0]:'',ntep_cc:sp.ntep.length===1?sp.ntep[0]:''}));
+        if(f.key==='scale_make_model') setForm(p=>({...p,scale_make_model:v,scale_model_number:'',scale_serial:'',scale_capacity:'',ntep_cc:''}));
+        else if(f.key==='scale_model_number'){
+          const m2=(SCALE_MODEL_SPECS[form.scale_make_model]||{models:{}}).models[v];
+          setForm(p=>({...p,scale_model_number:v,scale_serial:m2&&m2.serials.length===1?m2.serials[0]:'',scale_capacity:m2&&m2.capacity.length===1?m2.capacity[0]:'',ntep_cc:m2&&m2.ntep.length===1?m2.ntep[0]:''}));
         } else setF(f.key,v);
       };
       const cur=form[f.key]||'';
@@ -5268,7 +5280,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
           cur&&!opts.includes(cur)&&el('option',{value:cur},cur),
           opts.map(o=>el('option',{key:o,value:o},o))));
       return el('div',{key:f.key,className:'fg'},el('label',null,f.label),
-        el('input',{type:'text',value:cur,disabled:!form.scale_make_model,onChange:ev=>setF(f.key,ev.target.value),placeholder:form.scale_make_model?'Type it in (no list set up for this model yet)':ph,style:selStyle}));
+        el('input',{type:'text',value:cur,disabled:!!need,onChange:ev=>setF(f.key,ev.target.value),placeholder:need||'Type it in (no list set up yet)',style:selStyle}));
     }
     const origVal=originalRef.current&&originalRef.current[f.key];
     const isLocked=lockFilledFields&&(f.type==='text'||f.type==='textarea'||!f.type)&&typeof origVal==='string'&&origVal.trim();
