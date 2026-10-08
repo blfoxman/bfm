@@ -11091,7 +11091,460 @@ const LICENSE_CHART_TIERS=[
     {title:'Extraction Manager',name:'Amir Yrigoyen'},
   ]},
 ];
+
+// ── LICENSE ADMIN HELPERS ────────────────────────────────────────────────────
+// "Admin" (role === 'admin') is the main admin: every license, every setting.
+// A License Admin is any other user whose admin_licenses list contains a
+// license id \u2014 it's an extra permission on top of their normal job role, so
+// nothing about their existing role/access changes. It only opens Settings
+// for the licenses the main admin assigned.
+function userLicenseIds(u){
+  if(!u) return [];
+  const a=Array.isArray(u.licenses)?u.licenses:[];
+  const b=Array.isArray(u.admin_licenses)?u.admin_licenses:[];
+  return Array.from(new Set([...a,...b]));
+}
+function adminLicenseIds(u){
+  if(!u) return [];
+  if(u.role==='admin') return LICENSES.map(l=>l.id);
+  return Array.isArray(u.admin_licenses)?u.admin_licenses:[];
+}
+function isLicenseAdmin(u,licenseNumber){
+  if(!u) return false;
+  if(u.role==='admin') return true;
+  const lic=LICENSES.find(l=>l.license_number===licenseNumber);
+  return !!lic&&adminLicenseIds(u).includes(lic.id);
+}
+function canSeeSettings(u){return !!u&&(u.role==='admin'||adminLicenseIds(u).length>0);}
+
+// ── SETTINGS: ORG CHART ──────────────────────────────────────────────────────
+// Stored per license in pf_settings (id = "<license id>:org_chart"). Until a
+// license saves its own chart, the License Chart page keeps showing the
+// built-in one, so nothing changes until someone edits it here.
+const ORG_COLORS=[
+  {c:'#7c3aed',n:'Purple'},{c:'#0891b2',n:'Teal'},{c:'#be185d',n:'Pink'},{c:'#ea580c',n:'Orange'},
+  {c:'#059669',n:'Green'},{c:'#6366f1',n:'Indigo'},{c:'#dc2626',n:'Red'},{c:'#ca8a04',n:'Gold'},{c:'#475569',n:'Slate'},
+];
+const MO_ORG_SEED={
+  leadership:[
+    {id:'l1',title:'General Manager',name:'Saman Salari',note:'License MAN000109 \u00B7 HMBF Management Inc',badges:'Inventory Control, 19 CSR 100-1.130',color:'#7c3aed',kind:'person'},
+    {id:'l2',title:'Assistant General Manager',name:'Liisa Pembroke',note:'Reports to: General Manager',badges:'',color:'#7c3aed',kind:'person'},
+  ],
+  branches:[
+    {id:'b1',label:'Compliance & Security',color:'#0891b2',positions:[
+      {id:'p1',title:'Compliance Officer',name:'Micah Heppermann',note:'ISO 9001 / QMS oversight \u00B7 cGMP \u00B7 FSMA \u00B7 OSHA compliance',badges:'',kind:'person'},
+      {id:'p2',title:'Security Manager',name:'Micah Heppermann',note:'19 CSR 100-1.090(7)\u2013(8) \u2014 security audits, staff training, contractor credential review',badges:'DCR Designated',kind:'person'},
+      {id:'p3',title:'Security Officer',name:'',note:'Reports to Security Manager',badges:'',kind:'person'},
+    ]},
+    {id:'b2',label:'Production',color:'#be185d',positions:[
+      {id:'p4',title:'Production Manager',name:'Zak Knowles',note:'Pre-rolls, cartridges, gummies, infused flower, packaging operations',badges:'',kind:'person'},
+      {id:'p5',title:'Production Lead',name:'Sara Haarmann',note:'',badges:'',kind:'person'},
+      {id:'p6',title:'Sanitation',name:'Jennifer Lindsey',note:'',badges:'',kind:'person'},
+      {id:'p7',title:'Team Members',name:'',note:'',badges:'',kind:'group'},
+    ]},
+    {id:'b3',label:'Extraction',color:'#ea580c',positions:[
+      {id:'p8',title:'Extraction Manager',name:'Amir Yrigoyen',note:'Ethanol extraction, BHO extraction, distillation, all solvent operations',badges:'',kind:'person'},
+      {id:'p9',title:'Extraction Technicians',name:'',note:'',badges:'',kind:'group'},
+    ]},
+    {id:'b4',label:'Sales',color:'#059669',positions:[
+      {id:'p10',title:'Sales Manager',name:'Alfonso Toscano',note:'Sales operations, client relations, order management',badges:'',kind:'person'},
+    ]},
+    {id:'b5',label:'Warehouse',color:'#6366f1',positions:[
+      {id:'p11',title:'Shipping / Receiving Manager',name:'',note:'Warehouse operations, shipping, receiving, inventory logistics',badges:'',kind:'person'},
+    ]},
+  ],
+  citations:'19 CSR 100-1.090: Security Manager designation \u2014 semi-annual audits, staff training, contractor credentials.\n19 CSR 100-1.130(1)(A): Written designation of Inventory Control agent for tracking systems/procedures.\nISO 9001:2015 \u00A75.3: Top management shall assign roles, responsibilities and authorities within the organization.',
+};
+const BLANK_ORG_SEED={
+  leadership:[{id:'l1',title:'General Manager',name:'',note:'Overall facility operations',badges:'',color:'#7c3aed',kind:'person'}],
+  branches:[
+    {id:'b1',label:'Compliance & Security',color:'#0891b2',positions:[
+      {id:'p1',title:'Compliance Officer',name:'',note:'',badges:'',kind:'person'},
+      {id:'p2',title:'Security Manager',name:'',note:'',badges:'',kind:'person'},
+    ]},
+    {id:'b2',label:'Production',color:'#be185d',positions:[
+      {id:'p3',title:'Production Manager',name:'',note:'',badges:'',kind:'person'},
+      {id:'p4',title:'Team Members',name:'',note:'',badges:'',kind:'group'},
+    ]},
+    {id:'b3',label:'Extraction',color:'#ea580c',positions:[{id:'p5',title:'Extraction Manager',name:'',note:'',badges:'',kind:'person'}]},
+    {id:'b4',label:'Sales',color:'#059669',positions:[{id:'p6',title:'Sales Manager',name:'',note:'',badges:'',kind:'person'}]},
+    {id:'b5',label:'Warehouse',color:'#6366f1',positions:[{id:'p7',title:'Shipping / Receiving Manager',name:'',note:'',badges:'',kind:'person'}]},
+  ],
+  citations:'',
+};
+function orgUid(){return 'x'+Math.random().toString(36).slice(2,8);}
+function orgBadgeList(b){return Array.isArray(b)?b:String(b||'').split(',').map(s=>s.trim()).filter(Boolean);}
+
+function OrgChartView({chart,lic}){
+  const cardStyle=(color,isTop,open)=>({
+    background:'#fff',border:(open?'2px dashed ':'2px solid ')+color,borderRadius:12,
+    padding:isTop?'16px 24px':'12px 18px',textAlign:'center',minWidth:isTop?220:180,maxWidth:260,
+    boxShadow:'0 2px 8px rgba(15,23,42,.06)',opacity:open?.75:1,
+  });
+  const titleStyle={fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'.5px'};
+  const nameStyle=(color)=>({fontSize:15,fontWeight:800,color,marginBottom:2});
+  const noteStyle={fontSize:10,color:'var(--text3)',marginTop:6,lineHeight:1.4,textAlign:'left'};
+  const connectorV=(h,k)=>el('div',{key:k,style:{width:2,height:h||28,background:'var(--border)',margin:'0 auto'}});
+  const sectionLabel=(text,color)=>el('div',{style:{fontSize:10,fontWeight:800,color,textTransform:'uppercase',letterSpacing:'.8px',textAlign:'center',marginBottom:8,marginTop:4}},text);
+  const badge=(t,color)=>el('span',{key:t,style:{fontSize:9,padding:'2px 8px',borderRadius:10,background:color+'1a',color,border:'1px solid '+color+'4d',fontWeight:700}},t);
+  const person=(p,color,isTop)=>{
+    const open=!String(p.name||'').trim();
+    const bl=orgBadgeList(p.badges);
+    return el('div',{style:cardStyle(color,isTop,open)},
+      el('div',{style:titleStyle},p.title||'Position'),
+      el('div',{style:open?{...nameStyle(color),color:'var(--text3)',fontStyle:'italic'}:nameStyle(color)},open?'TBD \u2014 Open Position':p.name),
+      p.note?el('div',{style:noteStyle},p.note):null,
+      bl.length>0?el('div',{style:{display:'flex',gap:6,justifyContent:'center',marginTop:8,flexWrap:'wrap'}},bl.map(b=>badge(b,color))):null,
+    );
+  };
+  const group=(p,color)=>el('div',{style:{background:color+'0a',border:'1px dashed '+color+'4d',borderRadius:8,padding:'8px 12px',fontSize:10,color:'var(--text3)',textAlign:'center',maxWidth:220}},p.title||'Team');
+  const leadership=chart.leadership||[];
+  const branches=chart.branches||[];
+  const cites=String(chart.citations||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  return el('div',null,
+    el('div',{className:'ph'},
+      el('div',null,
+        el('div',{className:'pt'},'\uD83C\uDFE2 Organization Chart'),
+        el('div',{className:'ps'},(lic?lic.name+' \u00B7 '+lic.license_number+' \u2014 ':'')+'Reporting structure & designated roles'),
+      ),
+    ),
+    el('div',{style:{padding:'0 4px 40px',overflowX:'auto'}},
+      leadership.map((p,i)=>el('div',{key:p.id||('l'+i)},
+        el('div',{style:{display:'flex',justifyContent:'center'}},person(p,p.color||'#7c3aed',i===0)),
+        (i<leadership.length-1||branches.length>0)?connectorV(28):null,
+      )),
+      branches.length>0?el('div',{style:{display:'flex',justifyContent:'center',position:'relative'}},
+        el('div',{style:{position:'absolute',top:0,left:'50%',transform:'translateX(-50%)',width:'70%',maxWidth:600,height:2,background:'var(--border)'}}),
+      ):null,
+      el('div',{style:{height:2}}),
+      el('div',{style:{display:'flex',justifyContent:'center',gap:24,flexWrap:'wrap'}},
+        branches.map((b,bi)=>el('div',{key:b.id||('b'+bi),style:{display:'flex',flexDirection:'column',alignItems:'center',flex:'1 1 200px',maxWidth:280}},
+          connectorV(20,'c'),
+          sectionLabel(b.label,b.color||'#475569'),
+          (b.positions||[]).map((p,pi)=>el('div',{key:p.id||('p'+pi),style:{display:'flex',flexDirection:'column',alignItems:'center'}},
+            pi>0?connectorV(12):null,
+            p.kind==='group'?group(p,b.color||'#475569'):person(p,b.color||'#475569',false),
+          )),
+        )),
+      ),
+      cites.length>0?el('div',{style:{marginTop:32,background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 18px',maxWidth:700,margin:'32px auto 0'}},
+        el('div',{style:{fontSize:11,fontWeight:800,color:'var(--accent)',textTransform:'uppercase',letterSpacing:'.6px',marginBottom:8}},'Regulatory Citations'),
+        el('div',{style:{fontSize:12,color:'var(--text2)',lineHeight:1.7}},
+          cites.map((line,i)=>{
+            const k=line.indexOf(': ');   // bold the reference up to the first ": " (so "ISO 9001:2015 \u00A75.3" stays whole)
+            return el('div',{key:i},k>0?[el('b',{key:'b'},line.slice(0,k)),line.slice(k)]:line);
+          }),
+        ),
+      ):null,
+    ),
+  );
+}
+
+// The License Chart page: shows this license's saved chart from Settings if it
+// has one, otherwise the built-in chart exactly as before.
 function LicenseChart({licActive}){
+  const lic=LICENSES.find(l=>l.license_number===licActive)||LICENSES[0];
+  const[custom,setCustom]=useState(null);
+  const[ready,setReady]=useState(false);
+  useEffect(()=>{
+    let dead=false;setReady(false);
+    db.get('pf_settings','id=eq.'+encodeURIComponent(lic.id+':org_chart')+'&select=value')
+      .then(rows=>{
+        if(dead) return;
+        const v=Array.isArray(rows)&&rows[0]&&rows[0].value;
+        setCustom(v&&Array.isArray(v.leadership)?v:null);setReady(true);
+      })
+      .catch(()=>{if(!dead){setCustom(null);setReady(true);}});
+    return()=>{dead=true;};
+  },[lic.id]);
+  if(!ready) return el('div',{className:'empty'},el('div',{className:'etxt'},'Loading\u2026'));
+  if(custom) return el(OrgChartView,{chart:custom,lic});
+  return el(LicenseChartBuiltIn,{licActive});
+}
+
+const SET_INP={width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'inherit',fontSize:12,boxSizing:'border-box'};
+const SET_LBL={fontSize:10,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:3,display:'block'};
+const SET_CARD={background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 16px',marginBottom:12};
+
+function OrgChartEditor({lic,cu}){
+  const rowId=lic.id+':org_chart';
+  const[loading,setLoading]=useState(true);
+  const[existing,setExisting]=useState(false);
+  const[chart,setChart]=useState(null);
+  const[msg,setMsg]=useState('');
+  const[saving,setSaving]=useState(false);
+  const[preview,setPreview]=useState(false);
+  useEffect(()=>{
+    let dead=false;setLoading(true);setMsg('');setChart(null);setExisting(false);
+    db.get('pf_settings','id=eq.'+encodeURIComponent(rowId)+'&select=*').then(rows=>{
+      if(dead) return;
+      const r=Array.isArray(rows)&&rows[0];
+      setExisting(!!r);
+      setChart(r&&r.value&&Array.isArray(r.value.leadership)?r.value:null);
+      setLoading(false);
+    }).catch(e=>{
+      if(dead) return;
+      setMsg('Settings storage is not set up yet \u2014 run add_settings_and_license_admin.sql in Supabase first. ('+String(e.message||e).slice(0,80)+')');
+      setLoading(false);
+    });
+    return()=>{dead=true;};
+  },[rowId]);
+  const clone=o=>JSON.parse(JSON.stringify(o));
+  const mut=(fn)=>setChart(prev=>{const n=clone(prev);fn(n);return n;});
+  const move=(arr,i,d)=>{const j=i+d;if(j<0||j>=arr.length)return;const t=arr[i];arr[i]=arr[j];arr[j]=t;};
+  async function save(){
+    setSaving(true);setMsg('');
+    try{
+      const value=clone(chart);
+      const stamp={updated_by:cu.name,updated_at:new Date().toISOString()};
+      if(existing) await db.update('pf_settings',rowId,{value,...stamp});
+      else{await db.insert('pf_settings',{id:rowId,license_id:lic.id,section:'org_chart',value,...stamp});setExisting(true);}
+      setMsg('\u2713 Saved \u2014 the License Chart page now shows this chart.');
+    }catch(e){setMsg('\u274C '+String(e.message||e).slice(0,200));}
+    setSaving(false);
+  }
+  async function revert(){
+    if(!window.confirm('Delete the custom chart for '+lic.name+' and go back to the built-in chart?')) return;
+    setSaving(true);setMsg('');
+    try{await db.remove('pf_settings',rowId);setExisting(false);setChart(null);setMsg('\u2713 Custom chart deleted.');}
+    catch(e){setMsg('\u274C '+String(e.message||e).slice(0,200));}
+    setSaving(false);
+  }
+  const fld=(label,value,onChange,ph)=>el('div',{style:{marginBottom:8}},
+    el('label',{style:SET_LBL},label),
+    el('input',{style:SET_INP,value:value||'',placeholder:ph||'',onChange:ev=>onChange(ev.target.value)}));
+  const btn=(label,onClick,style)=>el('button',{type:'button',className:'btn b-ghost btn-sm',onClick,style:{padding:'4px 9px',...(style||{})}},label);
+  const posEditor=(arr,i,color,onChange)=>{
+    const p=arr[i];
+    return el('div',{key:p.id||i,style:{border:'1px solid var(--border)',borderLeft:'3px solid '+color,borderRadius:8,padding:'10px 12px',marginBottom:8,background:'var(--bg)'}},
+      el('div',{style:{display:'flex',gap:6,justifyContent:'flex-end',marginBottom:6}},
+        btn('\u25B2',()=>mut(n=>{move(onChange(n),i,-1);})),
+        btn('\u25BC',()=>mut(n=>{move(onChange(n),i,1);})),
+        btn('\u2715 Remove',()=>mut(n=>{onChange(n).splice(i,1);}),{color:'var(--red)'}),
+      ),
+      el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
+        fld('Job title',p.title,v=>mut(n=>{onChange(n)[i].title=v;}),'e.g. Production Manager'),
+        fld('Person (blank = open position)',p.name,v=>mut(n=>{onChange(n)[i].name=v;}),'Full name'),
+      ),
+      el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
+        fld('Note under the name',p.note,v=>mut(n=>{onChange(n)[i].note=v;}),'Responsibilities, citations\u2026'),
+        fld('Badges (comma separated)',Array.isArray(p.badges)?p.badges.join(', '):p.badges,v=>mut(n=>{onChange(n)[i].badges=v;}),'e.g. DCR Designated'),
+      ),
+      el('div',null,
+        el('label',{style:SET_LBL},'Show as'),
+        el('select',{style:SET_INP,value:p.kind||'person',onChange:ev=>mut(n=>{onChange(n)[i].kind=ev.target.value;})},
+          el('option',{value:'person'},'Position card'),
+          el('option',{value:'group'},'Group label (e.g. Team Members)')),
+      ),
+    );
+  };
+  if(loading) return el('div',{className:'empty'},el('div',{className:'etxt'},'Loading\u2026'));
+  const note=msg?el('div',{style:{padding:'9px 12px',borderRadius:8,marginBottom:12,fontSize:12,background:msg.startsWith('\u2713')?'rgba(16,185,129,.1)':'rgba(239,68,68,.08)',color:msg.startsWith('\u2713')?'#059669':'var(--red)'}},msg):null;
+  if(!chart){
+    return el('div',null,note,
+      el('div',{style:SET_CARD},
+        el('div',{style:{fontSize:14,fontWeight:800,marginBottom:6}},'Org Chart \u2014 '+lic.name),
+        el('div',{style:{fontSize:12,color:'var(--text2)',lineHeight:1.6,marginBottom:12}},'This license is showing the built-in chart on the License Chart page. Start a chart here to edit people, positions and branches yourself \u2014 nothing changes on the License Chart page until you save.'),
+        el('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
+          lic.license_number==='MAN000109'&&el('button',{className:'btn btn-primary',onClick:()=>setChart(clone(MO_ORG_SEED))},'Start from the current chart'),
+          el('button',{className:lic.license_number==='MAN000109'?'btn b-ghost':'btn btn-primary',onClick:()=>setChart(clone(BLANK_ORG_SEED))},'Start from a blank template'),
+        ),
+      ),
+    );
+  }
+  return el('div',null,note,
+    el('div',{style:{...SET_CARD,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',position:'sticky',top:0,zIndex:5}},
+      el('div',{style:{fontSize:13,fontWeight:800,flex:1}},'Editing: '+lic.name+' \u00B7 '+lic.license_number+(existing?'':'  (not saved yet)')),
+      el('button',{className:'btn b-ghost btn-sm',onClick:()=>setPreview(p=>!p)},preview?'Hide preview':'Show preview'),
+      existing&&el('button',{className:'btn b-ghost btn-sm',onClick:revert,disabled:saving,style:{color:'var(--red)'}},'Delete custom chart'),
+      el('button',{className:'btn btn-primary btn-sm',onClick:save,disabled:saving},saving?'Saving\u2026':'Save'),
+    ),
+    // Leadership
+    el('div',{style:SET_CARD},
+      el('div',{style:{fontSize:13,fontWeight:800,marginBottom:2}},'Leadership (top of the chart)'),
+      el('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:10}},'Stacked from the top down \u2014 e.g. General Manager, then Assistant General Manager.'),
+      chart.leadership.map((p,i)=>posEditor(chart.leadership,i,p.color||'#7c3aed',n=>n.leadership)),
+      btn('+ Add leadership position',()=>mut(n=>{n.leadership.push({id:orgUid(),title:'',name:'',note:'',badges:'',color:'#7c3aed',kind:'person'});})),
+    ),
+    // Branches
+    chart.branches.map((b,bi)=>el('div',{key:b.id||bi,style:{...SET_CARD,borderTop:'3px solid '+b.color}},
+      el('div',{style:{display:'flex',gap:8,alignItems:'flex-end',marginBottom:10,flexWrap:'wrap'}},
+        el('div',{style:{flex:'1 1 200px'}},fld('Branch / department name',b.label,v=>mut(n=>{n.branches[bi].label=v;}),'e.g. Production')),
+        el('div',{style:{width:140}},
+          el('label',{style:SET_LBL},'Color'),
+          el('select',{style:SET_INP,value:b.color,onChange:ev=>mut(n=>{n.branches[bi].color=ev.target.value;})},
+            ORG_COLORS.map(o=>el('option',{key:o.c,value:o.c},o.n)))),
+        el('div',{style:{display:'flex',gap:6,marginBottom:8}},
+          btn('\u25B2',()=>mut(n=>{move(n.branches,bi,-1);})),
+          btn('\u25BC',()=>mut(n=>{move(n.branches,bi,1);})),
+          btn('\u2715 Remove branch',()=>{if(window.confirm('Remove the "'+(b.label||'this')+'" branch and its positions?'))mut(n=>{n.branches.splice(bi,1);});},{color:'var(--red)'})),
+      ),
+      b.positions.map((p,pi)=>posEditor(b.positions,pi,b.color,n=>n.branches[bi].positions)),
+      btn('+ Add position',()=>mut(n=>{n.branches[bi].positions.push({id:orgUid(),title:'',name:'',note:'',badges:'',kind:'person'});})),
+    )),
+    el('div',{style:{marginBottom:12}},btn('+ Add branch / department',()=>mut(n=>{n.branches.push({id:orgUid(),label:'',color:'#475569',positions:[]});}))),
+    // Citations
+    el('div',{style:SET_CARD},
+      el('div',{style:{fontSize:13,fontWeight:800,marginBottom:2}},'Regulatory citations (optional)'),
+      el('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:8}},'One per line. Text before the first colon is shown in bold.'),
+      el('textarea',{style:{...SET_INP,minHeight:90,resize:'vertical'},value:chart.citations||'',onChange:ev=>mut(n=>{n.citations=ev.target.value;})}),
+    ),
+    preview&&el('div',{style:{...SET_CARD,padding:'16px 8px'}},el(OrgChartView,{chart,lic})),
+  );
+}
+
+function SetPlanned({title,intro,items}){
+  return el('div',null,
+    el('div',{style:SET_CARD},
+      el('div',{style:{fontSize:14,fontWeight:800,marginBottom:4}},title),
+      el('div',{style:{fontSize:12,color:'var(--text2)',lineHeight:1.6,marginBottom:10}},intro),
+      el('div',{style:{fontSize:10,fontWeight:800,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.6px',marginBottom:6}},'Pieces that will move here next'),
+      items.map((t,i)=>el('div',{key:i,style:{display:'flex',gap:8,alignItems:'baseline',padding:'5px 0',borderTop:i>0?'1px solid var(--border)':'none',fontSize:12}},
+        el('span',{style:{color:'var(--text3)'}},'\u25CB'),el('span',null,t))),
+    ),
+  );
+}
+
+function LicenseAdminsPanel({users,setUsers}){
+  const[selId,setSelId]=useState('');
+  const[picked,setPicked]=useState([]);
+  const[msg,setMsg]=useState('');
+  const[saving,setSaving]=useState(false);
+  const candidates=(users||[]).filter(u=>u.approved&&u.role!=='admin').sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  const current=(users||[]).filter(u=>u.role!=='admin'&&Array.isArray(u.admin_licenses)&&u.admin_licenses.length>0);
+  function choose(id){
+    setSelId(id);setMsg('');
+    const u=(users||[]).find(x=>x.id===id);
+    setPicked(u&&Array.isArray(u.admin_licenses)?[...u.admin_licenses]:[]);
+  }
+  const toggle=(lid)=>setPicked(p=>p.includes(lid)?p.filter(x=>x!==lid):[...p,lid]);
+  async function save(ids){
+    const u=(users||[]).find(x=>x.id===selId);
+    if(!u){setMsg('\u274C Choose a person first.');return;}
+    setSaving(true);setMsg('');
+    try{
+      await db.update('pf_users',u.id,{admin_licenses:ids});
+      setUsers(p=>p.map(x=>x.id===u.id?{...x,admin_licenses:ids}:x));
+      setPicked(ids);
+      setMsg(ids.length?'\u2713 '+u.name+' is now License Admin for '+ids.length+' license'+(ids.length>1?'s':'')+'. They may need to sign out and back in.':'\u2713 '+u.name+' is no longer a License Admin.');
+    }catch(e){setMsg('\u274C '+String(e.message||e).slice(0,200));}
+    setSaving(false);
+  }
+  const licName=(lid)=>{const l=LICENSES.find(x=>x.id===lid);return l?l.name+' ('+l.license_number+')':lid;};
+  return el('div',null,
+    el('div',{style:SET_CARD},
+      el('div',{style:{fontSize:14,fontWeight:800,marginBottom:4}},'\uD83D\uDC51 License Admins'),
+      el('div',{style:{fontSize:12,color:'var(--text2)',lineHeight:1.6}},
+        'You are the main Admin: you control every license and every setting. A License Admin can open Settings only for the licenses you tick below \u2014 nothing else changes about their role or access. Only you can add or remove License Admins.'),
+    ),
+    el('div',{style:SET_CARD},
+      el('div',{style:{fontSize:11,fontWeight:800,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.6px',marginBottom:8}},'Current License Admins'),
+      current.length===0?el('div',{style:{fontSize:12,color:'var(--text3)'}},'None yet.'):
+      current.map(u=>el('div',{key:u.id,style:{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderTop:'1px solid var(--border)',flexWrap:'wrap'}},
+        el('div',{style:{flex:'1 1 180px'}},el('div',{style:{fontSize:13,fontWeight:700}},u.name),el('div',{style:{fontSize:11,color:'var(--text3)'}},u.email)),
+        el('div',{style:{display:'flex',gap:5,flexWrap:'wrap',flex:'2 1 240px'}},u.admin_licenses.map(lid=>el('span',{key:lid,style:{fontSize:10,padding:'2px 8px',borderRadius:10,background:'rgba(124,58,237,.1)',color:'#7c3aed',border:'1px solid rgba(124,58,237,.3)',fontWeight:700}},licName(lid)))),
+        el('button',{className:'btn b-ghost btn-sm',onClick:()=>choose(u.id)},'Edit'),
+      )),
+    ),
+    el('div',{style:SET_CARD},
+      el('div',{style:{fontSize:11,fontWeight:800,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.6px',marginBottom:8}},'Assign / change'),
+      el('label',{style:SET_LBL},'Person'),
+      el('select',{style:{...SET_INP,marginBottom:10},value:selId,onChange:ev=>choose(ev.target.value)},
+        el('option',{value:''},'Choose a team member\u2026'),
+        candidates.map(u=>el('option',{key:u.id,value:u.id},u.name+(u.email?' \u2014 '+u.email:'')))),
+      el('label',{style:SET_LBL},'Is License Admin for'),
+      LICENSES.map(l=>el('label',{key:l.id,style:{display:'flex',alignItems:'center',gap:8,padding:'6px 0',fontSize:13,cursor:'pointer'}},
+        el('input',{type:'checkbox',checked:picked.includes(l.id),onChange:()=>toggle(l.id),disabled:!selId}),
+        el('span',null,l.name+' \u00B7 '+l.license_number))),
+      el('div',{style:{display:'flex',gap:8,marginTop:10,flexWrap:'wrap'}},
+        el('button',{className:'btn btn-primary btn-sm',disabled:!selId||saving,onClick:()=>save(picked)},saving?'Saving\u2026':'Save'),
+        selId&&picked.length>0&&el('button',{className:'btn b-ghost btn-sm',disabled:saving,style:{color:'var(--red)'},onClick:()=>save([])},'Remove License Admin access'),
+      ),
+      msg?el('div',{style:{marginTop:10,fontSize:12,color:msg.startsWith('\u2713')?'#059669':'var(--red)'}},msg):null,
+    ),
+  );
+}
+
+function SettingsModule({cu,licActive,users,setUsers}){
+  const[tab,setTab]=useState('org');
+  const lic=LICENSES.find(l=>l.license_number===licActive)||LICENSES[0];
+  const mainAdmin=cu&&cu.role==='admin';
+  const allowed=isLicenseAdmin(cu,lic.license_number);
+  const tabs=[
+    {id:'org',ico:'\uD83C\uDFE2',label:'Org Chart'},
+    {id:'compliance',ico:'\u2705',label:'Compliance'},
+    {id:'production',ico:'\uD83C\uDFED',label:'Production'},
+    {id:'sales',ico:'\uD83D\uDCBC',label:'Sales'},
+    {id:'general',ico:'\u2699\uFE0F',label:'General'},
+  ];
+  if(mainAdmin) tabs.push({id:'admins',ico:'\uD83D\uDC51',label:'License Admins'});
+  const header=el('div',{className:'ph'},
+    el('div',null,
+      el('div',{className:'pt'},'\u2699\uFE0F Settings'),
+      el('div',{className:'ps'},'Managing: '+lic.name+' \u00B7 '+lic.license_number+' \u2014 switch license in the sidebar to manage another'),
+    ),
+  );
+  if(!allowed){
+    const mine=adminLicenseIds(cu).map(id=>LICENSES.find(l=>l.id===id)).filter(Boolean);
+    return el('div',null,header,
+      el('div',{style:{...SET_CARD,textAlign:'center',padding:'30px 20px'}},
+        el('div',{style:{fontSize:28,marginBottom:8}},'\uD83D\uDD12'),
+        el('div',{style:{fontSize:14,fontWeight:800,marginBottom:6}},'You are not a License Admin for '+lic.name),
+        el('div',{style:{fontSize:12,color:'var(--text2)',lineHeight:1.6}},mine.length?'Your Settings access covers: '+mine.map(l=>l.name+' ('+l.license_number+')').join(', ')+'. Pick one of them in the License selector in the sidebar.':'Ask the main Admin to assign you.')),
+    );
+  }
+  let body;
+  if(tab==='org') body=el(OrgChartEditor,{key:lic.id,lic,cu});
+  else if(tab==='compliance') body=el(SetPlanned,{title:'\u2705 Compliance',intro:'Everything compliance-related for '+lic.name+' will be managed here instead of in the code.',items:[
+    'Compliance frameworks and their clauses (Missouri DCR / 19 CSR 100-1, ISO 9001, cGMP)',
+    'SOP folders, categories and required acknowledgements',
+    'Facility log types and how often each is due (including the weekly Scale Calibration check)',
+    'Regulatory citations shown on the Org Chart and reports',
+    'Training requirements and the Training Matrix',
+  ]});
+  else if(tab==='production') body=el(SetPlanned,{title:'\uD83C\uDFED Production',intro:'Products, ingredients and the rules the batch checks use will be managed here.',items:[
+    'Product lines, SKUs and flavors (Cartridges, Pre-Rolls, Infused Flower, Gummies\u2026)',
+    'Which ingredient fields each SKU shows in the Batch Tracker',
+    'Tolerances and ratios: \u00B110% checks, joint weights (0.65 / 0.7), bag sizes (3.5g / 7g)',
+    'R&D testing and mandatory-testing rules',
+    'Formulations and the Production Planner log fields',
+  ]});
+  else if(tab==='sales') body=el(SetPlanned,{title:'\uD83D\uDCBC Sales',intro:'Sales lists and options for '+lic.name+' will be managed here.',items:[
+    'Brands and product catalog',
+    'Customers / dispensaries',
+    'Sales task types and statuses',
+    'Pricing lists',
+  ]});
+  else if(tab==='general'){
+    const admins=(users||[]).filter(u=>u.role==='admin'||(Array.isArray(u.admin_licenses)&&u.admin_licenses.includes(lic.id)));
+    body=el('div',null,
+      el('div',{style:SET_CARD},
+        el('div',{style:{fontSize:14,fontWeight:800,marginBottom:10}},'\u2699\uFE0F License details'),
+        [['Name',lic.name],['License number',lic.license_number],['License type',lic.license_type],['State',lic.state]].map(([k,v])=>
+          el('div',{key:k,style:{display:'flex',gap:10,padding:'6px 0',borderTop:'1px solid var(--border)',fontSize:13}},
+            el('span',{style:{width:130,color:'var(--text3)',fontWeight:700,fontSize:11,textTransform:'uppercase',letterSpacing:'.4px'}},k),el('span',null,v))),
+      ),
+      el('div',{style:SET_CARD},
+        el('div',{style:{fontSize:13,fontWeight:800,marginBottom:8}},'Who can change these settings'),
+        admins.length===0?el('div',{style:{fontSize:12,color:'var(--text3)'}},'Only the main Admin.'):
+        admins.map(u=>el('div',{key:u.id,style:{display:'flex',gap:8,alignItems:'center',padding:'5px 0',fontSize:13}},
+          el('span',null,u.name),
+          el('span',{style:{fontSize:10,padding:'2px 8px',borderRadius:10,fontWeight:700,background:u.role==='admin'?'rgba(239,68,68,.1)':'rgba(124,58,237,.1)',color:u.role==='admin'?'var(--red)':'#7c3aed'}},u.role==='admin'?'Main Admin':'License Admin'))),
+      ),
+      el(SetPlanned,{title:'More to come',intro:'Other general options will move here as we go.',items:['Departments and locations','Roles and their default module access','Branding and display names']}),
+    );
+  }
+  else body=el(LicenseAdminsPanel,{users,setUsers});
+  return el('div',null,header,
+    el('div',{style:{display:'flex',gap:16,alignItems:'flex-start',flexWrap:'wrap'}},
+      el('div',{style:{flex:'0 0 190px',display:'flex',flexDirection:'column',gap:4}},
+        tabs.map(t=>el('button',{key:t.id,className:'btn '+(tab===t.id?'btn-primary':'b-ghost'),style:{justifyContent:'flex-start',textAlign:'left',width:'100%'},onClick:()=>setTab(t.id)},el('span',{style:{marginRight:8}},t.ico),t.label))),
+      el('div',{style:{flex:'1 1 420px',minWidth:0}},body),
+    ),
+  );
+}
+
+function LicenseChartBuiltIn({licActive}){
   // The 4 new licenses are brand-new accounts with no staff assigned yet \u2014
   // show a blank TBD chart for them instead of Missouri's real org chart.
   // Falls through to the existing detailed MAN000109 chart below when
@@ -14014,7 +14467,7 @@ function App(){
   useEffect(()=>{
     if(!cu) return;
     if(cu.role==='admin') return; // admin keeps whichever they last picked
-    const mine=(cu.licenses||[]).map(id=>LICENSES.find(l=>l.id===id)).filter(Boolean);
+    const mine=userLicenseIds(cu).map(id=>LICENSES.find(l=>l.id===id)).filter(Boolean);
     if(mine.length>0) setLicActive(mine[0].license_number);
   },[cu]);
 
@@ -14158,6 +14611,7 @@ function App(){
     {id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
     {id:'board',ico:'\u2B1B',label:'Task Board'},
     (restricted==='lead'||restricted==='pm')&&{id:'batch',ico:'\uD83E\uDDEA',label:'Batch Tracker'},
+    canSeeSettings(cu)&&{id:'settings',ico:'\u2699\uFE0F',label:'Settings'},
   ].filter(Boolean);
 
   // Full-access sidebar: same exact items, same exact ids/access-gates/
@@ -14173,6 +14627,7 @@ function App(){
     {id:'mydocs',ico:'\uD83D\uDCC1',label:'My Documents'},
     canAccessSales&&{id:'sales',ico:'\uD83C\uDFEA',label:'Sales & Marketing'},
     isAdmin&&{id:'team',ico:'\uD83D\uDC65',label:'Team & Access',badge:pending||null},
+    canSeeSettings(cu)&&{id:'settings',ico:'\u2699\uFE0F',label:'Settings'},
   ].filter(Boolean);
   const navProduction=[
     canAccessPlanner&&{id:'planner',ico:'\uD83C\uDFED',label:'Production Planner'},
@@ -14207,7 +14662,7 @@ function App(){
       el(BFMlogo,{size:28,labelSize:18,className:'sb-logo',textColor:'#ffffff'}),
       el('div',{style:{marginBottom:16}},
         el('div',{className:'sb-label',style:{marginBottom:8}},'License'),
-        (cu.role==='admin'?LICENSES:LICENSES.filter(l=>(cu.licenses||[]).includes(l.id))).map(l=>
+        (cu.role==='admin'?LICENSES:LICENSES.filter(l=>userLicenseIds(cu).includes(l.id))).map(l=>
           el('button',{key:l.license_number,className:`nav${licActive===l.license_number?' on':''}`,onClick:()=>setLicActive(l.license_number),title:l.name},
             el('span',null,'\uD83C\uDFF7\uFE0F'),l.license_number
           )
@@ -14457,6 +14912,7 @@ function App(){
       }),
       page==='mydocs'&&el(MyDocuments,{cu,corrective:qmsCorrective,setCorrective:setQmsCorrective}),
       page==='team'&&isAdmin&&el(Team,{users,setUsers,cu}),
+      page==='settings'&&canSeeSettings(cu)&&el(SettingsModule,{cu,licActive,users,setUsers}),
     )
   );
 }
