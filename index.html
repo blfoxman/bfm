@@ -11274,8 +11274,9 @@ function OrgChartEditor({lic,cu}){
   const[msg,setMsg]=useState('');
   const[saving,setSaving]=useState(false);
   const[preview,setPreview]=useState(false);
+  const[dirty,setDirty]=useState(false);
   useEffect(()=>{
-    let dead=false;setLoading(true);setMsg('');setChart(null);setExisting(false);
+    let dead=false;setLoading(true);setMsg('');setChart(null);setExisting(false);setDirty(false);
     db.get('pf_settings','id=eq.'+encodeURIComponent(rowId)+'&select=*').then(rows=>{
       if(dead) return;
       const r=Array.isArray(rows)&&rows[0];
@@ -11290,7 +11291,7 @@ function OrgChartEditor({lic,cu}){
     return()=>{dead=true;};
   },[rowId]);
   const clone=o=>JSON.parse(JSON.stringify(o));
-  const mut=(fn)=>setChart(prev=>{const n=clone(prev);fn(n);return n;});
+  const mut=(fn)=>{setDirty(true);setChart(prev=>{const n=clone(prev);fn(n);return n;});};
   const move=(arr,i,d)=>{const j=i+d;if(j<0||j>=arr.length)return;const t=arr[i];arr[i]=arr[j];arr[j]=t;};
   async function save(){
     setSaving(true);setMsg('');
@@ -11299,7 +11300,7 @@ function OrgChartEditor({lic,cu}){
       const stamp={updated_by:cu.name,updated_at:new Date().toISOString()};
       if(existing) await db.update('pf_settings',rowId,{value,...stamp});
       else{await db.insert('pf_settings',{id:rowId,license_id:lic.id,section:'org_chart',value,...stamp});setExisting(true);}
-      setMsg('\u2713 Saved \u2014 the License Chart page now shows this chart.');
+      setDirty(false);setMsg('\u2713 Saved \u2014 the License Chart page now shows this chart.');
     }catch(e){setMsg('\u274C '+String(e.message||e).slice(0,200));}
     setSaving(false);
   }
@@ -11347,17 +11348,17 @@ function OrgChartEditor({lic,cu}){
         el('div',{style:{fontSize:12,color:'var(--text2)',lineHeight:1.6,marginBottom:12}},'This license is showing the built-in chart on the License Chart page. Start a chart here to edit people, positions and branches yourself \u2014 nothing changes on the License Chart page until you save.'),
         el('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
           lic.license_number==='MAN000109'&&el('button',{className:'btn btn-primary',onClick:()=>setChart(clone(MO_ORG_SEED))},'Start from the current chart'),
-          el('button',{className:lic.license_number==='MAN000109'?'btn b-ghost':'btn btn-primary',onClick:()=>setChart(clone(BLANK_ORG_SEED))},'Start from a blank template'),
+          el('button',{className:lic.license_number==='MAN000109'?'btn b-ghost':'btn btn-primary',onClick:()=>{setDirty(true);setChart(clone(BLANK_ORG_SEED));}},'Start from a blank template'),
         ),
       ),
     );
   }
   return el('div',null,note,
     el('div',{style:{...SET_CARD,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',position:'sticky',top:0,zIndex:5}},
-      el('div',{style:{fontSize:13,fontWeight:800,flex:1}},'Editing: '+lic.name+' \u00B7 '+lic.license_number+(existing?'':'  (not saved yet)')),
+      el('div',{style:{fontSize:13,fontWeight:800,flex:1}},'Editing: '+lic.name+' \u00B7 '+lic.license_number+(existing?'':'  (not saved yet)')+(dirty?'  \u2022 unsaved changes':'')),
       el('button',{className:'btn b-ghost btn-sm',onClick:()=>setPreview(p=>!p)},preview?'Hide preview':'Show preview'),
       existing&&el('button',{className:'btn b-ghost btn-sm',onClick:revert,disabled:saving,style:{color:'var(--red)'}},'Delete custom chart'),
-      el('button',{className:'btn btn-primary btn-sm',onClick:save,disabled:saving},saving?'Saving\u2026':'Save'),
+      el('button',{className:'btn b-blue btn-sm',onClick:save,disabled:saving},saving?'Saving\u2026':'\uD83D\uDCBE Save chart'),
     ),
     // Leadership
     el('div',{style:SET_CARD},
@@ -11389,6 +11390,10 @@ function OrgChartEditor({lic,cu}){
       el('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:8}},'One per line. Text before the first colon is shown in bold.'),
       el('textarea',{style:{...SET_INP,minHeight:90,resize:'vertical'},value:chart.citations||'',onChange:ev=>mut(n=>{n.citations=ev.target.value;})}),
     ),
+    el('div',{style:{...SET_CARD,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}},
+      el('button',{className:'btn b-blue',onClick:save,disabled:saving},saving?'Saving\u2026':'\uD83D\uDCBE Save chart'),
+      dirty&&el('span',{style:{fontSize:12,color:'var(--amber,#d97706)',fontWeight:700}},'Unsaved changes'),
+      msg&&el('span',{style:{fontSize:12,fontWeight:600}},msg)),
     preview&&el('div',{style:{...SET_CARD,padding:'16px 8px'}},el(OrgChartView,{chart,lic})),
   );
 }
