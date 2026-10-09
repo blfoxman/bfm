@@ -4018,30 +4018,78 @@ function previewSafe(v){
 // Turns a plain list of names into an array of checkbox field definitions
 // (used for the Sanitation Log's Daily/Weekly/Monthly area & equipment checklists).
 function checklistFields(prefix,names){return names.map(n=>({key:prefix+'_'+slug(n),label:n,type:'checkbox'}));}
-const LOG_TYPES={
-  sanitation:{id:'sanitation',label:'Sanitation Log',icon:'\uD83E\uDDF9',color:'#065f46',bg:'#f0fdf4',table:'pf_log_sanitation',dcr:'cGMP / 21 CFR 117 / Missouri DCR',freq:'Daily / Weekly / Monthly',fields:[
+const SANITATION_SECTIONS=[
+  {key:'areas',prefix:'area',sec:'_s_daily',head:'DAILY: AREAS CLEANED',title:'Daily: Areas Cleaned',hint:'Rooms and areas cleaned every day',ph:'e.g. Production Floor'},
+  {key:'equip_san',prefix:'equip_san',sec:'_s_daily_san',head:'DAILY: FACILITY EQUIPMENT SANITIZED',title:'Daily: Facility Equipment Sanitized',hint:'Items sanitized every day',ph:'e.g. Mop Sink'},
+  {key:'equip_clean',prefix:'equip_clean',sec:'_s_daily_clean',head:'DAILY: EQUIPMENT CLEANED',title:'Daily: Equipment Cleaned',hint:'Equipment cleaned every day',ph:'e.g. Towels'},
+  {key:'weekly',prefix:'weekly',sec:'_s_weekly',head:'WEEKLY: AREAS CLEANED',title:'Weekly: Areas Cleaned',hint:'Areas cleaned once a week',ph:'e.g. Warehouse'},
+  {key:'monthly',prefix:'monthly',sec:'_s_monthly',head:'MONTHLY: AREAS CLEANED',title:'Monthly: Areas Cleaned',hint:'Areas cleaned once a month',ph:'e.g. BHO Extraction'},
+];
+const SANITATION_DEFAULT_LISTS={
+  areas:['Main Entrance','Floor Managers Office','Testing Area','Waste Area',"Men's Restroom","Men's Locker Room","Women's Restroom","Women's Locker Room",'Emergency Exit','Managers Restroom','Managers Offices','Sales Offices','Upstairs Storage Room 1','Upstairs Storage Room 2','Production Floor','Distribution','Biomass','Security Room'],
+  equip_san:['Mops','Sink','Tables','Mop Sink','Toilet Bowls','Hand Wash Sink'],
+  equip_clean:['Scrubs','Towels'],
+  weekly:['Warehouse','Security Room','Shipping & Receiving'],
+  monthly:['Emergency Exit','Ethanol Extraction','BHO Extraction'],
+};
+function sanitationFieldList(lists){
+  const L={...SANITATION_DEFAULT_LISTS,...(lists||{})};
+  const head=[
     {key:'date',label:'Date *',type:'date'},{key:'time',label:'Time Completed',type:'time'},
     {key:'shift',label:'Shift',type:'select',options:['Day','Evening','Night']},
     {key:'cleaned_by',label:'Cleaned By *',type:'text',placeholder:'Employee name'},
     {key:'sanitizer_used',label:'Sanitizer / Chemical Used',type:'text',placeholder:'e.g. Sanidate 5.0, 70% IPA'},
     {key:'concentration',label:'Concentration / Dilution',type:'text',placeholder:'e.g. 1:64 dilution'},
-    {key:'_s_daily',label:'--- DAILY: AREAS CLEANED ---',type:'section'},
-    ...checklistFields('area',[
-      'Main Entrance','Floor Managers Office','Testing Area','Waste Area',
-      "Men's Restroom","Men's Locker Room","Women's Restroom","Women's Locker Room",'Emergency Exit',
-      'Managers Restroom','Managers Offices','Sales Offices','Upstairs Storage Room 1','Upstairs Storage Room 2',
-      'Production Floor','Distribution','Biomass','Security Room',
-    ]),
-    {key:'_s_daily_san',label:'--- DAILY: FACILITY EQUIPMENT SANITIZED ---',type:'section'},
-    ...checklistFields('equip_san',['Mops','Sink','Tables','Mop Sink','Toilet Bowls','Hand Wash Sink']),
-    {key:'_s_daily_clean',label:'--- DAILY: EQUIPMENT CLEANED ---',type:'section'},
-    ...checklistFields('equip_clean',['Scrubs','Towels']),
-    {key:'_s_weekly',label:'--- WEEKLY: AREAS CLEANED ---',type:'section'},
-    ...checklistFields('weekly',['Warehouse','Security Room','Shipping & Receiving']),
-    {key:'_s_monthly',label:'--- MONTHLY: AREAS CLEANED ---',type:'section'},
-    ...checklistFields('monthly',['Emergency Exit','Ethanol Extraction','BHO Extraction']),
-    {key:'_s_notes',label:'--- NOTES ---',type:'section'},
-    {key:'notes',label:'Additional Notes',type:'textarea',placeholder:'Any observations, issues found, or comments'},
+  ];
+  let out=head;
+  SANITATION_SECTIONS.forEach(sc=>{
+    const names=(Array.isArray(L[sc.key])?L[sc.key]:[]).map(x=>String(x).trim()).filter(Boolean);
+    out=out.concat([{key:sc.sec,label:'--- '+sc.head+' ---',type:'section'}],checklistFields(sc.prefix,names));
+  });
+  return out.concat([{key:'_s_notes',label:'--- NOTES ---',type:'section'},{key:'notes',label:'Additional Notes',type:'textarea',placeholder:'Any observations, issues found, or comments'}]);
+}
+// Custom checklist items have no table column of their own, so anything outside the
+// original built-in items is stored in one jsonb column (sanitation_extra) and merged back on read.
+const SAN_BASE_KEYS=new Set();
+SANITATION_SECTIONS.forEach(sc=>(SANITATION_DEFAULT_LISTS[sc.key]||[]).forEach(n=>SAN_BASE_KEYS.add(sc.prefix+'_'+slug(n))));
+function sanPack(rec){
+  const out={},extra={};
+  const pre=SANITATION_SECTIONS.map(x=>x.prefix+'_');
+  Object.keys(rec).forEach(k=>{
+    if(pre.some(p=>k.startsWith(p))&&!SAN_BASE_KEYS.has(k)&&k!=='sanitation_extra') extra[k]=rec[k]; else out[k]=rec[k];
+  });
+  out.sanitation_extra=extra;
+  return out;
+}
+function sanUnpack(e){return e&&e.sanitation_extra&&typeof e.sanitation_extra==='object'?{...e,...e.sanitation_extra}:e;}
+const WASTE_SECTIONS=[
+  {key:'categories',field:'category',title:'Categories',note:' \u2014 the Category dropdown',hint:'Product categories being destroyed',ph:'e.g. Concentrate'},
+  {key:'camera_1',field:'camera_1',title:'Camera #1 Name (Angle 1 of Destruction)',note:' \u2014 camera names to pick from',hint:'Camera names',ph:'e.g. Waste 1'},
+  {key:'camera_2',field:'camera_2',title:'Camera #2 Name (Angle 2 of Destruction)',note:' \u2014 camera names to pick from',hint:'Camera names',ph:'e.g. Waste 2'},
+  {key:'rendering_location',field:'rendering_location',title:'Location of Rendering',note:' \u2014 places to pick from',hint:'Rendering locations',ph:'e.g. Waste Area'},
+  {key:'methods',field:'method_used',title:'Method Used',note:' \u2014 write each full method; they become the dropdown',hint:'Destruction methods',ph:'e.g. Blended 51% Woodchips 49% Cannabis by Volume'},
+];
+const WASTE_DEFAULT_LISTS={
+  categories:['Concentrate','Flower','Vape Cartridges','Edibles','Infused Pre-Rolls'],
+  camera_1:['Waste 1'],camera_2:['Waste 2'],rendering_location:['Waste Area'],
+  methods:['Blended 51% Woodchips 49% Cannabis by Volume','Soaked in 51% Ethanol 49% Cannabis by Volume','Melted Down and Blended 51% Cat Litter or Woodchips 49% Cannabis by Volume'],
+};
+let WASTE_BASE_FIELDS=null;
+function applyWasteLists(lists){
+  if(!WASTE_BASE_FIELDS) WASTE_BASE_FIELDS=LOG_TYPES.waste.fields;
+  const L={...WASTE_DEFAULT_LISTS,...(lists||{})};
+  LOG_TYPES.waste.fields=WASTE_BASE_FIELDS.map(f=>{
+    const sc=WASTE_SECTIONS.find(x=>x.field===f.key);
+    if(!sc) return f;
+    const opts=(Array.isArray(L[sc.key])?L[sc.key]:[]).map(x=>String(x).trim()).filter(Boolean);
+    const g={...f};delete g.defaultValue;delete g.placeholder;
+    return opts.length?{...g,type:'select',options:opts}:{...g,type:'text'};
+  });
+}
+function applySanitationLists(lists){ LOG_TYPES.sanitation.fields=sanitationFieldList(lists); }
+const LOG_TYPES={
+  sanitation:{id:'sanitation',label:'Sanitation Log',icon:'\uD83E\uDDF9',color:'#065f46',bg:'#f0fdf4',table:'pf_log_sanitation',dcr:'cGMP / 21 CFR 117 / Missouri DCR',freq:'Daily / Weekly / Monthly',fields:[
+    // replaced at load by sanitationFieldList() — see Settings > General
   ]},
   waste:{id:'waste',label:'Waste Destruction Log',icon:'\uD83D\uDDD1\uFE0F',color:'#7c2d12',bg:'#fff7ed',table:'pf_log_waste',dcr:'Missouri DCR / METRC Required',freq:'Every destruction event',fields:[
     {key:'date',label:'Date of Waste Generation *',type:'date'},
@@ -4923,11 +4971,11 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
         if(requiresEditNote){
           update.edit_history=[...(editData.edit_history||[]),{by:cu.name,at:update.updated_at,note:editNote.trim()}];
         }
-        await db.update(lt.table,editData.id,update);
+        await db.update(lt.table,editData.id,logType==='sanitation'?sanPack(update):update);
         onSave({...editData,...update});
       } else {
         const rec={...form,id:'log-'+Date.now(),log_type:logType,license_number:licActive||null,signature_image:sig||null,attachments:attachments.map(a=>({id:a.id,name:a.name,type:a.type,size:a.size,data:a.data})),submitted_by:cu.name,submitted_by_id:cu.id,created_at:new Date().toISOString()};
-        await db.insert(lt.table,rec);
+        await db.insert(lt.table,logType==='sanitation'?sanPack(rec):rec);
         onSave(rec);
       }
     }catch(e){alert('Save failed: '+e.message);}
@@ -5295,7 +5343,7 @@ function LogEntryForm({logType,cu,onSave,onClose,SUPA_URL,SUPA_KEY,H,editData,lo
     }
     return el('div',{key:f.key,className:'fg'},
     el('label',null,f.label),
-    f.type==='select'?el('select',{value:form[f.key]||f.options[0],onChange:ev=>setF(f.key,ev.target.value),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13}},f.options.map(o=>el('option',{key:o,value:o},o)))
+    f.type==='select'?el('select',{value:form[f.key]||f.options[0],onChange:ev=>setF(f.key,ev.target.value),style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13}},(form[f.key]&&!f.options.includes(form[f.key])?[form[f.key]].concat(f.options):f.options).map(o=>el('option',{key:o,value:o},o)))
     :f.type==='textarea'?el('textarea',{value:form[f.key]||'',onChange:ev=>setF(f.key,ev.target.value),placeholder:f.placeholder||'',rows:2,style:{width:'100%',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'9px 13px',color:'var(--text)',fontFamily:'inherit',fontSize:13,resize:'vertical',boxSizing:'border-box'}})
     :f.prefix?el('div',{style:{display:'flex',alignItems:'center',gap:0}},
       el('span',{style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRight:'none',borderRadius:'var(--rs) 0 0 var(--rs)',padding:'9px 10px',color:'var(--text3)',fontFamily:'monospace',fontSize:12,whiteSpace:'nowrap',flexShrink:0}},f.prefix),
@@ -5578,7 +5626,7 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive}){
     if(licActive)url+=`&license_number=eq.${encodeURIComponent(licActive)}`;
     if(dateFrom)url+=`&created_at=gte.${dateFrom}`;
     if(dateTo)url+=`&created_at=lte.${dateTo}T23:59:59`;
-    fetch(url,{headers:H.headers}).then(r=>r.ok?r.json():[]).then(rows=>{setEntries(Array.isArray(rows)?rows:[]);setLoading(false);}).catch(()=>setLoading(false));
+    fetch(url,{headers:H.headers}).then(r=>r.ok?r.json():[]).then(rows=>{setEntries(Array.isArray(rows)?(activeLog==='sanitation'?rows.map(sanUnpack):rows):[]);setLoading(false);}).catch(()=>setLoading(false));
   },[activeLog,dateFrom,dateTo,licActive]);
   const lt=activeLog?LOG_TYPES[activeLog]:null;
   const filtered=entries.filter(e=>!search||(JSON.stringify(e).toLowerCase().includes(search.toLowerCase())));
@@ -11515,6 +11563,81 @@ function OrgChartEditor({lic,cu}){
   );
 }
 
+function FacilityListsEditor({lic,cu,section,heading,sections,defaults,apply,afterNote}){
+  const rowId=lic.id+':'+section;
+  const[loading,setLoading]=useState(true);
+  const[existing,setExisting]=useState(false);
+  const[lists,setLists]=useState(null);
+  const[msg,setMsg]=useState('');
+  const[saving,setSaving]=useState(false);
+  const[dirty,setDirty]=useState(false);
+  const[adds,setAdds]=useState({});
+  useEffect(()=>{
+    let dead=false;setLoading(true);setMsg('');setDirty(false);
+    db.get('pf_settings','id=eq.'+encodeURIComponent(rowId)+'&select=*').then(rows=>{
+      if(dead) return;
+      const r=Array.isArray(rows)&&rows[0];
+      setExisting(!!r);
+      setLists({...JSON.parse(JSON.stringify(defaults)),...((r&&r.value)||{})});
+      setLoading(false);
+    }).catch(e=>{
+      if(dead) return;
+      setMsg('Settings storage is not set up yet — run add_settings_and_license_admin.sql in Supabase first. ('+String(e.message||e).slice(0,80)+')');
+      setLists(JSON.parse(JSON.stringify(defaults)));
+      setLoading(false);
+    });
+    return()=>{dead=true;};
+  },[rowId]);
+  const mut=fn=>{setDirty(true);setLists(p=>{const n=JSON.parse(JSON.stringify(p));fn(n);return n;});};
+  async function save(){
+    setSaving(true);setMsg('');
+    try{
+      const value={};sections.forEach(sc=>{value[sc.key]=(lists[sc.key]||[]).map(x=>String(x).trim()).filter(Boolean);});
+      const stamp={updated_by:cu.name,updated_at:new Date().toISOString()};
+      if(existing) await db.update('pf_settings',rowId,{value,...stamp});
+      else{await db.insert('pf_settings',{id:rowId,license_id:lic.id,section,value,...stamp});setExisting(true);}
+      apply(value);setDirty(false);
+      setMsg('✓ Saved — the Sanitation Log for '+lic.name+' now uses these lists.');
+    }catch(e){setMsg('❌ '+String(e.message||e).slice(0,200));}
+    setSaving(false);
+  }
+  function resetDefaults(){
+    if(!window.confirm('Put the original lists back for '+lic.name+'? (Click Save afterwards to keep it.)')) return;
+    setDirty(true);setLists(JSON.parse(JSON.stringify(defaults)));
+  }
+  if(loading||!lists) return el('div',{style:SET_CARD},'Loading…');
+  const saveBtn=el('button',{className:'btn b-blue',onClick:save,disabled:saving},saving?'Saving…':'💾 Save lists');
+  return el('div',null,
+    el('div',{style:{...SET_CARD,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',position:'sticky',top:0,zIndex:5}},
+      el('div',{style:{fontSize:13,fontWeight:800,flex:1}},'🧹 Sanitation Log items · '+lic.name+(dirty?'  • unsaved changes':'')),
+      el('button',{className:'btn b-ghost btn-sm',onClick:resetDefaults},'Reset to original'),
+      el('button',{className:'btn b-blue btn-sm',onClick:save,disabled:saving},saving?'Saving…':'💾 Save lists')),
+    msg&&el('div',{style:{...SET_CARD,fontSize:12,fontWeight:600}},msg),
+    sections.map(sc=>el('div',{key:sc.key,style:SET_CARD},
+      el('div',{style:{fontSize:13,fontWeight:800}},sc.title),
+      el('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:8}},sc.hint+' — these are the checkboxes people tick on the Sanitation Log.'),
+      (lists[sc.key]||[]).map((name,i)=>el('div',{key:sc.key+i,style:{display:'flex',gap:6,marginBottom:5,alignItems:'center'}},
+        el('input',{style:{...SET_INP,flex:1},value:name,onChange:ev=>mut(n=>{n[sc.key][i]=ev.target.value;})}),
+        el('button',{className:'btn b-ghost btn-sm',disabled:i===0,onClick:()=>mut(n=>{const a=n[sc.key];const t=a[i];a[i]=a[i-1];a[i-1]=t;})},'▲'),
+        el('button',{className:'btn b-ghost btn-sm',disabled:i===(lists[sc.key]||[]).length-1,onClick:()=>mut(n=>{const a=n[sc.key];const t=a[i];a[i]=a[i+1];a[i+1]=t;})},'▼'),
+        el('button',{className:'btn b-ghost btn-sm',style:{color:'var(--red)'},onClick:()=>mut(n=>{n[sc.key].splice(i,1);})},'✕'))),
+      el('div',{style:{display:'flex',gap:6,marginTop:8}},
+        el('input',{style:{...SET_INP,flex:1},placeholder:sc.ph,value:adds[sc.key]||'',
+          onChange:ev=>setAdds(p=>({...p,[sc.key]:ev.target.value})),
+          onKeyDown:ev=>{if(ev.key==='Enter'&&(adds[sc.key]||'').trim()){mut(n=>{n[sc.key].push(adds[sc.key].trim());});setAdds(p=>({...p,[sc.key]:''}));}}}),
+        el('button',{className:'btn b-blue btn-sm',disabled:!(adds[sc.key]||'').trim(),onClick:()=>{mut(n=>{n[sc.key].push(adds[sc.key].trim());});setAdds(p=>({...p,[sc.key]:''}));}},'+ Add')))),
+    el('div',{style:{...SET_CARD,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}},saveBtn,dirty&&el('span',{style:{fontSize:12,fontWeight:700,color:'#d97706'}},'Unsaved changes'),
+      el('span',{style:{fontSize:11,color:'var(--text3)'}},afterNote)),
+  );
+}
+
+function SanitationListsEditor({lic,cu}){
+  return el(FacilityListsEditor,{lic,cu,section:'sanitation_lists',heading:'\uD83E\uDDF9 Sanitation Log items',sections:SANITATION_SECTIONS.map(x=>({...x,note:' \u2014 these are the checkboxes people tick on the Sanitation Log.'})),defaults:SANITATION_DEFAULT_LISTS,apply:applySanitationLists,afterNote:'Old log entries keep what was ticked; renaming an item starts a new checkbox going forward.'});
+}
+function WasteListsEditor({lic,cu}){
+  return el(FacilityListsEditor,{lic,cu,section:'waste_lists',heading:'\uD83D\uDDD1\uFE0F Waste Destruction Log choices',sections:WASTE_SECTIONS,defaults:WASTE_DEFAULT_LISTS,apply:applyWasteLists,afterNote:'Each list becomes the dropdown on the Waste Destruction Log. The first item is pre-selected. Old entries keep what they saved.'});
+}
+
 function SetPlanned({title,intro,items}){
   return el('div',null,
     el('div',{style:SET_CARD},
@@ -11653,6 +11776,9 @@ function SettingsModule({cu,licActive,users,setUsers}){
           el('span',null,u.name),
           el('span',{style:{fontSize:10,padding:'2px 8px',borderRadius:10,fontWeight:700,background:u.role==='admin'?'rgba(239,68,68,.1)':'rgba(124,58,237,.1)',color:u.role==='admin'?'var(--red)':'#7c3aed'}},u.role==='admin'?'Main Admin':'License Admin'))),
       ),
+      el('div',{style:{fontSize:14,fontWeight:800,margin:'18px 0 8px'}},'\uD83D\uDCCB Facility Logs'),
+      el(SanitationListsEditor,{key:lic.id,lic,cu}),
+      el(WasteListsEditor,{key:lic.id+'w',lic,cu}),
       el(SetPlanned,{title:'More to come',intro:'Other general options will move here as we go.',items:['Departments and locations','Roles and their default module access','Branding and display names']}),
     );
   }
@@ -13922,8 +14048,11 @@ function usePullToRefresh(onRefresh){
 // SANITATION KIOSK — Standalone QR page: blfoxman.github.io/bfm/?kiosk=sanitation
 // ══════════════════════════════════════════════════════════════════════════════
 function SanitationKiosk(){
+  const kLic=LICENSES.find(l=>l.id===new URLSearchParams(window.location.search).get('lic'))||LICENSES[0];
+  const[,setKTick]=React.useState(0);
   const fields=LOG_TYPES.sanitation.fields;
   const init=()=>{
+    const fields=LOG_TYPES.sanitation.fields;
     const f={};
     fields.forEach(fl=>{
       if(fl.type==='section') return;
@@ -13936,6 +14065,13 @@ function SanitationKiosk(){
     return f;
   };
   const[form,setForm]=React.useState(init);
+  React.useEffect(()=>{
+    db.get('pf_settings','id=eq.'+encodeURIComponent(kLic.id+':sanitation_lists')+'&select=value').then(rows=>{
+      const r=Array.isArray(rows)&&rows[0];
+      applySanitationLists(r&&r.value?r.value:null);
+      setForm(init());setKTick(t=>t+1);
+    }).catch(()=>{});
+  },[]);
   const[sig,setSig]=React.useState(null);
   const[saving,setSaving]=React.useState(false);
   const[done,setDone]=React.useState(false);
@@ -13946,9 +14082,9 @@ function SanitationKiosk(){
     if(!form.cleaned_by?.trim()){setError('Please enter your name.');return;}
     if(!sig){setError('Please draw your signature.');return;}
     setSaving(true);setError('');
-    const rec={...form,id:'log-'+Date.now(),log_type:'sanitation',signature_image:sig,attachments:[],submitted_by:form.cleaned_by,submitted_by_id:'kiosk',created_at:new Date().toISOString()};
+    const rec={...form,id:'log-'+Date.now(),log_type:'sanitation',license_number:kLic.license_number,signature_image:sig,attachments:[],submitted_by:form.cleaned_by,submitted_by_id:'kiosk',created_at:new Date().toISOString()};
     try{
-      await kioskWrite('pf_log_sanitation','insert',null,rec);
+      await kioskWrite('pf_log_sanitation','insert',null,sanPack(rec));
       setDone(true);
     }catch(e){setError('Error: '+e.message);}
     setSaving(false);
@@ -14520,6 +14656,7 @@ function VisitorKiosk(){
   );
 }
 
+applySanitationLists(null);applyWasteLists(null);
 function App(){
   // Kiosk mode \u2014 no login needed, accessible via QR code
   const urlParams=new URLSearchParams(window.location.search);
@@ -14586,6 +14723,24 @@ function App(){
   // license this person belongs to (their own cu.licenses), or the first
   // license overall for admin / anyone with no licenses assigned yet.
   const[licActive,setLicActive]=useState(()=>LICENSES[0]?.license_number||'');
+  const[,setSanTick]=useState(0);
+  useEffect(()=>{
+    const L=LICENSES.find(l=>l.license_number===licActive);
+    if(!L) return;
+    let dead=false;
+    applySanitationLists(null);applyWasteLists(null);setSanTick(t=>t+1);
+    db.get('pf_settings','id=eq.'+encodeURIComponent(L.id+':sanitation_lists')+'&select=value').then(rows=>{
+      if(dead) return;
+      const r=Array.isArray(rows)&&rows[0];
+      applySanitationLists(r&&r.value?r.value:null);setSanTick(t=>t+1);
+    }).catch(()=>{});
+    db.get('pf_settings','id=eq.'+encodeURIComponent(L.id+':waste_lists')+'&select=value').then(rows=>{
+      if(dead) return;
+      const r=Array.isArray(rows)&&rows[0];
+      applyWasteLists(r&&r.value?r.value:null);setSanTick(t=>t+1);
+    }).catch(()=>{});
+    return()=>{dead=true;};
+  },[licActive]);
   useEffect(()=>{
     if(!cu) return;
     if(cu.role==='admin') return; // admin keeps whichever they last picked
