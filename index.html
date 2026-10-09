@@ -4086,6 +4086,51 @@ function applyWasteLists(lists){
     return opts.length?{...g,type:'select',options:opts}:{...g,type:'text'};
   });
 }
+// Facility logs whose plain dropdowns can be customised in Settings (system-logic dropdowns such as pass/fail are left out)
+const LOG_OPTION_FIELDS={
+  security:[{field:'system_type',title:'System Type',ph:'e.g. CCTV Camera'}],
+  pest:[{field:'type',title:'Type',ph:'e.g. Routine inspection'},{field:'pests_found',title:'Pests Found',ph:'e.g. Rodent evidence'}],
+  equipment:[{field:'maintenance_type',title:'Maintenance Type',ph:'e.g. Routine/Preventive'}],
+  temperature:[{field:'shift',title:'Shift',ph:'e.g. Day'}],
+  visitor:[{field:'purpose',title:'Purpose of Visit',ph:'e.g. Vendor delivery'}],
+  environmental:[{field:'sample_type',title:'Sample Type',ph:'e.g. ATP swab (surface)'}],
+};
+const LOG_OPTION_BASE={};
+function logOptionDefaults(logType){
+  const o={};
+  (LOG_OPTION_FIELDS[logType]||[]).forEach(sc=>{
+    const f=(LOG_OPTION_BASE[logType]||LOG_TYPES[logType].fields).find(x=>x.key===sc.field);
+    o[sc.field]=f&&Array.isArray(f.options)?f.options.slice():[];
+  });
+  return o;
+}
+function logOptionSections(logType){return (LOG_OPTION_FIELDS[logType]||[]).map(sc=>({key:sc.field,title:sc.title,ph:sc.ph,note:' \u2014 the dropdown on the log form'}));}
+function applyLogOptions(logType,lists){
+  if(!LOG_OPTION_BASE[logType]) LOG_OPTION_BASE[logType]=LOG_TYPES[logType].fields;
+  LOG_TYPES[logType].fields=LOG_OPTION_BASE[logType].map(f=>{
+    const sc=(LOG_OPTION_FIELDS[logType]||[]).find(x=>x.field===f.key);
+    const l=sc&&lists&&Array.isArray(lists[f.key])?lists[f.key].map(x=>String(x).trim()).filter(Boolean):null;
+    return l&&l.length?{...f,options:l}:f;
+  });
+}
+const SCALE_SECTIONS=[
+  {key:'locations',title:'Location / Room',ph:'e.g. Production Floor',note:' \u2014 the Location dropdown'},
+  {key:'models',title:'Scale Make / Model',ph:'e.g. OHAUS Ranger',note:' \u2014 makes you add here show Model/Serial/Capacity/NTEP as type-in boxes until their lists are set up'},
+];
+const SCALE_DEFAULT_LISTS={locations:SCALE_LOCATIONS.slice(),models:SCALE_MODELS.slice()};
+function applyScaleLists(lists){
+  const L={...SCALE_DEFAULT_LISTS,...(lists||{})};
+  const clean=a=>(Array.isArray(a)?a:[]).map(x=>String(x).trim()).filter(Boolean);
+  const loc=clean(L.locations),mod=clean(L.models);
+  SCALE_LOCATIONS.splice(0,SCALE_LOCATIONS.length,...(loc.length?loc:SCALE_DEFAULT_LISTS.locations));
+  SCALE_MODELS.splice(0,SCALE_MODELS.length,...(mod.length?mod:SCALE_DEFAULT_LISTS.models));
+}
+function applyAllFacilitySettings(rows,licId){
+  const by={};(rows||[]).forEach(r=>{by[r.id]=r.value;});
+  const g=k=>by[licId+':'+k]||null;
+  applySanitationLists(g('sanitation_lists'));applyWasteLists(g('waste_lists'));applyScaleLists(g('scale_lists'));
+  Object.keys(LOG_OPTION_FIELDS).forEach(t=>applyLogOptions(t,g('logopts:'+t)));
+}
 function applySanitationLists(lists){ LOG_TYPES.sanitation.fields=sanitationFieldList(lists); }
 const LOG_TYPES={
   sanitation:{id:'sanitation',label:'Sanitation Log',icon:'\uD83E\uDDF9',color:'#065f46',bg:'#f0fdf4',table:'pf_log_sanitation',dcr:'cGMP / 21 CFR 117 / Missouri DCR',freq:'Daily / Weekly / Monthly',fields:[
@@ -11631,6 +11676,29 @@ function FacilityListsEditor({lic,cu,section,heading,sections,defaults,apply,aft
   );
 }
 
+function FacilityLogsSettings({lic,cu}){
+  const[open,setOpen]=useState(null);
+  const logs=['sanitation','waste','scale_calibration','security','security_inspection','pest','equipment','temperature','visitor','environmental'];
+  if(!open) return el('div',{style:SET_CARD},
+    el('div',{style:{fontSize:14,fontWeight:800,marginBottom:4}},'\uD83D\uDCCB Facility Logs'),
+    el('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:12}},'Pick a log to customize its lists and dropdowns for '+lic.name+'.'),
+    el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:8}},
+      logs.map(id=>{const lt=LOG_TYPES[id];if(!lt) return null;
+        const custom=id==='sanitation'||id==='waste'||id==='scale_calibration'||(LOG_OPTION_FIELDS[id]||[]).length>0;
+        return el('button',{key:id,className:'btn b-ghost',style:{justifyContent:'flex-start',textAlign:'left',padding:'12px 14px',borderLeft:'4px solid '+lt.color,opacity:custom?1:.65},onClick:()=>setOpen(id)},
+          el('span',{style:{fontSize:18}},lt.icon),el('span',{style:{display:'flex',flexDirection:'column'}},el('span',{style:{fontWeight:700}},lt.label),el('span',{style:{fontSize:10,color:'var(--text3)',fontWeight:500}},custom?'Customize':'Nothing to customize yet')));
+      })));
+  const lt=LOG_TYPES[open];
+  const back=el('button',{className:'btn b-ghost btn-sm',style:{marginBottom:10},onClick:()=>setOpen(null)},'\u2190 All facility logs');
+  let body;
+  if(open==='sanitation') body=el(SanitationListsEditor,{key:lic.id,lic,cu});
+  else if(open==='waste') body=el(WasteListsEditor,{key:lic.id,lic,cu});
+  else if(open==='scale_calibration') body=el(FacilityListsEditor,{key:lic.id,lic,cu,section:'scale_lists',heading:lt.icon+' '+lt.label+' choices',sections:SCALE_SECTIONS,defaults:SCALE_DEFAULT_LISTS,apply:applyScaleLists,afterNote:'The 5 test points, the 0.1 g tolerance and the model number / serial lists are managed separately.'});
+  else if((LOG_OPTION_FIELDS[open]||[]).length) body=el(FacilityListsEditor,{key:lic.id+open,lic,cu,section:'logopts:'+open,heading:lt.icon+' '+lt.label+' dropdowns',sections:logOptionSections(open),defaults:logOptionDefaults(open),apply:v=>applyLogOptions(open,v),afterNote:'Old entries keep what they saved.'});
+  else body=el('div',{style:SET_CARD},el('div',{style:{fontSize:13,fontWeight:800,marginBottom:4}},lt.icon+' '+lt.label),el('div',{style:{fontSize:12,color:'var(--text2)'}},'This log has no customizable lists yet — tell me what you want to change in it.'));
+  return el('div',null,back,body);
+}
+
 function SanitationListsEditor({lic,cu}){
   return el(FacilityListsEditor,{lic,cu,section:'sanitation_lists',heading:'\uD83E\uDDF9 Sanitation Log items',sections:SANITATION_SECTIONS.map(x=>({...x,note:' \u2014 these are the checkboxes people tick on the Sanitation Log.'})),defaults:SANITATION_DEFAULT_LISTS,apply:applySanitationLists,afterNote:'Old log entries keep what was ticked; renaming an item starts a new checkbox going forward.'});
 }
@@ -11776,9 +11844,7 @@ function SettingsModule({cu,licActive,users,setUsers}){
           el('span',null,u.name),
           el('span',{style:{fontSize:10,padding:'2px 8px',borderRadius:10,fontWeight:700,background:u.role==='admin'?'rgba(239,68,68,.1)':'rgba(124,58,237,.1)',color:u.role==='admin'?'var(--red)':'#7c3aed'}},u.role==='admin'?'Main Admin':'License Admin'))),
       ),
-      el('div',{style:{fontSize:14,fontWeight:800,margin:'18px 0 8px'}},'\uD83D\uDCCB Facility Logs'),
-      el(SanitationListsEditor,{key:lic.id,lic,cu}),
-      el(WasteListsEditor,{key:lic.id+'w',lic,cu}),
+            el(FacilityLogsSettings,{key:lic.id,lic,cu}),
       el(SetPlanned,{title:'More to come',intro:'Other general options will move here as we go.',items:['Departments and locations','Roles and their default module access','Branding and display names']}),
     );
   }
@@ -14656,7 +14722,7 @@ function VisitorKiosk(){
   );
 }
 
-applySanitationLists(null);applyWasteLists(null);
+applyAllFacilitySettings([],'');
 function App(){
   // Kiosk mode \u2014 no login needed, accessible via QR code
   const urlParams=new URLSearchParams(window.location.search);
@@ -14728,16 +14794,10 @@ function App(){
     const L=LICENSES.find(l=>l.license_number===licActive);
     if(!L) return;
     let dead=false;
-    applySanitationLists(null);applyWasteLists(null);setSanTick(t=>t+1);
-    db.get('pf_settings','id=eq.'+encodeURIComponent(L.id+':sanitation_lists')+'&select=value').then(rows=>{
+    applyAllFacilitySettings([],'');setSanTick(t=>t+1);
+    db.get('pf_settings','id=like.'+encodeURIComponent(L.id+':*')+'&select=id,value').then(rows=>{
       if(dead) return;
-      const r=Array.isArray(rows)&&rows[0];
-      applySanitationLists(r&&r.value?r.value:null);setSanTick(t=>t+1);
-    }).catch(()=>{});
-    db.get('pf_settings','id=eq.'+encodeURIComponent(L.id+':waste_lists')+'&select=value').then(rows=>{
-      if(dead) return;
-      const r=Array.isArray(rows)&&rows[0];
-      applyWasteLists(r&&r.value?r.value:null);setSanTick(t=>t+1);
+      applyAllFacilitySettings(Array.isArray(rows)?rows:[],L.id);setSanTick(t=>t+1);
     }).catch(()=>{});
     return()=>{dead=true;};
   },[licActive]);
