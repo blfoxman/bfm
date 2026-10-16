@@ -5837,6 +5837,309 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive}){
 // ══════════════════════════════════════════════════════════════════════════════
 // BATCH TRACKER \u2014 dropdown-selected batch type, list + create/edit/PDF, one shared table
 // ══════════════════════════════════════════════════════════════════════════════
+// ── TESTING (lab results & COA) ───────────────────────────────────────────────
+// pf_testing holds one row per batch sample sent to a lab. A batch is submitted
+// from the Batch Tracker; the Testing module tracks status, uploads the COA and
+// has Claude read it (potency, pesticides, microbials, mycotoxins, heavy metals,
+// solvents, terpenes) and compares the COA's METRC tag to the record.
+const TESTING_STATUSES=['Pending','Submitted','Passed','Failed','Retest'];
+const TESTING_STATUS_ICON={Pending:'\u23F3',Submitted:'\uD83D\uDCE4',Passed:'\u2705',Failed:'❌',Retest:'\uD83D\uDD04'};
+const TESTING_STATUS_COLOR={Pending:'#64748b',Submitted:'#4f46e5',Passed:'#16a34a',Failed:'#dc2626',Retest:'#d97706'};
+// Fallback limits used only when a COA does not print its own limit for an analyte.
+// Leave empty unless compliance sets Missouri DHSS limits here, e.g. {heavy_metals:{Lead:0.5}} (ug/g).
+const COA_THRESHOLDS={};
+const CATEGORY_MAP={
+  'CONCENTRATES':['bho','ethanol','distillate','extract','rosin','wax','shatter','live_resin','concentrate'],
+  'FLOWER/TRIM':['flower','trim','indoor','greenhouse','outdoor'],
+  'PRE ROLLS':['pre_roll','preroll','joint','infused_preroll'],
+  'EDIBLES':['edible','gummy','gummies','chocolate','beverage','tincture','capsule'],
+  'BHO/EXTRACT':['bho','butane','hydrocarbon','ethanol','alcohol','rso'],
+};
+function testingCategories(rec){
+  const hay=((rec.batch_type||'')+' '+(rec.sku||'')).toLowerCase().replace(/[^a-z0-9]+/g,'_');
+  return Object.keys(CATEGORY_MAP).filter(c=>CATEGORY_MAP[c].some(k=>hay.includes(k)));
+}
+const TESTING_COLUMNS=['id','batch_id','batch_number','batch_type','sku','flavor','metrc_tag','sample_metrc_tag','lab_name','status','submitted_at','result_at','result_thc','result_cbd','result_notes','coa_url','coa_filename','coa_analysis','notes','submitted_by','loc','license_number','created_at','updated_at'];
+function sanitizeTestingRec(rec){
+  const out={};
+  TESTING_COLUMNS.forEach(k=>{
+    let v=rec[k];
+    if(v===undefined) return;
+    if(k==='coa_analysis'){out[k]=v&&typeof v==='object'?v:null;return;}
+    if(typeof v==='string') v=v.trim();
+    if(v==='' && (k.endsWith('_at'))) v=null;
+    out[k]=v;
+  });
+  return out;
+}
+// Only the FINAL PACKAGE METRC tag goes to mandatory testing (never crude / in-progress / source tags).
+// One record is created per final tag a batch has (Butane can finish as a product, THCA and HTE).
+const TESTING_FINAL_TAG_FIELDS={
+  butane_extraction:[['product_final_metrc','Final'],['thca_final_metrc','THCA Final'],['hte_final_metrc','HTE Final']],
+  ethanol_extraction:[['distillate_metrc_tag','Distillate']],
+  pre_rolls:[['final_packaged_tag','Final Packaged']],
+  infused_flower:[['metrc_tag','Final Packaging']],
+  cartridges:[['cart_packaged_metrc','Cart Packaged']],
+  gummies:[['final_packaged_gummies_metrc','Final Packaged']],
+  moon_rocks:[['metrc_tag','Final']],
+  snow_caps:[['metrc_tag','Final']],
+};
+function testingFinalTags(entry,type){
+  return (TESTING_FINAL_TAG_FIELDS[type]||[]).map(([k,l])=>({tag:String(entry&&entry[k]||'').trim(),label:l})).filter(x=>x.tag);
+}
+const COA_CATEGORY_LABELS={pesticides:'Pesticides',microbials:'Microbials',mycotoxins:'Mycotoxins',heavy_metals:'Heavy Metals',residual_solvents:'Residual Solvents',foreign_matter:'Foreign Matter',moisture:'Moisture / Water Activity'};
+const COA_ANALYSIS_PROMPT=`You are reading a cannabis laboratory Certificate of Analysis (COA) for a Missouri DHSS-regulated facility (Division of Cannabis Regulation). Extract what the document states. Do not invent values. Respond with ONLY valid JSON, no markdown:
+{
+ "lab_name":"","report_date":"","sample_name":"","sample_metrc_tag":"",
+ "overall_status":"Pass|Fail|Unknown",
+ "potency":{"unit":"%","total_thc":null,"total_cbd":null,"thca":null,"d9_thc":null,"cbda":null,"cbd":null,"cbn":null,"cbg":null,"total_cannabinoids":null},
+ "categories":{
+  "pesticides":{"status":"Pass|Fail|Not tested","analytes":[{"name":"","result":"","limit":"","unit":"","status":"Pass|Fail|ND"}]},
+  "microbials":{"status":"","analytes":[]},"mycotoxins":{"status":"","analytes":[]},
+  "heavy_metals":{"status":"","analytes":[]},"residual_solvents":{"status":"","analytes":[]},
+  "foreign_matter":{"status":"","analytes":[]},"moisture":{"status":"","analytes":[]}
+ },
+ "terpenes":[{"name":"","value":0}],"total_terpenes":null,"notes":""
+}
+Rules: numbers as numbers where possible; use the lab's own pass/fail and limits; "ND" means not detected; omit categories the COA does not contain; sample_metrc_tag is the METRC package/sample tag printed on the COA (digits and letters exactly as printed); overall_status is Fail if any category failed.`;
+function parseJsonLoose(t){
+  const s=String(t||'');const a=s.indexOf('{'),b=s.lastIndexOf('}');
+  if(a<0||b<=a) throw new Error('No JSON in response');
+  return JSON.parse(s.slice(a,b+1));
+}
+function normTag(t){return String(t||'').toUpperCase().replace(/[^A-Z0-9]/g,'');}
+function coaMetrcMismatch(rec,an){
+  const c=normTag(an&&an.sample_metrc_tag);
+  if(!c) return null;
+  const mine=[rec.metrc_tag,rec.sample_metrc_tag].map(normTag).filter(Boolean);
+  if(!mine.length) return null;
+  const ok=mine.some(m=>m===c||(Math.min(m.length,c.length)>=8&&(m.endsWith(c)||c.endsWith(m))));
+  return ok?null:{coa:an.sample_metrc_tag,mine:[rec.metrc_tag,rec.sample_metrc_tag].filter(Boolean).join(' / ')};
+}
+function fileToBase64(file){
+  return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=()=>rej(new Error('Could not read file'));r.readAsDataURL(file);});
+}
+async function analyzeCoaFile(file){
+  const data=await fileToBase64(file);
+  const isPdf=/pdf/i.test(file.type)||/\.pdf$/i.test(file.name);
+  const block=isPdf?{type:'document',source:{type:'base64',media_type:'application/pdf',data}}
+    :{type:'image',source:{type:'base64',media_type:file.type||'image/png',data}};
+  const res=await fetch(`${SUPA_URL}/functions/v1/claude-proxy`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
+    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:6000,system:'You output ONLY valid, parseable JSON. Never include prose, explanation, or markdown fences.',
+      messages:[{role:'user',content:[block,{type:'text',text:COA_ANALYSIS_PROMPT}]}]})});
+  const j=await res.json();
+  if(!res.ok||j.error) throw new Error((j.error&&j.error.message)||'COA analysis failed');
+  return parseJsonLoose((j.content&&j.content[0]&&j.content[0].text)||'');
+}
+
+class CoaErrorBoundary extends React.Component{
+  constructor(p){super(p);this.state={err:null};}
+  static getDerivedStateFromError(e){return{err:e};}
+  render(){
+    if(this.state.err) return el('div',{style:{background:'rgba(220,38,38,.08)',border:'1px solid rgba(220,38,38,.3)',borderRadius:8,padding:'10px 12px',fontSize:12,color:'#b91c1c'}},'The COA analysis could not be displayed ('+String(this.state.err.message||this.state.err).slice(0,120)+'). The file is still saved — try Re-analyze.');
+    return this.props.children;
+  }
+}
+function InlineChart({data,color,unit,max}){
+  const rows=(data||[]).filter(d=>d&&isFinite(parseFloat(d.value))).map(d=>({label:String(d.label),value:parseFloat(d.value)}));
+  if(!rows.length) return null;
+  const mx=max||Math.max(...rows.map(r=>r.value))||1;
+  const H=20,W=360,L=120;
+  return el('svg',{viewBox:`0 0 ${W} ${rows.length*H+4}`,style:{width:'100%',maxWidth:520,display:'block'}},
+    rows.map((r,i)=>el('g',{key:i},
+      el('text',{x:L-6,y:i*H+14,textAnchor:'end',fontSize:10,fill:'#475569'},r.label.slice(0,20)),
+      el('rect',{x:L,y:i*H+4,width:Math.max(2,(W-L-50)*r.value/mx),height:12,rx:3,fill:color||'#4f46e5'}),
+      el('text',{x:L+Math.max(2,(W-L-50)*r.value/mx)+4,y:i*H+14,fontSize:10,fill:'#0f172a'},r.value+(unit||'')))));
+}
+function TestingStatusBadge({status,small}){
+  const st=TESTING_STATUSES.includes(status)?status:'Pending';
+  const c=TESTING_STATUS_COLOR[st];
+  return el('span',{style:{background:c+'1a',color:c,borderRadius:4,padding:small?'1px 6px':'2px 9px',fontSize:small?10:11,fontWeight:700,whiteSpace:'nowrap'}},TESTING_STATUS_ICON[st]+' '+st);
+}
+function CoaAnalysisPanelInner({rec}){
+  const an=rec.coa_analysis;
+  if(!an||typeof an!=='object') return null;
+  const mm=coaMetrcMismatch(rec,an);
+  const pot=an.potency||{};
+  const potRows=[['Total THC',pot.total_thc],['Total CBD',pot.total_cbd],['THCA',pot.thca],['\u03949-THC',pot.d9_thc],['CBDA',pot.cbda],['CBD',pot.cbd],['CBN',pot.cbn],['CBG',pot.cbg],['Total cannabinoids',pot.total_cannabinoids]].filter(r=>r[1]!==null&&r[1]!==undefined&&r[1]!=='');
+  const overall=an.overall_status;
+  const oc=overall==='Pass'?'#16a34a':overall==='Fail'?'#dc2626':'#64748b';
+  const cats=an.categories&&typeof an.categories==='object'?an.categories:{};
+  const sBadge=s=>{const c=/pass|nd/i.test(s||'')?'#16a34a':/fail/i.test(s||'')?'#dc2626':'#64748b';return el('span',{style:{color:c,fontWeight:700,fontSize:11}},s||'—');};
+  return el('div',{style:{display:'flex',flexDirection:'column',gap:10,marginTop:10}},
+    mm&&el('div',{style:{background:'rgba(220,38,38,.1)',border:'1px solid rgba(220,38,38,.4)',borderRadius:8,padding:'10px 12px',fontSize:12,color:'#b91c1c'}},
+      el('strong',null,'\u26A0 METRC TAG MISMATCH — '),'the COA lists '+mm.coa+' but this record is '+mm.mine+'. Confirm this is the right COA before accepting the result.'),
+    el('div',{style:{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}},
+      el('span',{style:{background:oc+'1a',color:oc,borderRadius:6,padding:'4px 10px',fontSize:12,fontWeight:800}},'COA overall: '+(overall||'Unknown')),
+      an.lab_name&&el('span',{style:{fontSize:12,color:'var(--text2)'}},an.lab_name),
+      an.report_date&&el('span',{style:{fontSize:12,color:'var(--text2)'}},an.report_date),
+      an.sample_metrc_tag&&el('span',{style:{fontSize:12,color:'var(--text2)'}},'COA tag: '+an.sample_metrc_tag)),
+    potRows.length>0&&el('div',{style:{border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px'}},
+      el('div',{style:{fontSize:11,fontWeight:800,color:'var(--text3)',textTransform:'uppercase',marginBottom:6}},'Potency ('+(pot.unit||'%')+')'),
+      el(InlineChart,{data:potRows.map(r=>({label:r[0],value:r[1]})),color:'#4f46e5',unit:' '+(pot.unit||'%')})),
+    Object.keys(cats).map(k=>{
+      const c=cats[k]||{};const an2=Array.isArray(c.analytes)?c.analytes:[];
+      if(!an2.length&&!c.status) return null;
+      return el('div',{key:k,style:{border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px'}},
+        el('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:an2.length?6:0}},
+          el('span',{style:{fontSize:12,fontWeight:800}},COA_CATEGORY_LABELS[k]||k),sBadge(c.status)),
+        an2.length>0&&el('div',{style:{overflowX:'auto'}},el('table',{style:{width:'100%',fontSize:11,borderCollapse:'collapse'}},
+          el('thead',null,el('tr',null,['Analyte','Result','Limit','Status'].map(h=>el('th',{key:h,style:{textAlign:'left',padding:'2px 6px',color:'var(--text3)',fontWeight:700}},h)))),
+          el('tbody',null,an2.map((a,i)=>el('tr',{key:i,style:{borderTop:'1px solid var(--border)'}},
+            el('td',{style:{padding:'2px 6px'}},a.name),
+            el('td',{style:{padding:'2px 6px'}},String(a.result==null?'':a.result)+(a.unit?' '+a.unit:'')),
+            el('td',{style:{padding:'2px 6px'}},String(a.limit==null?'':a.limit)),
+            el('td',{style:{padding:'2px 6px'}},sBadge(a.status))))))));
+    }),
+    Array.isArray(an.terpenes)&&an.terpenes.length>0&&el('div',{style:{border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px'}},
+      el('div',{style:{fontSize:11,fontWeight:800,color:'var(--text3)',textTransform:'uppercase',marginBottom:6}},'Terpenes'+(an.total_terpenes!=null?' — total '+an.total_terpenes:'')),
+      el(InlineChart,{data:an.terpenes.slice(0,12).map(t=>({label:t.name,value:t.value})),color:'#0f766e'})),
+    an.notes&&el('div',{style:{fontSize:11,color:'var(--text2)'}},an.notes));
+}
+function CoaAnalysisPanel({rec}){return el(CoaErrorBoundary,null,el(CoaAnalysisPanelInner,{rec}));}
+
+function TestingModule({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive,mpFn}){
+  const[rows,setRows]=React.useState([]);
+  const[loading,setLoading]=React.useState(true);
+  const[search,setSearch]=React.useState('');
+  const[statusF,setStatusF]=React.useState('ALL');
+  const[cat,setCat]=React.useState('ALL');
+  const[showNew,setShowNew]=React.useState(false);
+  const[editing,setEditing]=React.useState(null);
+  const[draft,setDraft]=React.useState({});
+  const[open,setOpen]=React.useState({});
+  const[busy,setBusy]=React.useState({});
+  const[msg,setMsg]=React.useState('');
+  const batchPerm=mpFn?mpFn('batch'):modulePerm(cu,'batch');
+  const canEdit=batchPerm==='admin'||batchPerm==='editor'||(batchPerm===null&&(isElevated||isAdmin||hasRole(cu,'production_manager')));
+  const canDelete=batchPerm==='admin'||(batchPerm===null&&(isElevated||isAdmin));
+  function load(){
+    setLoading(true);
+    let q='select=*&order=created_at.desc';
+    if(licActive) q+='&license_number=eq.'+encodeURIComponent(licActive);
+    db.get('pf_testing',q).then(r=>{setRows(Array.isArray(r)?r:[]);setLoading(false);setMsg('');})
+      .catch(e=>{setLoading(false);setMsg('Could not load testing records — run add_testing_module.sql in Supabase first. ('+String(e.message||e).slice(0,90)+')');});
+  }
+  React.useEffect(load,[licActive]);
+  React.useEffect(()=>{const f=()=>load();window.addEventListener('pf_testing_updated',f);return()=>window.removeEventListener('pf_testing_updated',f);},[licActive]);
+  const notify=()=>{try{window.dispatchEvent(new Event('pf_testing_updated'));}catch(e){}};
+  const setB=(id,v)=>setBusy(p=>({...p,[id]:v}));
+  async function saveRec(rec,patch){
+    const upd=sanitizeTestingRec({...patch,updated_at:new Date().toISOString()});
+    await db.update('pf_testing',rec.id,upd);
+    setRows(p=>p.map(r=>r.id===rec.id?{...r,...upd}:r));
+    notify();
+  }
+  async function createRec(d){
+    const rec=sanitizeTestingRec({...d,id:'test-'+Date.now(),status:d.status||'Pending',submitted_by:cu.name,license_number:licActive||null,loc:'Missouri',created_at:new Date().toISOString(),updated_at:new Date().toISOString(),submitted_at:d.status==='Submitted'?new Date().toISOString():null});
+    await db.insert('pf_testing',rec);
+    setRows(p=>[rec,...p]);notify();
+  }
+  async function runAnalysis(rec,file){
+    setB(rec.id,'Reading COA…');setMsg('');
+    try{
+      let patch={};
+      if(file){
+        const up=await uploadFile(file,'coa');
+        patch.coa_url=up.url||'';patch.coa_filename=file.name;
+      }
+      const f=file||await (async()=>{
+        const r=await fetch(rec.coa_url);const b=await r.blob();
+        return new File([b],rec.coa_filename||'coa.pdf',{type:b.type||'application/pdf'});
+      })();
+      const an=await analyzeCoaFile(f);
+      patch.coa_analysis=an;
+      const pot=an.potency||{};
+      if(pot.total_thc!=null) patch.result_thc=String(pot.total_thc);
+      if(pot.total_cbd!=null) patch.result_cbd=String(pot.total_cbd);
+      if(an.lab_name&&!rec.lab_name) patch.lab_name=an.lab_name;
+      if(an.sample_metrc_tag&&!rec.sample_metrc_tag) patch.sample_metrc_tag=an.sample_metrc_tag;
+      const mm=coaMetrcMismatch({...rec,...patch},an);
+      if(mm){patch.result_notes=((rec.result_notes||'')+' METRC mismatch: COA '+mm.coa+' vs record '+mm.mine+'.').trim();}
+      else if(an.overall_status==='Pass'){patch.status='Passed';patch.result_at=new Date().toISOString();}
+      else if(an.overall_status==='Fail'){patch.status='Failed';patch.result_at=new Date().toISOString();}
+      await saveRec(rec,patch);
+      setMsg(mm?'\u26A0 COA read, but the METRC tag does not match — status left unchanged.':'✓ COA read'+(patch.status?' — marked '+patch.status+'.':'.'));
+      setOpen(p=>({...p,[rec.id]:true}));
+    }catch(e){setMsg('❌ '+String(e.message||e).slice(0,200));}
+    setB(rec.id,false);
+  }
+  const counts={};TESTING_STATUSES.forEach(s=>{counts[s]=rows.filter(r=>(r.status||'Pending')===s).length;});
+  const q=search.toLowerCase();
+  const shown=rows.filter(r=>(statusF==='ALL'||(r.status||'Pending')===statusF)
+    &&(cat==='ALL'||testingCategories(r).includes(cat))
+    &&(!q||JSON.stringify([r.batch_number,r.sku,r.flavor,r.metrc_tag,r.sample_metrc_tag,r.lab_name,r.notes]).toLowerCase().includes(q)));
+  const inp={background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 10px',color:'var(--text)',fontFamily:'inherit',fontSize:12,boxSizing:'border-box',width:'100%'};
+  const F=(label,key,type,opts)=>el('div',{key,style:{flex:'1 1 150px'}},el('label',{style:SET_LBL},label),
+    opts?el('select',{style:inp,value:draft[key]||'',onChange:ev=>setDraft(p=>({...p,[key]:ev.target.value}))},opts.map(o=>el('option',{key:o,value:o},o)))
+    :el('input',{style:inp,type:type||'text',value:draft[key]||'',onChange:ev=>setDraft(p=>({...p,[key]:ev.target.value}))}));
+  return el('div',{style:{padding:'0 0 48px'}},
+    el('div',{style:{background:'linear-gradient(135deg,#4338ca,#6366f1)',borderRadius:14,padding:'18px 22px',marginBottom:16,color:'#fff'}},
+      el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}},
+        el('div',null,el('div',{style:{fontSize:20,fontWeight:800}},'\uD83D\uDD2C Testing'),el('div',{style:{fontSize:12,opacity:.85}},'Lab submissions, results and COAs · '+rows.length+' records')),
+        canEdit&&el('button',{className:'btn',style:{background:'#fff',color:'#4338ca'},onClick:()=>{setDraft({status:'Pending',batch_type:'butane_extraction'});setShowNew(true);}},'+ New test record')),
+      el('div',{style:{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}},
+        TESTING_STATUSES.map(s=>el('button',{key:s,onClick:()=>setStatusF(statusF===s?'ALL':s),style:{background:statusF===s?'#fff':'rgba(255,255,255,.15)',color:statusF===s?'#4338ca':'#fff',border:'1px solid rgba(255,255,255,.4)',borderRadius:8,padding:'6px 12px',fontFamily:'inherit',fontSize:12,fontWeight:700,cursor:'pointer'}},TESTING_STATUS_ICON[s]+' '+s+' '+counts[s])))),
+    el('div',{style:{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap'}},
+      el('input',{style:{...inp,flex:1,minWidth:180,width:'auto'},placeholder:'Search batch, SKU, flavor, METRC tag, lab…',value:search,onChange:ev=>setSearch(ev.target.value)}),
+      el('select',{style:{...inp,width:'auto'},value:statusF,onChange:ev=>setStatusF(ev.target.value)},['ALL',...TESTING_STATUSES].map(s=>el('option',{key:s,value:s},s==='ALL'?'All statuses':s))),
+      el('button',{className:'btn b-ghost btn-sm',onClick:load},'\u21BB Refresh')),
+    el('div',{style:{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}},
+      ['ALL',...Object.keys(CATEGORY_MAP)].map(c=>el('button',{key:c,onClick:()=>setCat(c),style:{background:cat===c?'#4338ca':'var(--surface)',color:cat===c?'#fff':'var(--text2)',border:'1px solid var(--border)',borderRadius:20,padding:'4px 12px',fontFamily:'inherit',fontSize:11,fontWeight:700,cursor:'pointer'}},c))),
+    msg&&el('div',{style:{...SET_CARD,fontSize:12,fontWeight:600}},msg),
+    showNew&&el('div',{style:{...SET_CARD,border:'2px solid #6366f1'}},
+      el('div',{style:{fontSize:13,fontWeight:800,marginBottom:8}},'New test record'),
+      el('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}},
+        F('Batch #','batch_number'),F('Product type','batch_type','text',BATCH_TYPE_IDS.concat(['other'])),F('SKU','sku'),F('Flavor','flavor')),
+      el('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}},
+        F('METRC tag','metrc_tag'),F('Sample METRC tag','sample_metrc_tag'),F('Lab','lab_name'),F('Status','status','text',TESTING_STATUSES)),
+      F('Notes','notes'),
+      el('div',{style:{display:'flex',gap:8,marginTop:10}},
+        el('button',{className:'btn b-blue btn-sm',onClick:async()=>{try{await createRec(draft);setShowNew(false);}catch(e){setMsg('❌ '+String(e.message||e).slice(0,160));}}},'Create'),
+        el('button',{className:'btn b-ghost btn-sm',onClick:()=>setShowNew(false)},'Cancel'))),
+    loading?el('div',{style:{textAlign:'center',padding:40,color:'var(--text3)'}},'Loading…')
+    :shown.length===0?el('div',{style:{...SET_CARD,textAlign:'center',padding:'36px 20px',color:'var(--text3)'}},'No testing records match. Submit a batch for testing from the Batch Tracker, or create one here.')
+    :shown.map(r=>{
+      const isE=editing===r.id;
+      const hasCoa=!!(r.coa_url||r.coa_analysis);
+      return el('div',{key:r.id,style:{...SET_CARD,borderLeft:'4px solid '+(TESTING_STATUS_COLOR[r.status]||'#64748b')}},
+        el('div',{style:{display:'flex',justifyContent:'space-between',gap:8,flexWrap:'wrap'}},
+          el('div',{style:{flex:1,minWidth:200}},
+            el('div',{style:{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginBottom:4}},
+              el('span',{style:{fontSize:13,fontWeight:800}},r.batch_number||'(no batch #)'),
+              el(TestingStatusBadge,{status:r.status}),
+              testingCategories(r).map(c=>el('span',{key:c,style:{fontSize:10,background:'rgba(99,102,241,.1)',color:'#4338ca',borderRadius:4,padding:'1px 6px',fontWeight:700}},c)),
+              r.coa_analysis&&coaMetrcMismatch(r,r.coa_analysis)&&el('span',{style:{fontSize:10,background:'rgba(220,38,38,.1)',color:'#dc2626',borderRadius:4,padding:'1px 6px',fontWeight:700}},'\u26A0 METRC mismatch')),
+            el('div',{style:{fontSize:12,color:'var(--text2)'}},[r.sku,r.flavor].filter(Boolean).join(' · ')),
+            el('div',{style:{fontSize:11,color:'var(--text3)',marginTop:2}},
+              [r.metrc_tag&&'METRC '+r.metrc_tag,r.sample_metrc_tag&&'Sample '+r.sample_metrc_tag,r.lab_name&&'Lab: '+r.lab_name,r.submitted_at&&'Submitted '+new Date(r.submitted_at).toLocaleDateString(),r.result_at&&'Result '+new Date(r.result_at).toLocaleDateString()].filter(Boolean).join('  ·  ')),
+            (r.result_thc||r.result_cbd)&&el('div',{style:{fontSize:12,marginTop:4}},'THC '+(r.result_thc||'—')+'%   CBD '+(r.result_cbd||'—')+'%'),
+            r.result_notes&&el('div',{style:{fontSize:11,color:'#b45309',marginTop:2}},r.result_notes),
+            r.notes&&el('div',{style:{fontSize:11,color:'var(--text2)',marginTop:2}},r.notes)),
+          el('div',{style:{display:'flex',gap:6,flexWrap:'wrap',alignItems:'flex-start'}},
+            r.coa_url&&el('a',{href:r.coa_url,target:'_blank',rel:'noopener',className:'btn b-ghost btn-sm',style:{textDecoration:'none'}},'\uD83D\uDCC4 COA'),
+            r.coa_analysis&&el('button',{className:'btn b-ghost btn-sm',onClick:()=>setOpen(p=>({...p,[r.id]:!p[r.id]}))},open[r.id]?'Hide analysis':'Show analysis'),
+            canEdit&&el('label',{className:'btn b-ghost btn-sm',style:{cursor:'pointer'}},busy[r.id]||(hasCoa?'Replace COA':'\u2B06 Upload COA'),
+              el('input',{type:'file',accept:'application/pdf,image/*',style:{display:'none'},disabled:!!busy[r.id],onChange:ev=>{const f=ev.target.files&&ev.target.files[0];ev.target.value='';if(f) runAnalysis(r,f);}})),
+            canEdit&&r.coa_url&&el('button',{className:'btn b-ghost btn-sm',disabled:!!busy[r.id],onClick:()=>runAnalysis(r,null)},'Re-analyze'),
+            canEdit&&el('button',{className:'btn b-ghost btn-sm',onClick:()=>{setEditing(isE?null:r.id);setDraft({...r});}},isE?'Close':'Edit'),
+            canDelete&&el('button',{className:'btn b-red btn-sm',onClick:async()=>{if(!window.confirm('Delete this testing record?'))return;try{await db.remove('pf_testing',r.id);setRows(p=>p.filter(x=>x.id!==r.id));notify();}catch(e){setMsg('❌ '+String(e.message||e).slice(0,160));}}},'Delete'))),
+        isE&&el('div',{style:{marginTop:10,paddingTop:10,borderTop:'1px solid var(--border)'}},
+          el('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}},
+            F('Status','status','text',TESTING_STATUSES),F('Lab','lab_name'),F('METRC tag','metrc_tag'),F('Sample METRC tag','sample_metrc_tag')),
+          el('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}},
+            F('Result THC %','result_thc'),F('Result CBD %','result_cbd'),F('Result notes','result_notes'),F('Notes','notes')),
+          el('button',{className:'btn b-blue btn-sm',onClick:async()=>{
+            try{
+              const p={status:draft.status,lab_name:draft.lab_name,metrc_tag:draft.metrc_tag,sample_metrc_tag:draft.sample_metrc_tag,result_thc:draft.result_thc,result_cbd:draft.result_cbd,result_notes:draft.result_notes,notes:draft.notes};
+              if(draft.status!==r.status){ if(draft.status==='Submitted'&&!r.submitted_at) p.submitted_at=new Date().toISOString(); if(['Passed','Failed'].includes(draft.status)) p.result_at=new Date().toISOString(); }
+              await saveRec(r,p);setEditing(null);
+            }catch(e){setMsg('❌ '+String(e.message||e).slice(0,160));}
+          }},'Save changes')),
+        open[r.id]&&el(CoaAnalysisPanel,{rec:r}));
+    }));
+}
+
 function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn,licActive}){
   const visibleBatchTypes=(restricted==='lead'||restricted==='pm')?['cartridges','gummies','pre_rolls','infused_flower','moon_rocks','snow_caps']:BATCH_TYPE_IDS;
   const[activeType,setActiveType]=React.useState(visibleBatchTypes[0]);
@@ -5848,6 +6151,8 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn
   const[dateTo,setDateTo]=React.useState('');
   const[search,setSearch]=React.useState('');
   const[historyFor,setHistoryFor]=React.useState(null);
+  const[testingMap,setTestingMap]=React.useState({});
+  const[submittingTest,setSubmittingTest]=React.useState(null);
 
   const lt=LOG_TYPES[activeType];
   // Production Manager can edit batch records (with a mandatory note logged
@@ -5869,6 +6174,32 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn
     if(dateTo)url+=`&created_at=lte.${dateTo}T23:59:59`;
     fetch(url,{headers:H.headers}).then(r=>r.ok?r.json():[]).then(rows=>{setEntries(Array.isArray(rows)?rows:[]);setLoading(false);}).catch(()=>setLoading(false));
   },[activeType,dateFrom,dateTo,licActive]);
+  // Testing status per batch (pf_testing rows, several per batch if a batch has more than one final tag)
+  const loadTesting=React.useCallback(()=>{
+    const ids=entries.map(e=>e.id).filter(Boolean);
+    if(!ids.length){setTestingMap({});return;}
+    const chunks=[];for(let k=0;k<ids.length;k+=40) chunks.push(ids.slice(k,k+40));
+    Promise.all(chunks.map(c=>db.get('pf_testing','select=*&batch_id=in.('+c.map(x=>'"'+x+'"').join(',')+')').catch(()=>[]))).then(parts=>{
+      const m={};parts.flat().forEach(t=>{(m[t.batch_id]=m[t.batch_id]||[]).push(t);});setTestingMap(m);
+    });
+  },[entries]);
+  React.useEffect(()=>{loadTesting();},[loadTesting]);
+  React.useEffect(()=>{window.addEventListener('pf_testing_updated',loadTesting);return()=>window.removeEventListener('pf_testing_updated',loadTesting);},[loadTesting]);
+  async function submitForTesting(entry){
+    const tags=testingFinalTags(entry,activeType);
+    if(!tags.length){alert('Enter the Final package METRC tag on this batch first \u2014 that is the tag submitted for mandatory testing.');return;}
+    if(!window.confirm('Submit for testing?\n\n'+tags.map(t=>t.label+': '+t.tag).join('\n'))) return;
+    setSubmittingTest(entry.id);
+    try{
+      const now=new Date().toISOString();
+      for(const t of tags){
+        const rec=sanitizeTestingRec({id:'test-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),batch_id:entry.id,batch_number:entry.batch_number||'',batch_type:activeType,sku:entry.sku||'',flavor:entry.flavor||'',metrc_tag:t.tag,status:'Submitted',submitted_at:now,submitted_by:cu.name,license_number:licActive||null,loc:'Missouri',notes:tags.length>1?t.label:'',created_at:now,updated_at:now});
+        await db.insert('pf_testing',rec);
+      }
+      try{window.dispatchEvent(new Event('pf_testing_updated'));}catch(e){}
+    }catch(e){alert('Could not submit for testing: '+e.message+'\n\nIf this says the table is missing, run add_testing_module.sql in Supabase.');}
+    setSubmittingTest(null);
+  }
 
   const filtered=entries.filter(e=>!search||JSON.stringify(e).toLowerCase().includes(search.toLowerCase()));
 
@@ -5917,6 +6248,7 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn
                 el('span',{style:{fontSize:12,color:'var(--text2)'}},entry.date||''),
                 el('span',{style:{fontSize:12,color:'var(--text2)'}},'\u00B7 '+(entry.submitted_by||'')),
                 entry.signature_image&&el('span',{style:{background:'rgba(22,163,74,.1)',color:'#16a34a',borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:700}},'\u270D\uFE0F Signed'),
+                (testingMap[entry.id]||[]).map(t=>el('span',{key:t.id,title:'Testing: '+(t.metrc_tag||'')},el(TestingStatusBadge,{status:t.status,small:true}))),
                 (()=>{
                   // METRC conversion status: count how many "Recorded on METRC?"
                   // checkboxes this batch type has, and how many are checked on
@@ -5949,6 +6281,7 @@ function BatchTracker({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn
             ),
             el('div',{style:{display:'flex',gap:6,flexShrink:0,flexWrap:'wrap'}},
               el('button',{onClick:()=>exportLogPdf(activeType,[entry],'',''),className:'btn b-ghost btn-sm'},'PDF'),
+              canEdit&&!(testingMap[entry.id]||[]).length&&testingFinalTags(entry,activeType).length>0&&el('button',{onClick:()=>submitForTesting(entry),disabled:submittingTest===entry.id,className:'btn b-blue btn-sm',title:'Submit the final package METRC tag for mandatory testing'},submittingTest===entry.id?'Submitting\u2026':'\uD83D\uDD2C Submit for Testing'),
               canEdit&&el('button',{onClick:()=>{setEditEntry(entry);setShowForm(true);},className:'btn b-ghost btn-sm'},'Edit'),
               !canEdit&&canOpen&&el('button',{onClick:()=>{setEditEntry(entry);setShowForm(true);},className:'btn b-ghost btn-sm'},'\uD83D\uDD13 Open'),
               canDelete&&el('button',{onClick:async()=>{if(!confirm('Delete this batch record?'))return;await db.remove(lt.table,entry.id);setEntries(p=>p.filter(e=>e.id!==entry.id));},className:'btn b-red btn-sm'},'Delete'),
@@ -5985,6 +6318,22 @@ function riskLevel(score){
 // relevant to what the user asked, sends the data + question to Claude API,
 // returns a formatted summary + keeps the conversation open for follow-ups.
 const REPORTER_TABLE_MAP={
+  testing:['pf_testing','pf_batch_tracker'],
+  lab:['pf_testing'],
+  coa:['pf_testing'],
+  potency:['pf_testing'],
+  thc:['pf_testing'],
+  cbd:['pf_testing'],
+  pesticide:['pf_testing'],
+  microbial:['pf_testing'],
+  'heavy metal':['pf_testing'],
+  solvent:['pf_testing'],
+  terpene:['pf_testing'],
+  mandatory:['pf_testing'],
+  bho:['pf_batch_tracker','pf_testing'],
+  ethanol:['pf_batch_tracker','pf_testing'],
+  concentrate:['pf_batch_tracker','pf_testing'],
+  rosin:['pf_batch_tracker','pf_testing'],
   batch:['pf_batch_tracker'],
   yield:['pf_batch_tracker'],
   metrc:['pf_batch_tracker'],
@@ -6029,7 +6378,7 @@ const REPORTER_TABLE_MAP={
   staff:['pf_users_safe'],
   who:['pf_users_safe'],
 };
-const ALL_REPORTER_TABLES=['pf_batch_tracker','pf_sops','pf_qms_capas','pf_qms_corrective','pf_qms_deviations','pf_qms_audits','pf_qms_suppliers','pf_qms_complaints','pf_qms_changes','pf_compliance_checks','pf_tasks','pf_log_sanitation','pf_log_visitor','pf_log_waste','pf_log_pest','pf_log_equipment','pf_log_scale_calibration','pf_log_temperature','pf_log_security','pf_risk_register','pf_users_safe'];
+const ALL_REPORTER_TABLES=['pf_batch_tracker','pf_sops','pf_qms_capas','pf_qms_corrective','pf_qms_deviations','pf_qms_audits','pf_qms_suppliers','pf_qms_complaints','pf_qms_changes','pf_compliance_checks','pf_tasks','pf_log_sanitation','pf_log_visitor','pf_log_waste','pf_log_pest','pf_log_equipment','pf_log_scale_calibration','pf_log_temperature','pf_log_security','pf_risk_register','pf_users_safe','pf_testing'];
 
 // ── PRODUCTION PLANNER ───────────────────────────────────────────────────────
 // AI-powered ingredient calculator. User picks product type, SKU, flavors,
@@ -6444,7 +6793,7 @@ function AIReporter({cu,SUPA_URL,SUPA_KEY,H}){
       return `## ${t} (${rows.length} records)\n${str}`;
     }).join('\n\n');
     const capped=dataStr.length>25000?dataStr.slice(0,25000)+'\u2026':dataStr;
-    return `AI Reporter for Black Fox QMS (Black Fox Manufacturing / HMBF Management Inc, MAN000109). Today: ${now}. User: ${cu.name} (${cu.role}).\n\nAnswer using ONLY the data below. Be specific with record IDs, batch numbers, dates, names. Lead with a direct answer, then details. Flag any compliance gaps.\n\n${capped}`;
+    return `AI Reporter for Black Fox QMS \u2014 Black Fox Manufacturing, a licensed Missouri cannabis manufacturing facility (HMBF Management Inc, license MAN000109), regulated by Missouri DHSS / Division of Cannabis Regulation (DCR). Staff include Zak, Micah, Amir, Alfonso and Sara. Product lines: BHO / butane and ethanol extraction, pre-rolls, infused flower, cartridges, gummies, moon rocks and snow caps. pf_testing holds lab submissions (status, final package METRC tag, potency, COA analysis). Today: ${now}. User: ${cu.name} (${cu.role}).\n\nAnswer using ONLY the data below. Be specific with record IDs, batch numbers, dates, names. Lead with a direct answer, then details. Flag any compliance gaps.\n\n${capped}`;
   }
 
   async function send(){
@@ -14969,6 +15318,7 @@ function App(){
   const navProduction=[
     canAccessPlanner&&{id:'planner',ico:'\uD83C\uDFED',label:'Production Planner'},
     canAccessBatch&&{id:'batch',ico:'\uD83E\uDDEA',label:'Batch Tracker'},
+    canAccessBatch&&{id:'testing',ico:'\uD83D\uDD2C',label:'Testing'},
     canAccessFormBank&&{id:'formbank',ico:'\uD83E\uDDEA',label:'Formulation Bank'},
     canAccessCogs&&{id:'cogs',ico:'\uD83D\uDCB0',label:'COGS Calculator'},
   ].filter(Boolean);
@@ -15236,6 +15586,7 @@ function App(){
       page==='formbank'&&canAccessFormBank&&el(FormulationBank,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='cogs'&&canAccessCogs&&el(CogsCalculator,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='reporter'&&canAccessQms&&el(AIReporter,{cu,SUPA_URL,SUPA_KEY,H}),
+      page==='testing'&&canAccessBatch&&el(TestingModule,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive,mpFn:modulePerm.bind(null,cu)}),
       page==='planner'&&canAccessPlanner&&el(ProductionPlanner,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='qms'&&!restricted&&canAccessQms&&el(QMS,{cu,users,tasks,sops,setSops,
         deviations:qmsDeviations,setDeviations:setQmsDeviations,
