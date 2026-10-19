@@ -5890,9 +5890,9 @@ function testingFinalTags(entry,type){
 const COA_CATEGORY_LABELS={pesticides:'Pesticides',microbials:'Microbials',mycotoxins:'Mycotoxins',heavy_metals:'Heavy Metals',residual_solvents:'Residual Solvents',foreign_matter:'Foreign Matter',moisture:'Moisture / Water Activity'};
 const COA_ANALYSIS_PROMPT=`You are reading a cannabis laboratory Certificate of Analysis (COA) for a Missouri DHSS-regulated facility (Division of Cannabis Regulation). Extract what the document states. Do not invent values. Respond with ONLY valid JSON, no markdown:
 {
- "lab_name":"","report_date":"","sample_name":"","sample_metrc_tag":"",
+ "lab_name":"","lab_license_number":"","report_date":"","sample_name":"","sample_metrc_tag":"",
  "overall_status":"Pass|Fail|Unknown",
- "potency":{"unit":"%","total_thc":null,"total_cbd":null,"thca":null,"d9_thc":null,"cbda":null,"cbd":null,"cbn":null,"cbg":null,"total_cannabinoids":null},
+ "potency":{"unit":"%","total_thc":null,"total_cbd":null,"thca":null,"d9_thc":null,"cbda":null,"cbd":null,"cbn":null,"cbg":null,"thcv":null,"cbdv":null,"d8_thc":null,"total_cannabinoids":null},
  "categories":{
   "pesticides":{"status":"Pass|Fail|Not tested","analytes":[{"name":"","result":"","limit":"","unit":"","status":"Pass|Fail|ND"}]},
   "microbials":{"status":"","analytes":[]},"mycotoxins":{"status":"","analytes":[]},
@@ -5998,6 +5998,246 @@ function CoaAnalysisPanelInner({rec}){
 }
 function CoaAnalysisPanel({rec}){return el(CoaErrorBoundary,null,el(CoaAnalysisPanelInner,{rec}));}
 
+// ── COMPLIANCE STICKERS (Avery label sheets) ─────────────────────────────────
+// Label stock = physical sheet geometry. Templates = per-product content
+// (METRC approval number, ingredients, wording), saved per license in Settings > Compliance.
+const LABEL_STOCKS={
+  'avery-94202':{name:'Avery 94202 — 1" x 4", 20 per sheet',w:4,h:1,cols:2,rows:10,left:0.15625,top:0.5,pitchX:4.1875,pitchY:1},
+};
+const LABEL_DEFAULT_TEMPLATES=[
+  {id:'tpl-2g-banana-pie',name:'2G Infused Pre Roll \u2014 Banana Pie',sku:'Muha Meds 2G Infused Pre Roll',flavor:'Banana Pie',stock:'avery-94202',
+   metrc_approval:'M00002721406',servings:'200',weight:'2g',
+   instructions:'Heat Flower, inhale smoke. Effects may last up to 4 hours.',
+   warning:'Cognitive and physical impairment may result from the use of Marijuana. Keep out of reach of children.',
+   ingredients:'Cannabis Flower, THCA Isolate, Cannabis Live Resin, Cannabis Cured Resin, Cannabis Distillate, Cannabis Kief, Alpha-Pinene, Beta-Pinene, Beta-Caryophyllene, Myrcene, Nerolidol, Ocimene, Terpinolene, Valencene, Bisabolol, Camphene, Citronellol, Eugenol, Farnesene, Fenchyl Alcohol, Menthol, Maltol, 3-Hexenol, Isoamyl Acetate, Isoamyl Alcohol, Isoamyl Isovalerate, Butyl Butyrate, Ethyl Butyrate, Ethyl Isovalerate, Ethyl Propionate, Vanillin, Heliotropine, Delta-Decalactone, Gamma-Undecalactone, Delta-Dodecalactone, Gamma-Dodecalactone, Acetoin, Anise Alcohol, Anisaldehyde, P-Anisyl Acetate, D-Limonene, Sabinene, Delta-3-Carene, Alpha-Phellandrene, Beta-Phellandrene, Trans-Beta-Ocimene, Para-Cymene, Octanal, Cis-1,2-Limonene Oxide, Trans-1,2-Limonene Oxide, Decanal, 1-Octanol, Linalool, Arabic Gum, Rice Paper, Solvent (Butane, Propane, or Ethanol)'},
+];
+function labelTemplateFor(list,sku,flavor){
+  const t=(list&&list.length?list:LABEL_DEFAULT_TEMPLATES);
+  const same=(a,b)=>String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase();
+  return t.find(x=>x.sku&&same(x.sku,sku)&&x.flavor&&same(x.flavor,flavor))
+      ||t.find(x=>x.sku&&same(x.sku,sku)&&!x.flavor)||null;
+}
+function fmtUsDate(d){
+  if(!(d instanceof Date)||isNaN(d.getTime())) return '';
+  return String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+'/'+d.getFullYear();
+}
+// Best-by = one year after the test result date
+function labelDates(rec,an){
+  let d=null;
+  const raw=(an&&an.report_date)||rec.result_at||'';
+  if(raw){const t=new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw)?raw+'T00:00:00':raw);if(!isNaN(t.getTime())) d=t;}
+  if(!d) d=new Date();
+  const best=new Date(d.getTime());best.setFullYear(best.getFullYear()+1);
+  return {tested:fmtUsDate(d),bestBy:fmtUsDate(best)};
+}
+const LABEL_CANNABINOIDS=[['d9_thc','Delta-9-THC'],['thca','Delta-9-THCa'],['cbd','CBD'],['cbda','CBDa'],['cbn','CBN'],['thcv','THCV'],['cbdv','CBDV'],['d8_thc','Delta-8-THC']];
+function labelData(rec,tpl,licNumber){
+  const an=(rec.coa_analysis&&typeof rec.coa_analysis==='object')?rec.coa_analysis:{};
+  const pot=an.potency||{};
+  const dts=labelDates(rec,an);
+  const servings=parseFloat(tpl.servings)||0;
+  const wt=parseFloat(String(tpl.weight||'').replace(/[^0-9.]/g,''))||0;
+  const canna=LABEL_CANNABINOIDS.map(([k,n])=>{
+    const p=parseFloat(pot[k]);
+    // % of the package weight -> mg per serving/dose
+    const mg=(isFinite(p)&&p>0&&servings>0&&wt>0)?(p/100*wt*1000/servings).toFixed(2):'ND';
+    return {name:n,mg};
+  });
+  return {
+    approval:tpl.metrc_approval||'',servings:tpl.servings||'',weight:tpl.weight||'',
+    bestBy:dts.bestBy,producedBy:licNumber||'',testedBy:an.lab_license_number||'',
+    testTag:rec.sample_metrc_tag||'',canna,
+    ingredients:tpl.ingredients||'',instructions:tpl.instructions||'',warning:tpl.warning||'',
+    pkgTag:rec.metrc_tag||'',lab:an.lab_name||rec.lab_name||'',tested:dts.tested,
+  };
+}
+// Paragraphs of {t,b} runs, flowed word by word so bold labels and plain values share a line.
+function labelParagraphs(d){
+  const L=(t)=>({t:t,b:true}),V=(t)=>({t:t});
+  const pairs=[['Servings/Doses Per Package: ',d.servings],['Best If Used By: ',d.bestBy],['Produced By: ',d.producedBy],['Tested By: ',d.testedBy],['Testing Tag#: ',d.testTag],['Weight: ',d.weight]];
+  const info=[];pairs.forEach((p,i)=>{info.push(L(p[0]),V((p[1]||'')+(i<pairs.length-1?'     ':'')));});
+  const prof=[L('CANNABINOID PROFILE: ')];
+  d.canna.forEach((c,i)=>{prof.push(L(c.name+': '),V(c.mg+' mg/serving-dose'+(i<d.canna.length-1?'   ':'')));});
+  return [
+    [L('Active and Other Ingredients: '),V(d.ingredients)],
+    [L('MARIJUANA PRODUCT INFORMATION:')],
+    info,prof,
+    [L('INSTRUCTION AND LENGTH OF EFFECT: '),V(d.instructions)],
+    [L('MARIJUANA PRODUCT APPROVAL NUMBER: '),V(d.approval)],
+    [L('WARNING: '),L(d.warning)],
+  ];
+}
+function drawLabel(doc,x,y,w,h,d,minK){
+  const pad=3,iw=w-pad*2,ih=h-pad*2;
+  const paras=labelParagraphs(d);
+  const BASE=3.7;
+  let layout=null,fs=BASE,ok=false;
+  for(let sz=BASE;sz>=(minK||2.2);sz-=0.1){
+    const lines=[];
+    paras.forEach(p=>{
+      let cur=[],cw=0;
+      p.forEach(run=>{
+        doc.setFont('helvetica',run.b?'bold':'normal');doc.setFontSize(sz);
+        run.t.split(/(\s+)/).forEach(tok=>{
+          if(tok==='') return;
+          const tw=doc.getTextWidth(tok);
+          if(cw+tw>iw&&/\S/.test(tok)&&cur.length){lines.push(cur);cur=[];cw=0;}
+          if(!cur.length&&!/\S/.test(tok)) return;
+          cur.push({t:tok,b:run.b,w:tw});cw+=tw;
+        });
+      });
+      if(cur.length) lines.push(cur);
+    });
+    const tot=lines.length*sz*1.15;
+    layout=lines;fs=sz;
+    if(tot<=ih){ok=true;break;}
+  }
+  let cy=y+pad;
+  layout.forEach(line=>{
+    cy+=fs*0.92;let cx=x+pad;
+    line.forEach(r=>{doc.setFont('helvetica',r.b?'bold':'normal');doc.setFontSize(fs);doc.setTextColor(0,0,0);doc.text(r.t,cx,cy);cx+=r.w;});
+    cy+=fs*0.23;
+  });
+  drawLabel.lastSize=fs;
+  return ok;
+}
+function buildLabelSheet(d,stock,count,startPos,offX,offY,outline){
+  const{jsPDF}=window.jspdf;
+  const doc=pdfSafeDoc(new jsPDF({unit:'pt',format:'letter'}));
+  const per=stock.cols*stock.rows;
+  let fit=true;
+  for(let n=0;n<count;n++){
+    const idx=(startPos-1)+n;
+    const page=Math.floor(idx/per),pos=idx%per;
+    while(doc.getNumberOfPages()<=page) doc.addPage();
+    doc.setPage(page+1);
+    const col=pos%stock.cols,row=Math.floor(pos/stock.cols);
+    const x=(stock.left+col*stock.pitchX+(offX||0))*72,y=(stock.top+row*stock.pitchY+(offY||0))*72;
+    if(outline){doc.setDrawColor(190,190,190);doc.setLineWidth(.3);doc.rect(x,y,stock.w*72,stock.h*72);}
+    if(!drawLabel(doc,x,y,stock.w*72,stock.h*72,d)) fit=false;
+  }
+  return {doc,fit};
+}
+function LabelStickerModal({rec,lic,onClose}){
+  const[templates,setTemplates]=React.useState(null);
+  const[count,setCount]=React.useState(20);
+  const[start,setStart]=React.useState(1);
+  const[offX,setOffX]=React.useState(0);
+  const[offY,setOffY]=React.useState(0);
+  const[outline,setOutline]=React.useState(true);
+  const[url,setUrl]=React.useState('');
+  const[fit,setFit]=React.useState(true);
+  const[tplId,setTplId]=React.useState('');
+  React.useEffect(()=>{
+    db.get('pf_settings','id=eq.'+encodeURIComponent(lic.id+':label_templates')+'&select=value').then(r=>{
+      const v=Array.isArray(r)&&r[0]&&r[0].value&&Array.isArray(r[0].value.templates)?r[0].value.templates:LABEL_DEFAULT_TEMPLATES;
+      setTemplates(v);
+    }).catch(()=>setTemplates(LABEL_DEFAULT_TEMPLATES));
+  },[lic.id]);
+  const list=templates||[];
+  const tpl=list.find(t=>t.id===tplId)||labelTemplateFor(list,rec.sku,rec.flavor)||null;
+  const stock=tpl?LABEL_STOCKS[tpl.stock]||LABEL_STOCKS['avery-94202']:null;
+  const per=stock?stock.cols*stock.rows:20;
+  React.useEffect(()=>{
+    if(!tpl||!stock){setUrl('');return;}
+    try{
+      const d=labelData(rec,tpl,lic.license_number);
+      const{doc,fit:f}=buildLabelSheet(d,stock,Math.max(1,count),Math.min(Math.max(1,start),per),offX,offY,outline);
+      setFit(f);
+      const u=doc.output('bloburl');setUrl(u);
+    }catch(e){setUrl('');}
+  },[tplId,templates,count,start,offX,offY,outline]);
+  function download(){
+    const d=labelData(rec,tpl,lic.license_number);
+    const{doc}=buildLabelSheet(d,stock,Math.max(1,count),Math.min(Math.max(1,start),per),offX,offY,false);
+    doc.save('Compliance_Labels_'+String(rec.batch_number||rec.id).replace(/[^A-Za-z0-9_-]+/g,'_')+'.pdf');
+  }
+  const d=tpl?labelData(rec,tpl,lic.license_number):null;
+  const missing=d?[!d.approval&&'approval number (Settings > Compliance > Label Templates)',!d.ingredients&&'ingredients',!d.testTag&&'sample testing tag (add it on the testing record)',!d.testedBy&&'testing lab license # (not read from the COA)',d.canna.every(c=>c.mg==='ND')&&'cannabinoid results'].filter(Boolean):[];
+  const inp={background:'var(--bg)',border:'1px solid var(--border)',borderRadius:6,padding:'6px 8px',color:'var(--text)',fontFamily:'inherit',fontSize:12,width:80};
+  return el('div',{style:{position:'fixed',inset:0,background:'rgba(15,23,42,.6)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:12},onClick:onClose},
+    el('div',{style:{background:'var(--surface)',borderRadius:14,width:'min(960px,100%)',maxHeight:'94vh',overflow:'auto',padding:18},onClick:e=>e.stopPropagation()},
+      el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}},
+        el('div',{style:{fontSize:16,fontWeight:800}},'\uD83C\uDFF7\uFE0F Compliance stickers — '+(rec.batch_number||'')+' '+(rec.sku||'')),
+        el('button',{className:'btn b-ghost btn-sm',onClick:onClose},'✕ Close')),
+      !templates?el('div',null,'Loading templates…')
+      :!tpl?el('div',{style:{fontSize:13}},
+        el('div',{style:{marginBottom:8}},'There is no label template for "'+(rec.sku||'this product')+'" yet. Pick one to use, or add one in Settings \u2192 Compliance \u2192 Label Templates.'),
+        el('select',{style:{...inp,width:'auto'},value:tplId,onChange:ev=>setTplId(ev.target.value)},el('option',{value:''},'— choose template —'),list.map(t=>el('option',{key:t.id,value:t.id},t.name))))
+      :el('div',null,
+        el('div',{style:{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end',marginBottom:10}},
+          el('div',null,el('label',{style:SET_LBL},'Template'),el('select',{style:{...inp,width:'auto'},value:tpl.id,onChange:ev=>setTplId(ev.target.value)},list.map(t=>el('option',{key:t.id,value:t.id},t.name)))),
+          el('div',null,el('label',{style:SET_LBL},'Labels to print'),el('input',{type:'number',min:1,style:inp,value:count,onChange:ev=>setCount(parseInt(ev.target.value)||1)})),
+          el('div',null,el('label',{style:SET_LBL},'Start at position (1\u2013'+per+')'),el('input',{type:'number',min:1,max:per,style:inp,value:start,onChange:ev=>setStart(parseInt(ev.target.value)||1)})),
+          el('div',null,el('label',{style:SET_LBL},'Shift right (in)'),el('input',{type:'number',step:0.01,style:inp,value:offX,onChange:ev=>setOffX(parseFloat(ev.target.value)||0)})),
+          el('div',null,el('label',{style:SET_LBL},'Shift down (in)'),el('input',{type:'number',step:0.01,style:inp,value:offY,onChange:ev=>setOffY(parseFloat(ev.target.value)||0)})),
+          el('label',{style:{fontSize:12,display:'flex',gap:6,alignItems:'center'}},el('input',{type:'checkbox',checked:outline,onChange:ev=>setOutline(ev.target.checked)}),'Show label outlines in preview'),
+          el('button',{className:'btn b-blue',onClick:download},'\u2B07 Download PDF')),
+        el('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:6}},stock.name+' · print at 100% / "Actual size", not "Fit to page". Start position lets you reuse a partly used sheet.'),
+        missing.length>0&&el('div',{style:{background:'rgba(217,119,6,.1)',border:'1px solid rgba(217,119,6,.4)',borderRadius:8,padding:'8px 10px',fontSize:12,color:'#b45309',marginBottom:8}},'Missing on this label: '+missing.join(', ')+'.'),
+        !fit&&el('div',{style:{background:'rgba(220,38,38,.08)',border:'1px solid rgba(220,38,38,.4)',borderRadius:8,padding:'8px 10px',fontSize:12,color:'#b91c1c',marginBottom:8}},'The text is too long to fit a 1" label even at the smallest size — shorten the ingredients or warning text in the template.'),
+        url?el('iframe',{src:url,style:{width:'100%',height:'62vh',border:'1px solid var(--border)',borderRadius:8}}):el('div',null,'Preview unavailable.'))));
+}
+function LabelTemplatesEditor({lic,cu}){
+  const rowId=lic.id+':label_templates';
+  const[loading,setLoading]=React.useState(true);
+  const[existing,setExisting]=React.useState(false);
+  const[list,setList]=React.useState([]);
+  const[msg,setMsg]=React.useState('');
+  const[saving,setSaving]=React.useState(false);
+  const[dirty,setDirty]=React.useState(false);
+  React.useEffect(()=>{
+    let dead=false;setLoading(true);setMsg('');setDirty(false);
+    db.get('pf_settings','id=eq.'+encodeURIComponent(rowId)+'&select=*').then(rows=>{
+      if(dead) return;
+      const r=Array.isArray(rows)&&rows[0];
+      setExisting(!!r);
+      setList(r&&r.value&&Array.isArray(r.value.templates)?r.value.templates:JSON.parse(JSON.stringify(LABEL_DEFAULT_TEMPLATES)));
+      setLoading(false);
+    }).catch(e=>{if(dead) return;setMsg('Settings storage is not set up yet — run add_settings_and_license_admin.sql first. ('+String(e.message||e).slice(0,80)+')');setList(JSON.parse(JSON.stringify(LABEL_DEFAULT_TEMPLATES)));setLoading(false);});
+    return()=>{dead=true;};
+  },[rowId]);
+  const upd=(i,k,v)=>{setDirty(true);setList(p=>p.map((t,j)=>j===i?{...t,[k]:v}:t));};
+  const allSkus=[...new Set(Object.values(SKU_FLAVOR_CONFIG).flatMap(c=>c.skus||[]))];
+  async function save(){
+    setSaving(true);setMsg('');
+    try{
+      const value={templates:list};
+      const stamp={updated_by:cu.name,updated_at:new Date().toISOString()};
+      if(existing) await db.update('pf_settings',rowId,{value,...stamp});
+      else{await db.insert('pf_settings',{id:rowId,license_id:lic.id,section:'label_templates',value,...stamp});setExisting(true);}
+      setDirty(false);setMsg('✓ Saved — the Compliance Sticker button on Testing records now uses these templates.');
+    }catch(e){setMsg('❌ '+String(e.message||e).slice(0,200));}
+    setSaving(false);
+  }
+  if(loading) return el('div',{style:SET_CARD},'Loading…');
+  const fld=(i,label,k,ph,area)=>el('div',{style:{flex:'1 1 220px'}},el('label',{style:SET_LBL},label),
+    area?el('textarea',{style:{...SET_INP,minHeight:60,resize:'vertical'},value:list[i][k]||'',placeholder:ph||'',onChange:ev=>upd(i,k,ev.target.value)})
+    :el('input',{style:SET_INP,value:list[i][k]||'',placeholder:ph||'',onChange:ev=>upd(i,k,ev.target.value)}));
+  return el('div',null,
+    el('div',{style:{...SET_CARD,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',position:'sticky',top:0,zIndex:5}},
+      el('div',{style:{fontSize:13,fontWeight:800,flex:1}},'\uD83C\uDFF7\uFE0F Label templates · '+lic.name+(dirty?'  • unsaved changes':'')),
+      el('button',{className:'btn b-ghost btn-sm',onClick:()=>{setDirty(true);setList(p=>[...p,{id:'tpl-'+Date.now(),name:'New template',sku:'',stock:'avery-94202',metrc_approval:'',ingredients:'',net_weight:'',warning:'',manufacturer:'Black Fox Manufacturing · MAN000109'}]);}},'+ Add template'),
+      el('button',{className:'btn b-blue btn-sm',onClick:save,disabled:saving},saving?'Saving…':'💾 Save templates')),
+    msg&&el('div',{style:{...SET_CARD,fontSize:12,fontWeight:600}},msg),
+    list.map((t,i)=>el('div',{key:t.id,style:{...SET_CARD,borderLeft:'4px solid #0f766e'}},
+      el('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}},
+        fld(i,'Template name','name','e.g. 2G Infused Pre Roll'),
+        el('div',{style:{flex:'1 1 220px'}},el('label',{style:SET_LBL},'Linked product (SKU)'),
+          el('select',{style:SET_INP,value:t.sku||'',onChange:ev=>upd(i,'sku',ev.target.value)},el('option',{value:''},'— select —'),(t.sku&&!allSkus.includes(t.sku)?[t.sku]:[]).concat(allSkus).map(s=>el('option',{key:s,value:s},s)))),
+        el('div',{style:{flex:'1 1 200px'}},el('label',{style:SET_LBL},'Flavor (blank = any flavor)'),
+          el('select',{style:SET_INP,value:t.flavor||'',onChange:ev=>upd(i,'flavor',ev.target.value)},el('option',{value:''},'Any flavor'),((SKU_FLAVOR_CONFIG.pre_rolls&&SKU_FLAVOR_CONFIG.pre_rolls.flavors[t.sku])||[]).concat(Object.values(SKU_FLAVOR_CONFIG).map(c=>(c.flavors||{})[t.sku]||[]).flat()).filter((v,k,a2)=>a2.indexOf(v)===k).map(x=>el('option',{key:x,value:x},x)))),
+        el('div',{style:{flex:'1 1 220px'}},el('label',{style:SET_LBL},'Label sheet'),
+          el('select',{style:SET_INP,value:t.stock||'avery-94202',onChange:ev=>upd(i,'stock',ev.target.value)},Object.keys(LABEL_STOCKS).map(k=>el('option',{key:k,value:k},LABEL_STOCKS[k].name))))),
+      el('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}},
+        fld(i,'Marijuana product approval number','metrc_approval','e.g. M00002721406'),fld(i,'Servings/doses per package','servings','e.g. 200'),fld(i,'Weight','weight','e.g. 2g')),
+      el('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}},fld(i,'Instruction and length of effect','instructions','',true)),
+      el('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}},
+        fld(i,'Active and other ingredients','ingredients','Ingredient list exactly as it should print',true),fld(i,'Warning','warning','Required warning text',true)),
+      el('button',{className:'btn b-ghost btn-sm',style:{color:'var(--red)'},onClick:()=>{if(window.confirm('Delete this template?')){setDirty(true);setList(p=>p.filter((_,j)=>j!==i));}}},'✕ Delete template'))),
+    el('div',{style:{...SET_CARD,fontSize:11,color:'var(--text3)'}},'Read automatically: Best If Used By (one year after the test result), Tested By (testing lab license # from the COA), cannabinoid mg per serving (COA % x weight / servings), Produced By (this license). Testing Tag# is the sample testing tag on the testing record.'));
+}
+
 function TestingModule({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive,mpFn}){
   const[rows,setRows]=React.useState([]);
   const[loading,setLoading]=React.useState(true);
@@ -6010,6 +6250,7 @@ function TestingModule({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive,mpFn
   const[open,setOpen]=React.useState({});
   const[busy,setBusy]=React.useState({});
   const[msg,setMsg]=React.useState('');
+  const[stickerRec,setStickerRec]=React.useState(null);
   const batchPerm=mpFn?mpFn('batch'):modulePerm(cu,'batch');
   const canEdit=batchPerm==='admin'||batchPerm==='editor'||(batchPerm===null&&(isElevated||isAdmin||hasRole(cu,'production_manager')));
   const canDelete=batchPerm==='admin'||(batchPerm===null&&(isElevated||isAdmin));
@@ -6073,7 +6314,9 @@ function TestingModule({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive,mpFn
   const F=(label,key,type,opts)=>el('div',{key,style:{flex:'1 1 150px'}},el('label',{style:SET_LBL},label),
     opts?el('select',{style:inp,value:draft[key]||'',onChange:ev=>setDraft(p=>({...p,[key]:ev.target.value}))},opts.map(o=>el('option',{key:o,value:o},o)))
     :el('input',{style:inp,type:type||'text',value:draft[key]||'',onChange:ev=>setDraft(p=>({...p,[key]:ev.target.value}))}));
+  const licObj=LICENSES.find(l=>l.license_number===licActive)||LICENSES[0];
   return el('div',{style:{padding:'0 0 48px'}},
+    stickerRec&&el(LabelStickerModal,{rec:stickerRec,lic:licObj,onClose:()=>setStickerRec(null)}),
     el('div',{style:{background:'linear-gradient(135deg,#4338ca,#6366f1)',borderRadius:14,padding:'18px 22px',marginBottom:16,color:'#fff'}},
       el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}},
         el('div',null,el('div',{style:{fontSize:20,fontWeight:800}},'\uD83D\uDD2C Testing'),el('div',{style:{fontSize:12,opacity:.85}},'Lab submissions, results and COAs · '+rows.length+' records')),
@@ -6119,6 +6362,7 @@ function TestingModule({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive,mpFn
           el('div',{style:{display:'flex',gap:6,flexWrap:'wrap',alignItems:'flex-start'}},
             r.coa_url&&el('a',{href:r.coa_url,target:'_blank',rel:'noopener',className:'btn b-ghost btn-sm',style:{textDecoration:'none'}},'\uD83D\uDCC4 COA'),
             r.coa_analysis&&el('button',{className:'btn b-ghost btn-sm',onClick:()=>setOpen(p=>({...p,[r.id]:!p[r.id]}))},open[r.id]?'Hide analysis':'Show analysis'),
+            r.coa_analysis&&el('button',{className:'btn b-blue btn-sm',onClick:()=>setStickerRec(r),title:'Print compliance stickers on Avery label sheets'},'\uD83C\uDFF7\uFE0F Compliance Sticker'),
             canEdit&&el('label',{className:'btn b-ghost btn-sm',style:{cursor:'pointer'}},busy[r.id]||(hasCoa?'Replace COA':'\u2B06 Upload COA'),
               el('input',{type:'file',accept:'application/pdf,image/*',style:{display:'none'},disabled:!!busy[r.id],onChange:ev=>{const f=ev.target.files&&ev.target.files[0];ev.target.value='';if(f) runAnalysis(r,f);}})),
             canEdit&&r.coa_url&&el('button',{className:'btn b-ghost btn-sm',disabled:!!busy[r.id],onClick:()=>runAnalysis(r,null)},'Re-analyze'),
@@ -12157,13 +12401,13 @@ function SettingsModule({cu,licActive,users,setUsers}){
   }
   let body;
   if(tab==='org') body=el(OrgChartEditor,{key:lic.id,lic,cu});
-  else if(tab==='compliance') body=el(SetPlanned,{title:'\u2705 Compliance',intro:'Everything compliance-related for '+lic.name+' will be managed here instead of in the code.',items:[
+  else if(tab==='compliance') body=el('div',null,el(LabelTemplatesEditor,{key:lic.id,lic,cu}),el(SetPlanned,{title:'\u2705 Compliance',intro:'Everything compliance-related for '+lic.name+' will be managed here instead of in the code.',items:[
     'Compliance frameworks and their clauses (Missouri DCR / 19 CSR 100-1, ISO 9001, cGMP)',
     'SOP folders, categories and required acknowledgements',
     'Facility log types and how often each is due (including the weekly Scale Calibration check)',
     'Regulatory citations shown on the Org Chart and reports',
     'Training requirements and the Training Matrix',
-  ]});
+  ]}));
   else if(tab==='production') body=el(SetPlanned,{title:'\uD83C\uDFED Production',intro:'Products, ingredients and the rules the batch checks use will be managed here.',items:[
     'Product lines, SKUs and flavors (Cartridges, Pre-Rolls, Infused Flower, Gummies\u2026)',
     'Which ingredient fields each SKU shows in the Batch Tracker',
