@@ -6062,9 +6062,10 @@ function labelData(rec,tpl,licNumber){
 function labelParagraphs(d){
   const L=(t)=>({t:t,b:true}),V=(t)=>({t:t});
   const pairs=[['Servings/Doses Per Package: ',d.servings],['Best If Used By: ',d.bestBy],['Produced By: ',d.producedBy],['Tested By: ',d.testedBy],['Testing Tag#: ',d.testTag],['Weight: ',d.weight]];
-  const info=[];pairs.forEach((p,i)=>{info.push(L(p[0]),V((p[1]||'')+(i<pairs.length-1?'     ':'')));});
+  const SEP=V('     ');
+  const info=[];pairs.forEach((p,i)=>{if(i)info.push(SEP);info.push({chunk:[L(p[0]),V(String(p[1]||''))]});});
   const prof=[L('CANNABINOID PROFILE: ')];
-  d.canna.forEach((c,i)=>{prof.push(L(c.name+': '),V(c.mg+' mg/serving-dose'+(i<d.canna.length-1?'   ':'')));});
+  d.canna.forEach((c,i)=>{if(i)prof.push(V('   '));prof.push({chunk:[L(c.name+': '),V(c.mg+' mg/serving-dose')]});});
   return [
     [L('Active and Other Ingredients: '),V(d.ingredients)],
     [L('MARIJUANA PRODUCT INFORMATION:')],
@@ -6083,7 +6084,17 @@ function drawLabel(doc,x,y,w,h,d,minK){
     const lines=[];
     paras.forEach(p=>{
       let cur=[],cw=0;
-      p.forEach(run=>{
+      p.forEach(item=>{
+        if(item.chunk){
+          // label + value stay together on one line; wrap only between chunks
+          const toks=[];let tw=0;
+          item.chunk.forEach(run=>{doc.setFont('helvetica',run.b?'bold':'normal');doc.setFontSize(sz);
+            run.t.split(/(\s+)/).forEach(tok=>{if(tok==='')return;const w=doc.getTextWidth(tok);toks.push({t:tok,b:run.b,w:w});tw+=w;});});
+          if(cw+tw>iw&&cur.length){while(cur.length&&!/\S/.test(cur[cur.length-1].t))cur.pop();lines.push(cur);cur=[];cw=0;}
+          toks.forEach(t=>{cur.push(t);cw+=t.w;});
+          return;
+        }
+        const run=item;
         doc.setFont('helvetica',run.b?'bold':'normal');doc.setFontSize(sz);
         run.t.split(/(\s+)/).forEach(tok=>{
           if(tok==='') return;
