@@ -5901,11 +5901,15 @@ const COA_ANALYSIS_PROMPT=`You are reading a cannabis laboratory Certificate of 
  },
  "terpenes":[{"name":"","value":0}],"total_terpenes":null,"notes":""
 }
-Rules: numbers as numbers where possible; use the lab's own pass/fail and limits; "ND" means not detected; omit categories the COA does not contain; sample_metrc_tag is the METRC package/sample tag printed on the COA (digits and letters exactly as printed); overall_status is Fail if any category failed.`;
+Rules: lab_license_number is the testing facility's Missouri license number, which always begins with TES followed by digits (for example TES000123) \u2014 search the whole document, especially the header, footer, accreditation and signature areas, and copy it exactly as printed; numbers as numbers where possible; use the lab's own pass/fail and limits; "ND" means not detected; omit categories the COA does not contain; sample_metrc_tag is the METRC package/sample tag printed on the COA (digits and letters exactly as printed); overall_status is Fail if any category failed.`;
 function parseJsonLoose(t){
   const s=String(t||'');const a=s.indexOf('{'),b=s.lastIndexOf('}');
   if(a<0||b<=a) throw new Error('No JSON in response');
   return JSON.parse(s.slice(a,b+1));
+}
+function findTesLicense(an){
+  const m=JSON.stringify(an||{}).match(/TES[\s-]?\d{3,}/i);
+  return m?m[0].replace(/[\s-]/g,'').toUpperCase():'';
 }
 function normTag(t){return String(t||'').toUpperCase().replace(/[^A-Z0-9]/g,'');}
 function coaMetrcMismatch(rec,an){
@@ -5929,7 +5933,10 @@ async function analyzeCoaFile(file){
       messages:[{role:'user',content:[block,{type:'text',text:COA_ANALYSIS_PROMPT}]}]})});
   const j=await res.json();
   if(!res.ok||j.error) throw new Error((j.error&&j.error.message)||'COA analysis failed');
-  return parseJsonLoose((j.content&&j.content[0]&&j.content[0].text)||'');
+  const out=parseJsonLoose((j.content&&j.content[0]&&j.content[0].text)||'');
+  const lic=String(out.lab_license_number||'').replace(/[\s-]/g,'').toUpperCase();
+  out.lab_license_number=/^TES\d+/.test(lic)?lic:findTesLicense(out);
+  return out;
 }
 
 class CoaErrorBoundary extends React.Component{
@@ -6045,7 +6052,7 @@ function labelData(rec,tpl,licNumber){
   });
   return {
     approval:tpl.metrc_approval||'',servings:tpl.servings||'',weight:tpl.weight||'',
-    bestBy:dts.bestBy,producedBy:licNumber||'',testedBy:an.lab_license_number||'',
+    bestBy:dts.bestBy,producedBy:licNumber||'',testedBy:an.lab_license_number||findTesLicense(an),
     testTag:rec.sample_metrc_tag||'',canna,
     ingredients:tpl.ingredients||'',instructions:tpl.instructions||'',warning:tpl.warning||'',
     pkgTag:rec.metrc_tag||'',lab:an.lab_name||rec.lab_name||'',tested:dts.tested,
@@ -6153,7 +6160,7 @@ function LabelStickerModal({rec,lic,onClose}){
     doc.save('Compliance_Labels_'+String(rec.batch_number||rec.id).replace(/[^A-Za-z0-9_-]+/g,'_')+'.pdf');
   }
   const d=tpl?labelData(rec,tpl,lic.license_number):null;
-  const missing=d?[!d.approval&&'approval number (Settings > Compliance > Label Templates)',!d.ingredients&&'ingredients',!d.testTag&&'sample testing tag (add it on the testing record)',!d.testedBy&&'testing lab license # (not read from the COA)',d.canna.every(c=>c.mg==='ND')&&'cannabinoid results'].filter(Boolean):[];
+  const missing=d?[!d.approval&&'approval number (Settings > Compliance > Label Templates)',!d.ingredients&&'ingredients',!d.testTag&&'sample testing tag (add it on the testing record)',!d.testedBy&&'Tested By (TES license # not found on the COA \u2014 click Re-analyze, or type it in Edit)',d.canna.every(c=>c.mg==='ND')&&'cannabinoid results'].filter(Boolean):[];
   const inp={background:'var(--bg)',border:'1px solid var(--border)',borderRadius:6,padding:'6px 8px',color:'var(--text)',fontFamily:'inherit',fontSize:12,width:80};
   return el('div',{style:{position:'fixed',inset:0,background:'rgba(15,23,42,.6)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:12},onClick:onClose},
     el('div',{style:{background:'var(--surface)',borderRadius:14,width:'min(960px,100%)',maxHeight:'94vh',overflow:'auto',padding:18},onClick:e=>e.stopPropagation()},
@@ -6366,16 +6373,17 @@ function TestingModule({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive,mpFn
             canEdit&&el('label',{className:'btn b-ghost btn-sm',style:{cursor:'pointer'}},busy[r.id]||(hasCoa?'Replace COA':'\u2B06 Upload COA'),
               el('input',{type:'file',accept:'application/pdf,image/*',style:{display:'none'},disabled:!!busy[r.id],onChange:ev=>{const f=ev.target.files&&ev.target.files[0];ev.target.value='';if(f) runAnalysis(r,f);}})),
             canEdit&&r.coa_url&&el('button',{className:'btn b-ghost btn-sm',disabled:!!busy[r.id],onClick:()=>runAnalysis(r,null)},'Re-analyze'),
-            canEdit&&el('button',{className:'btn b-ghost btn-sm',onClick:()=>{setEditing(isE?null:r.id);setDraft({...r});}},isE?'Close':'Edit'),
+            canEdit&&el('button',{className:'btn b-ghost btn-sm',onClick:()=>{setEditing(isE?null:r.id);setDraft({...r,_lic:(r.coa_analysis&&r.coa_analysis.lab_license_number)||''});}},isE?'Close':'Edit'),
             canDelete&&el('button',{className:'btn b-red btn-sm',onClick:async()=>{if(!window.confirm('Delete this testing record?'))return;try{await db.remove('pf_testing',r.id);setRows(p=>p.filter(x=>x.id!==r.id));notify();}catch(e){setMsg('❌ '+String(e.message||e).slice(0,160));}}},'Delete'))),
         isE&&el('div',{style:{marginTop:10,paddingTop:10,borderTop:'1px solid var(--border)'}},
           el('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}},
             F('Status','status','text',TESTING_STATUSES),F('Lab','lab_name'),F('METRC tag','metrc_tag'),F('Sample METRC tag','sample_metrc_tag')),
           el('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}},
-            F('Result THC %','result_thc'),F('Result CBD %','result_cbd'),F('Result notes','result_notes'),F('Notes','notes')),
+            F('Result THC %','result_thc'),F('Result CBD %','result_cbd'),F('Testing lab license # (TES\u2026)','_lic'),F('Result notes','result_notes'),F('Notes','notes')),
           el('button',{className:'btn b-blue btn-sm',onClick:async()=>{
             try{
               const p={status:draft.status,lab_name:draft.lab_name,metrc_tag:draft.metrc_tag,sample_metrc_tag:draft.sample_metrc_tag,result_thc:draft.result_thc,result_cbd:draft.result_cbd,result_notes:draft.result_notes,notes:draft.notes};
+              if(r.coa_analysis&&String(draft._lic||'')!==String(r.coa_analysis.lab_license_number||'')) p.coa_analysis={...r.coa_analysis,lab_license_number:String(draft._lic||'').trim().toUpperCase()};
               if(draft.status!==r.status){ if(draft.status==='Submitted'&&!r.submitted_at) p.submitted_at=new Date().toISOString(); if(['Passed','Failed'].includes(draft.status)) p.result_at=new Date().toISOString(); }
               await saveRec(r,p);setEditing(null);
             }catch(e){setMsg('❌ '+String(e.message||e).slice(0,160));}
