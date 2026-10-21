@@ -6526,6 +6526,11 @@ function buildAlignmentSheet(stock,offX,offY){
     doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(0);
     doc.text('#'+(pos+1)+'  4" x 1"  (dashed = print-safe area)',x+LABEL_PAD+2,y+LABEL_PAD+8);
   }
+  // Ruler: if this does not measure exactly 7.00 in on paper, the print dialog is scaling the page.
+  doc.setDrawColor(0);doc.setLineWidth(.8);doc.line(54,770,558,770);
+  doc.line(54,764,54,776);doc.line(558,764,558,776);
+  doc.setFont('helvetica','bold');doc.setFontSize(8);
+  doc.text('This line must measure exactly 7.00 in. If not, set the print scale to 100% / Actual size (no "Fit", no margins).',56,761);
   return doc;
 }
 function LabelStickerModal({rec,lic,onClose}){
@@ -16029,7 +16034,7 @@ function App(){
   const qmsRoleGroup=topRoleGroup(cu);
   const canAccessQms=isAdmin||isElevated||canRead(cu,'qms');
   const canAccessLogs=isAdmin||isElevated||canRead(cu,'logs');
-  const canAccessBatch=isAdmin||isElevated||canRead(cu,'batch');
+  const canAccessBatch=isAdmin||isElevated||canRead(cu,'batch')||['pm','lead'].includes(restrictedTier(cu,isAdmin,isElevated));
   const canAccessTesting=subModuleOk(cu,'testing',canAccessBatch);
   const canAccessReporter=subModuleOk(cu,'reporter',canAccessQms);
   const canAccessCalendar=subModuleOk(cu,'calendar',true);
@@ -16041,7 +16046,12 @@ function App(){
   const canAccessRisks=isAdmin||isElevated||canRead(cu,'risks');
   const canAccessCompliance=isAdmin||isElevated||canRead(cu,'compliance');
   const canAccessSales=isAdmin||hasRole(cu,'sales_manager')||canRead(cu,'sales');
-  const restricted=restrictedTier(cu,isAdmin,isElevated);
+  // Role tier (production manager / lead / member) narrows the sidebar by default. If the admin has
+  // explicitly granted this person any wider module (via Access Templates / Team & Access), the full
+  // sidebar is used and each item is then shown or hidden by that module's own access level.
+  const restrictedBase=restrictedTier(cu,isAdmin,isElevated);
+  const grantedWider=!!restrictedBase&&['qms','logs','compliance','risks','planner','formbank','cogs','sales','testing','reporter','deviations','capas','audits','changes','complaints','suppliers'].some(m=>{const o=cu.module_perms||{};return m in o&&!!o[m];});
+  const restricted=grantedWider?null:restrictedBase;
   const today=new Date().toISOString().slice(0,10);
   const myTasks=tasks.filter(t=>(t.assignees||[]).some(a=>a.id===cu.id)&&!['archived'].includes(t.status));
   const overdueCt=tasks.filter(t=>!['done','archived'].includes(t.status)&&t.due_date&&t.due_date<today).length;
@@ -16065,6 +16075,7 @@ function App(){
   // WHERE it's grouped.
   const navFlatTop=[
     {id:'license',ico:'\uD83D\uDCDC',label:'License Chart'},
+    restrictedBase&&{id:'sops',ico:'\uD83D\uDCCB',label:'SOPs'},
     {id:'board',ico:'\u2B1B',label:'Task Board'},
     canAccessCalendar&&{id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
     canAccessReporter&&{id:'reporter',ico:'\uD83E\uDDE0',label:'AI Reporter'},
@@ -16332,15 +16343,15 @@ function App(){
       el('button',{className:'mnav-btn',onClick:()=>{if(window.confirm('Sign out?')){localStorage.removeItem('pf_session');localStorage.removeItem('pf_token');window.location.reload();}}},el('span',{className:'mnav-ico'},'\u23FB'),'Sign Out'),
     ),
     el('div',{className:'main'},
-      page==='board'&&el(Board,{tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setPage,SUPA_URL,SUPA_KEY,H,restricted,boardPerm:modulePerm(cu,'board')}),
+      page==='board'&&el(Board,{tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setPage,SUPA_URL,SUPA_KEY,H,restricted:restrictedBase,boardPerm:modulePerm(cu,'board')}),
       page==='calendar'&&canAccessCalendar&&el(Calendar,{events,setEvents,tasks,cu,users,locFilter,meetingNotes,setMeetingNotes,onJoinCall:(room,title,meetLink)=>setActiveCall({room,title,meetLink})}),
       page==='sales'&&canAccessSales&&el(SalesMarketing,{salesTasks,setSalesTasks,cu,users,locFilter}),
       page==='license'&&el(LicenseChart,{licActive}),
-      page==='sops'&&restricted&&el(SOPs,{sops,setSops,cu,users}),
+      page==='sops'&&restrictedBase&&el(SOPs,{sops,setSops,cu,users}),
       page==='compliance'&&canAccessCompliance&&el(ComplianceModule,{cu,isElevated,isAdmin,LICENSES,SUPA_URL,SUPA_KEY,H,db}),
       page==='risks'&&canAccessRisks&&el(RiskRegister,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H}),
       page==='logs'&&canAccessLogs&&el(FacilityLogs,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive}),
-      page==='batch'&&canAccessBatch&&el(BatchTracker,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn:modulePerm.bind(null,cu),licActive}),
+      page==='batch'&&canAccessBatch&&el(BatchTracker,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted:restrictedBase,mpFn:modulePerm.bind(null,cu),licActive}),
       page==='formbank'&&canAccessFormBank&&el(FormulationBank,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='cogs'&&canAccessCogs&&el(CogsCalculator,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='reporter'&&canAccessReporter&&el(AIReporter,{cu,SUPA_URL,SUPA_KEY,H}),
