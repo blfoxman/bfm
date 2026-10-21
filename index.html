@@ -424,19 +424,44 @@ const RLABEL={
 };
 const PERM_RANK={admin:3,editor:2,read:1};
 const MODULE_DEFS=[
-  {id:'license',label:'License Chart'},
-  {id:'board',label:'Task Board'},
-  {id:'qms',label:'QMS & SOPs'},
-  {id:'compliance',label:'Compliance'},
-  {id:'risks',label:'Risk Register'},
-  {id:'logs',label:'Facility Logs'},
-  {id:'batch',label:'Batch Tracker'},
-  {id:'formbank',label:'Formulation Bank'},
-  {id:'cogs',label:'COGS Calculator'},
-  {id:'planner',label:'Production Planner'},
-  {id:'mydocs',label:'My Documents'},
-  {id:'sales',label:'Sales & Marketing'},
+  {id:'license',label:'License Chart',grp:'General'},
+  {id:'board',label:'Task Board',grp:'General'},
+  {id:'calendar',label:'Calendar',grp:'General',base:'editor'},
+  {id:'mydocs',label:'My Documents',grp:'General'},
+  {id:'reporter',label:'AI Reporter',grp:'General',parent:'qms'},
+  {id:'sales',label:'Sales & Marketing',grp:'General'},
+  {id:'planner',label:'Production Planner',grp:'Production'},
+  {id:'batch',label:'Batch Tracker',grp:'Production'},
+  {id:'testing',label:'Testing',grp:'Production',parent:'batch'},
+  {id:'stickers',label:'Compliance Stickers',grp:'Production',parent:'testing'},
+  {id:'formbank',label:'Formulation Bank',grp:'Production'},
+  {id:'cogs',label:'COGS Calculator',grp:'Production'},
+  {id:'qms',label:'QMS & SOPs',grp:'Compliance'},
+  {id:'compliance',label:'Compliance',grp:'Compliance'},
+  {id:'risks',label:'Risk Register',grp:'Compliance'},
+  {id:'deviations',label:'Deviations',grp:'QMS Tabs',parent:'qms'},
+  {id:'capas',label:'CAPAs',grp:'QMS Tabs',parent:'qms'},
+  {id:'audits',label:'Audits',grp:'QMS Tabs',parent:'qms'},
+  {id:'changes',label:'Change Control',grp:'QMS Tabs',parent:'qms'},
+  {id:'complaints',label:'Complaints',grp:'QMS Tabs',parent:'qms'},
+  {id:'suppliers',label:'Suppliers',grp:'QMS Tabs',parent:'qms'},
+  {id:'training',label:'Training Matrix',grp:'QMS Tabs',parent:'qms'},
+  {id:'logs',label:'Facility Logs',grp:'Facility Logs'},
+  {id:'logs_sanitation',label:'Sanitation Log',grp:'Facility Logs',parent:'logs'},
+  {id:'logs_waste',label:'Waste Log',grp:'Facility Logs',parent:'logs'},
+  {id:'logs_scale',label:'Scale Calibration',grp:'Facility Logs',parent:'logs'},
+  {id:'logs_security',label:'Security Logs',grp:'Facility Logs',parent:'logs'},
+  {id:'logs_pest',label:'Pest Control',grp:'Facility Logs',parent:'logs'},
+  {id:'logs_equipment',label:'Equipment Log',grp:'Facility Logs',parent:'logs'},
+  {id:'logs_temp',label:'Temperature Log',grp:'Facility Logs',parent:'logs'},
+  {id:'logs_visitor',label:'Visitor Log',grp:'Facility Logs',parent:'logs'},
+  {id:'logs_env',label:'Environmental',grp:'Facility Logs',parent:'logs'},
 ];
+const MODULE_GROUPS=['General','Production','Compliance','QMS Tabs','Facility Logs'];
+const MODULE_PARENT={};const MODULE_BASE={};
+MODULE_DEFS.forEach(m=>{if(m.parent)MODULE_PARENT[m.id]=m.parent;if(m.base)MODULE_BASE[m.id]=m.base;});
+const LOG_MODULE_ID={sanitation:'logs_sanitation',waste:'logs_waste',scale_calibration:'logs_scale',security:'logs_security',security_inspection:'logs_security',pest:'logs_pest',equipment:'logs_equipment',temperature:'logs_temp',visitor:'logs_visitor',environmental:'logs_env'};
+const QMS_TAB_MODULE={deviations:'deviations',capas:'capas',audits:'audits',changes:'changes',complaints:'complaints',suppliers:'suppliers',training:'training'};
 const ROLE_DEFAULT_PERMS={
   admin:{license:'admin',board:'admin',qms:'admin',compliance:'admin',risks:'admin',logs:'admin',batch:'admin',formbank:'admin',cogs:'admin',planner:'admin',mydocs:'admin',sales:'admin'},
   general_manager:{license:'read',board:null,qms:null,compliance:null,risks:null,logs:null,batch:null,formbank:null,cogs:null,planner:null,mydocs:'admin',sales:null},
@@ -460,7 +485,51 @@ function modulePerm(u,mod){
   if(mod in ov)return ov[mod]||null;
   const roles=userRoles(u);let best=null;
   for(const r of roles){const d=(ROLE_DEFAULT_PERMS[r]||{})[mod]||null;if((PERM_RANK[d]||0)>(PERM_RANK[best]||0))best=d;}
+  if(!best&&MODULE_BASE[mod])best=MODULE_BASE[mod];
+  if(!best&&MODULE_PARENT[mod])return modulePerm(u,MODULE_PARENT[mod]);
   return best;
+}
+// Sub-module access: an explicit setting (from Access Control / a template) wins; otherwise it follows the parent module.
+function subModuleOk(u,mod,parentOk){
+  if(!u)return false;
+  if(u.role==='admin')return true;
+  const ov=u.module_perms||{};
+  return (mod in ov)?!!ov[mod]:!!parentOk;
+}
+function logCanCreate(u,logId){
+  const mod=LOG_MODULE_ID[logId];
+  if(!mod||!u||u.role==='admin')return true;
+  const ov=u.module_perms||{};
+  if(!(mod in ov))return true;
+  return ov[mod]==='editor'||ov[mod]==='admin';
+}
+// ACCESS TEMPLATES: a named set of module levels that is copied onto a member.
+function allPerms(level,over){const o={};MODULE_DEFS.forEach(m=>{o[m.id]=level;});return Object.assign(o,over||{});}
+const ACCESS_STARTER_TEMPLATES=[
+  {id:'tpl-viewer',name:'Read-Only Viewer',description:'Can look at most things, cannot change anything. No COGS, Sales or AI Reporter.',perms:allPerms('read',{cogs:null,sales:null,reporter:null,stickers:null})},
+  {id:'tpl-production',name:'Production Staff',description:'Batch Tracker, Testing (view only), Planner and the production facility logs.',perms:allPerms(null,{license:'read',board:'editor',calendar:'editor',mydocs:'editor',planner:'read',batch:'editor',testing:'read',formbank:'read',logs:'editor',logs_sanitation:'editor',logs_waste:'editor',logs_scale:'editor',logs_equipment:'editor',logs_temp:'editor',logs_env:'editor',logs_pest:'read',logs_visitor:'read'})},
+  {id:'tpl-compliance',name:'Compliance Staff',description:'QMS, Compliance, Risk Register, every QMS tab and all facility logs.',perms:allPerms(null,{license:'read',board:'editor',calendar:'editor',mydocs:'editor',reporter:'read',batch:'read',testing:'read',qms:'editor',compliance:'editor',risks:'editor',deviations:'editor',capas:'editor',audits:'editor',changes:'editor',complaints:'editor',suppliers:'editor',training:'editor',logs:'editor',logs_sanitation:'editor',logs_waste:'editor',logs_scale:'editor',logs_security:'editor',logs_pest:'editor',logs_equipment:'editor',logs_temp:'editor',logs_visitor:'editor',logs_env:'editor'})},
+  {id:'tpl-sales',name:'Sales Team',description:'Sales & Marketing, Task Board and Calendar only.',perms:allPerms(null,{license:'read',board:'editor',calendar:'editor',mydocs:'editor',sales:'editor'})},
+  {id:'tpl-manager',name:'Department Manager',description:'Editor on everything; COGS is read-only.',perms:allPerms('editor',{cogs:'read'})},
+];
+function templatePerms(tpl){
+  const out={};
+  MODULE_DEFS.forEach(m=>{if(tpl.perms&&m.id in tpl.perms)out[m.id]=tpl.perms[m.id];});
+  out._template=tpl.id;
+  return out;
+}
+function useAccessTemplates(licId){
+  const[tpls,setTpls]=useState(null);
+  useEffect(()=>{
+    let dead=false;
+    db.get('pf_settings','id=eq.'+encodeURIComponent(licId+':access_templates')+'&select=value').then(r=>{
+      if(dead)return;
+      const v=Array.isArray(r)&&r[0]&&r[0].value&&Array.isArray(r[0].value.templates)?r[0].value.templates:null;
+      setTpls(v||ACCESS_STARTER_TEMPLATES);
+    }).catch(()=>{if(!dead)setTpls(ACCESS_STARTER_TEMPLATES);});
+    return()=>{dead=true;};
+  },[licId]);
+  return tpls||[];
 }
 function canRead(u,mod){return !!modulePerm(u,mod);}
 function canEdit_(u,mod){const p=modulePerm(u,mod);return p==='editor'||p==='admin';}
@@ -2330,7 +2399,9 @@ function Board({tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setP
 }
 
 // \u2500\u2500 TEAM PAGE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-function Team({users,setUsers,cu}){
+function Team({users,setUsers,cu,licActive}){
+  const teamLic=LICENSES.find(l=>l.license_number===licActive)||LICENSES[0];
+  const accessTpls=useAccessTemplates(teamLic.id);
   const[editU,setEditU]=useState(null);
   const[showAdd,setAdd]=useState(false);
   const[search,setSearch]=useState('');
@@ -2338,7 +2409,7 @@ function Team({users,setUsers,cu}){
   const[newPw,setNewPw]=useState('');
   const[pwMsg,setPwMsg]=useState('');
   const[teamTab,setTeamTab]=useState('members');
-  const[af,setAf]=useState({firstName:'',lastName:'',email:'',pw:'',role:'team_member',roles:['team_member'],dept:'Production',loc:'Missouri'});
+  const[af,setAf]=useState({firstName:'',lastName:'',email:'',pw:'',role:'team_member',roles:['team_member'],dept:'Production',loc:'Missouri',tplId:''});
   const pending=users.filter(u=>!u.approved);
   const approved=users.filter(u=>u.approved).filter(u=>
     !search||u.name.toLowerCase().includes(search.toLowerCase())||
@@ -2404,11 +2475,13 @@ function Team({users,setUsers,cu}){
       licenses:af.licenses||[],loc:af.loc,
       approved:true,perms:[],managers:[],oversees_depts:[],
     };
+    const addTpl=accessTpls.find(t=>t.id===af.tplId);
+    if(addTpl) nu.module_perms=templatePerms(addTpl);
     try{
       await db.insert('pf_users',nu);
       setUsers(p=>[...p,nu]);
       setAdd(false);
-      setAf({firstName:'',lastName:'',email:'',pw:'',role:'team_member',roles:['team_member'],dept:'Production',loc:'Missouri'});
+      setAf({firstName:'',lastName:'',email:'',pw:'',role:'team_member',roles:['team_member'],dept:'Production',loc:'Missouri',tplId:''});
     }catch(e){console.error('addUser error:',e);alert('Failed to add user: '+e.message);}
   }
 
@@ -2466,7 +2539,7 @@ function Team({users,setUsers,cu}){
         el('button',{key:t.id,onClick:()=>setTeamTab(t.id),style:{flex:1,padding:'8px 14px',borderRadius:8,border:'none',background:teamTab===t.id?'var(--accent)':'transparent',color:teamTab===t.id?'#000':'var(--text2)',fontFamily:'inherit',fontSize:13,fontWeight:teamTab===t.id?700:500,cursor:'pointer',transition:'all .15s'}},t.label)
       )
     ),
-    teamTab==='access'&&el(AccessControlMatrix,{users:users.filter(u=>u.approved),setUsers}),
+    teamTab==='access'&&el(AccessControlMatrix,{users:users.filter(u=>u.approved),setUsers,licActive}),
     teamTab==='members'&&el('div',null,
 
     // Pending approvals
@@ -2793,6 +2866,7 @@ function Team({users,setUsers,cu}){
               )),
             ),
           ),
+          el('div',{className:'fg'},el('label',null,'Access template ('+teamLic.name+')'),el('select',{value:af.tplId||'',onChange:ev=>setAf(p=>({...p,tplId:ev.target.value}))},el('option',{value:''},'\u2014 role defaults \u2014'),accessTpls.map(t=>el('option',{key:t.id,value:t.id},t.name)))),
           el('div',{className:'g2'},
             el('div',{className:'fg',style:{marginBottom:0}},el('label',null,'Location'),el('select',{value:af.loc,onChange:ev=>setAf(p=>({...p,loc:ev.target.value}))},LOCS.map(l=>el('option',{key:l,value:l},l)))),
             el('div',{className:'fg',style:{marginBottom:0}},el('label',null,'Home Department'),el('select',{value:af.dept,onChange:ev=>setAf(p=>({...p,dept:ev.target.value}))},DEPTS.map(d=>el('option',{key:d,value:d},d)))),
@@ -2814,40 +2888,61 @@ const PERM_COLORS_MAP={
   editor:{bg:'rgba(245,158,11,.12)',color:'#d97706'},
   admin:{bg:'rgba(16,122,85,.12)',color:'#10b981'},
 };
-function AccessControlMatrix({users,setUsers}){
+function AccessControlMatrix({users,setUsers,licActive}){
+  const lic=LICENSES.find(l=>l.license_number===licActive)||LICENSES[0];
+  const templates=useAccessTemplates(lic.id);
   const[filter,setFilter]=useState('');
+  const[grp,setGrp]=useState('All');
   const[draft,setDraft]=useState({});
   const[saving,setSaving]=useState({});
   const[saved,setSaved]=useState({});
   const[errors,setErrors]=useState({});
+  const[sel,setSel]=useState({});
+  const[bulkTpl,setBulkTpl]=useState('');
+  const[bulkMsg,setBulkMsg]=useState('');
   const visibleUsers=users.filter(u=>u.role!=='admin'&&(!filter||u.name.toLowerCase().includes(filter.toLowerCase())));
+  const mods=MODULE_DEFS.filter(m=>grp==='All'||m.grp===grp);
 
-  function getEffective(user,moduleId){
+  function getEffective(user,key){
     const userDraft=draft[user.id];
-    if(userDraft&&moduleId in userDraft)return userDraft[moduleId];
+    if(userDraft&&key in userDraft)return userDraft[key];
     const overrides=user.module_perms||{};
-    if(moduleId in overrides)return overrides[moduleId];
+    if(key in overrides)return overrides[key];
     return undefined;
   }
-
   function hasPendingChanges(user){return Object.keys(draft[user.id]||{}).length>0;}
 
-  function cyclePerm(user,moduleId){
-    const current=getEffective(user,moduleId);
-    const savedVal=(user.module_perms||{})[moduleId];
-    let next;
-    if(current===undefined||current===null)next='read';
-    else if(current==='read')next='editor';
-    else if(current==='editor')next='admin';
-    else if(current==='admin')next=null;
-    else next=undefined;
+  function setDraftVal(user,key,next){
+    const saved0=user.module_perms||{};
+    const savedVal=(key in saved0)?saved0[key]:undefined;
     setDraft(p=>{
       const ud={...(p[user.id]||{})};
-      if(next===savedVal||(next===undefined&&!(moduleId in (user.module_perms||{})))){delete ud[moduleId];}
-      else{ud[moduleId]=next;}
+      if(next===savedVal){delete ud[key];}else{ud[key]=next;}
       if(Object.keys(ud).length===0){const nd={...p};delete nd[user.id];return nd;}
       return{...p,[user.id]:ud};
     });
+  }
+  function cyclePerm(user,moduleId){
+    const current=getEffective(user,moduleId);
+    let next;
+    if(current===undefined||current===null&&false)next='read';
+    else if(current==='read')next='editor';
+    else if(current==='editor')next='admin';
+    else if(current==='admin')next=null;
+    else if(current===null)next=undefined;
+    else next='read';
+    setDraftVal(user,moduleId,next);
+  }
+  function applyTpl(user,tpl){
+    const target=templatePerms(tpl);
+    const saved0=user.module_perms||{};
+    const ud={};
+    [...MODULE_DEFS.map(m=>m.id),'_template'].forEach(k=>{
+      const sv=(k in saved0)?saved0[k]:undefined;
+      const nv=(k in target)?target[k]:undefined;
+      if(nv!==sv)ud[k]=nv;
+    });
+    setDraft(p=>{const nd={...p};if(Object.keys(ud).length)nd[user.id]=ud;else delete nd[user.id];return nd;});
   }
 
   async function saveUser(user){
@@ -2855,9 +2950,9 @@ function AccessControlMatrix({users,setUsers}){
     setErrors(p=>({...p,[user.id]:''}));
     const ud=draft[user.id]||{};
     const base={...(user.module_perms||{})};
-    Object.entries(ud).forEach(([mod,val])=>{
-      if(val===undefined||val===null)delete base[mod];
-      else base[mod]=val;
+    Object.entries(ud).forEach(([k,val])=>{
+      if(val===undefined)delete base[k];
+      else base[k]=val;   // null is kept: it means "no access", not "use the role default"
     });
     try{
       await db.update('pf_users',user.id,{module_perms:base});
@@ -2871,37 +2966,81 @@ function AccessControlMatrix({users,setUsers}){
     }
     setSaving(p=>({...p,[user.id]:false}));
   }
-
   function resetUser(user){setDraft(p=>{const nd={...p};delete nd[user.id];return nd;});}
 
-  const PERM_COLORS_MAP={
-    read:{bg:'rgba(59,130,246,.12)',color:'#3b82f6'},
-    editor:{bg:'rgba(245,158,11,.12)',color:'#d97706'},
-    admin:{bg:'rgba(16,122,85,.12)',color:'#10b981'},
-  };
+  function tplLabel(user){
+    const eff={};
+    MODULE_DEFS.forEach(m=>{const v=getEffective(user,m.id);if(v!==undefined)eff[m.id]=v;});
+    const effT=getEffective(user,'_template');
+    const same=t=>MODULE_DEFS.every(m=>{
+      const x=(m.id in eff)?eff[m.id]:undefined;
+      const y=(t.perms&&m.id in t.perms)?t.perms[m.id]:undefined;
+      return x===y;
+    });
+    const exact=templates.find(t=>t.id===effT&&same(t))||templates.find(same);
+    if(exact&&Object.keys(eff).length)return{name:exact.name,state:'exact'};
+    const bound=templates.find(t=>t.id===effT);
+    if(bound)return{name:bound.name+' (modified)',state:'mod'};
+    return{name:Object.keys(eff).length?'Custom':'Role defaults',state:'custom'};
+  }
 
+  const selIds=visibleUsers.filter(u=>sel[u.id]).map(u=>u.id);
+  const pendingIds=Object.keys(draft);
+  function applyBulk(){
+    const tpl=templates.find(t=>t.id===bulkTpl);
+    if(!tpl){setBulkMsg('Pick a template first.');return;}
+    if(!selIds.length){setBulkMsg('Tick the people you want first.');return;}
+    selIds.forEach(id=>{const u=users.find(x=>x.id===id);if(u)applyTpl(u,tpl);});
+    setBulkMsg('Applied "'+tpl.name+'" to '+selIds.length+' people — click Save all to keep it.');
+  }
+  function reapplyTemplate(){
+    const tpl=templates.find(t=>t.id===bulkTpl);
+    if(!tpl){setBulkMsg('Pick a template first.');return;}
+    const on=users.filter(u=>u.role!=='admin'&&u.module_perms&&u.module_perms._template===tpl.id);
+    if(!on.length){setBulkMsg('Nobody is on "'+tpl.name+'" yet.');return;}
+    on.forEach(u=>applyTpl(u,tpl));
+    setBulkMsg('Re-applied "'+tpl.name+'" to '+on.length+' people — click Save all to keep it.');
+  }
+  async function saveAll(){
+    setBulkMsg('Saving…');
+    for(const id of pendingIds){const u=users.find(x=>x.id===id);if(u)await saveUser(u);}
+    setBulkMsg('✓ Saved.');
+    setTimeout(()=>setBulkMsg(''),2500);
+  }
+
+  const INP_S={background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'7px 10px',color:'var(--text)',fontFamily:'inherit',fontSize:12,outline:'none'};
   return el('div',null,
-    el('div',{style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,padding:'12px 16px',marginBottom:16,fontSize:13,color:'var(--text2)',lineHeight:1.6}},
-      'Click any cell to cycle: ',
-      el('b',null,'Default'),
-      ' \u2192 ',el('span',{style:{padding:'1px 8px',borderRadius:10,border:'1px solid #3b82f6',background:'rgba(59,130,246,.1)',color:'#3b82f6',fontSize:11,fontWeight:600}},'Read'),
+    el('div',{style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,padding:'12px 16px',marginBottom:14,fontSize:13,color:'var(--text2)',lineHeight:1.6}},
+      el('b',null,'Fastest way: '),'pick an ',el('b',null,'Access Template'),' for each person (or tick many people and apply one to all of them), then click ',el('b',null,'Save all'),
+      '. Templates are made in ',el('b',null,'Settings \u2192 Access Templates'),' for '+lic.name+'. To tweak one person, click any cell: ',
+      el('b',null,'Default'),' \u2192 ',el('span',{style:{padding:'1px 8px',borderRadius:10,border:'1px solid #3b82f6',background:'rgba(59,130,246,.1)',color:'#3b82f6',fontSize:11,fontWeight:600}},'Read'),
       ' \u2192 ',el('span',{style:{padding:'1px 8px',borderRadius:10,border:'1px solid #d97706',background:'rgba(245,158,11,.1)',color:'#d97706',fontSize:11,fontWeight:600}},'Editor'),
       ' \u2192 ',el('span',{style:{padding:'1px 8px',borderRadius:10,border:'1px solid #10b981',background:'rgba(16,122,85,.1)',color:'#10b981',fontSize:11,fontWeight:600}},'Admin'),
       ' \u2192 ',el('span',{style:{padding:'1px 8px',borderRadius:10,border:'1px solid var(--border)',fontSize:11,fontWeight:600,color:'var(--text3)'}},'None'),
-      '. Amber = unsaved. Click ',el('b',null,'Save'),' to commit. Blue ring = saved override.',
+      '. Amber = unsaved.'),
+    el('div',{style:{display:'flex',gap:10,marginBottom:10,alignItems:'center',flexWrap:'wrap'}},
+      el('input',{placeholder:'Filter people…',value:filter,onChange:ev=>setFilter(ev.target.value),style:{...INP_S,width:200}}),
+      el('select',{value:grp,onChange:ev=>setGrp(ev.target.value),style:INP_S},['All',...MODULE_GROUPS].map(g=>el('option',{key:g,value:g},g==='All'?'Show all sections':'Show: '+g))),
+      pendingIds.length>0&&el('div',{style:{fontSize:12,color:'#d97706',fontWeight:700}},pendingIds.length+' person'+(pendingIds.length===1?'':'s')+' with unsaved changes'),
+      pendingIds.length>0&&el('button',{onClick:saveAll,style:{padding:'7px 18px',borderRadius:14,border:'none',background:'var(--accent)',color:'#fff',fontSize:12,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}},'💾 Save all ('+pendingIds.length+')'),
+      pendingIds.length>0&&el('button',{onClick:()=>setDraft({}),style:{padding:'7px 12px',borderRadius:14,border:'1px solid var(--border)',background:'transparent',color:'var(--text3)',fontSize:12,cursor:'pointer',fontFamily:'inherit'}},'Discard all'),
     ),
-    el('div',{style:{display:'flex',gap:10,marginBottom:14,alignItems:'center'}},
-      el('input',{placeholder:'Filter people\u2026',value:filter,onChange:ev=>setFilter(ev.target.value),style:{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:'var(--rs)',padding:'8px 14px',color:'var(--text)',fontFamily:'inherit',fontSize:13,outline:'none',width:240}}),
-      Object.keys(draft).length>0&&el('div',{style:{fontSize:12,color:'#d97706',fontWeight:600}},
-        Object.keys(draft).length+' person'+(Object.keys(draft).length===1?'':'s')+' with unsaved changes'
-      ),
-    ),
+    el('div',{style:{display:'flex',gap:8,marginBottom:14,alignItems:'center',flexWrap:'wrap',background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 12px'}},
+      el('span',{style:{fontSize:11,fontWeight:800,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'Template'),
+      el('select',{value:bulkTpl,onChange:ev=>{setBulkTpl(ev.target.value);setBulkMsg('');},style:{...INP_S,minWidth:200}},
+        el('option',{value:''},'— choose a template —'),
+        templates.map(t=>el('option',{key:t.id,value:t.id},t.name))),
+      el('button',{className:'btn b-blue btn-sm',onClick:applyBulk,disabled:!bulkTpl||!selIds.length},'Apply to selected ('+selIds.length+')'),
+      el('button',{className:'btn b-ghost btn-sm',onClick:reapplyTemplate,disabled:!bulkTpl,title:'After you edit a template, push the new version to everyone already on it'},'Re-apply to everyone on it'),
+      el('button',{className:'btn b-ghost btn-sm',onClick:()=>{const all={};visibleUsers.forEach(u=>{all[u.id]=true;});setSel(all);}},'Select all shown'),
+      selIds.length>0&&el('button',{className:'btn b-ghost btn-sm',onClick:()=>setSel({})},'Clear selection'),
+      bulkMsg&&el('span',{style:{fontSize:12,fontWeight:600,color:'var(--text2)'}},bulkMsg)),
     el('div',{style:{overflowX:'auto'}},
-      el('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:960}},
+      el('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:Math.max(760,300+mods.length*92)}},
         el('thead',null,el('tr',null,
-          el('th',{style:{textAlign:'left',padding:'10px 14px',fontSize:11,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',borderBottom:'2px solid var(--border)',position:'sticky',left:0,background:'var(--surface)',minWidth:160,zIndex:2}},'Person'),
-          el('th',{style:{textAlign:'left',padding:'10px 6px',fontSize:11,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',borderBottom:'2px solid var(--border)',minWidth:80}},'Role'),
-          ...MODULE_DEFS.map(m=>el('th',{key:m.id,style:{textAlign:'center',padding:'8px 4px',fontSize:10,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',borderBottom:'2px solid var(--border)',minWidth:88}},m.label)),
+          el('th',{style:{textAlign:'left',padding:'10px 14px',fontSize:11,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',borderBottom:'2px solid var(--border)',position:'sticky',left:0,background:'var(--surface)',minWidth:190,zIndex:2}},'Person'),
+          el('th',{style:{textAlign:'left',padding:'10px 6px',fontSize:11,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',borderBottom:'2px solid var(--border)',minWidth:170}},'Access template'),
+          ...mods.map(m=>el('th',{key:m.id,style:{textAlign:'center',padding:'8px 4px',fontSize:10,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',borderBottom:'2px solid var(--border)',minWidth:88}},m.label)),
           el('th',{style:{textAlign:'center',padding:'8px 10px',fontSize:10,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',borderBottom:'2px solid var(--border)',minWidth:110}},'Actions')
         )),
         el('tbody',null,visibleUsers.map((user,ri)=>{
@@ -2909,19 +3048,27 @@ function AccessControlMatrix({users,setUsers}){
           const isSaving=saving[user.id];
           const isJustSaved=saved[user.id];
           const rowError=errors[user.id];
+          const tl=tplLabel(user);
+          const effT=getEffective(user,'_template');
           return el('tr',{key:user.id,style:{background:pending?'rgba(245,158,11,.05)':ri%2===0?'transparent':'var(--surface2)',transition:'background .2s'}},
-            el('td',{style:{padding:'10px 14px',fontWeight:600,fontSize:13,position:'sticky',left:0,background:pending?'rgba(245,158,11,.08)':ri%2===0?'var(--surface)':'var(--surface2)',zIndex:1,borderRight:'1px solid var(--border)',whiteSpace:'nowrap',transition:'background .2s'}},
-              el('div',null,user.name),
-              rowError&&el('div',{style:{fontSize:10,color:'var(--red)',marginTop:3,maxWidth:150,lineHeight:1.3}},rowError),
+            el('td',{style:{padding:'8px 14px',fontWeight:600,fontSize:13,position:'sticky',left:0,background:pending?'rgba(245,158,11,.08)':ri%2===0?'var(--surface)':'var(--surface2)',zIndex:1,borderRight:'1px solid var(--border)',whiteSpace:'nowrap',transition:'background .2s'}},
+              el('label',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}},
+                el('input',{type:'checkbox',checked:!!sel[user.id],onChange:ev=>setSel(p=>({...p,[user.id]:ev.target.checked}))}),
+                el('span',null,user.name)),
+              el('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:500,marginLeft:24}},roleLabels(user).split(',')[0].trim()),
+              rowError&&el('div',{style:{fontSize:10,color:'var(--red)',marginTop:3,maxWidth:170,lineHeight:1.3}},rowError),
             ),
-            el('td',{style:{padding:'10px 6px',fontSize:10,color:'var(--text2)',whiteSpace:'nowrap'}},
-              el('span',{style:{padding:'2px 7px',borderRadius:10,background:'var(--surface2)',border:'1px solid var(--border)',fontSize:10}},roleLabels(user).split(',')[0].trim())
+            el('td',{style:{padding:'8px 6px'}},
+              el('select',{value:(typeof effT==='string'&&templates.some(t=>t.id===effT))?effT:'',onChange:ev=>{const t=templates.find(x=>x.id===ev.target.value);if(t)applyTpl(user,t);},style:{...INP_S,width:'100%',padding:'5px 8px',fontSize:11,borderColor:tl.state==='mod'?'#d97706':'var(--border)'}},
+                el('option',{value:''},tl.state==='exact'?'—':tl.name),
+                templates.map(t=>el('option',{key:t.id,value:t.id},t.name))),
+              el('div',{style:{fontSize:10,marginTop:2,color:tl.state==='exact'?'#10b981':tl.state==='mod'?'#d97706':'var(--text3)',fontWeight:600}},tl.state==='exact'?'✓ '+tl.name:tl.state==='mod'?'\u270E '+tl.name:tl.name),
             ),
-            ...MODULE_DEFS.map(m=>{
+            ...mods.map(m=>{
               const eff=getEffective(user,m.id);
               const hasSavedOverride=m.id in (user.module_perms||{});
               const isDirty=(draft[user.id]||{}).hasOwnProperty(m.id);
-              const roleDefault=(()=>{const roles=userRoles(user);let best=null;for(const r of roles){const d=(ROLE_DEFAULT_PERMS[r]||{})[m.id]||null;if((PERM_RANK[d]||0)>(PERM_RANK[best]||0))best=d;}return best;})();
+              const roleDefault=modulePerm({...user,module_perms:{}},m.id);
               let cfg,label,hint;
               if(eff===undefined){cfg={bg:'var(--surface2)',color:'var(--text3)',border:'var(--border)'};label='Default';hint='Role default: '+(roleDefault||'none');}
               else if(eff===null){cfg={bg:'transparent',color:'var(--text3)',border:'var(--border)'};label='None';hint='Explicitly blocked';}
@@ -2939,7 +3086,7 @@ function AccessControlMatrix({users,setUsers}){
               );
             }),
             el('td',{style:{padding:'7px 10px',textAlign:'center',whiteSpace:'nowrap'}},
-              isJustSaved?el('span',{style:{fontSize:12,color:'#10b981',fontWeight:700}},'\u2713 Saved')
+              isJustSaved?el('span',{style:{fontSize:12,color:'#10b981',fontWeight:700}},'✓ Saved')
               :pending?el('div',{style:{display:'flex',gap:6,justifyContent:'center'}},
                 el('button',{onClick:()=>saveUser(user),disabled:isSaving,
                   style:{padding:'5px 14px',borderRadius:14,border:'none',background:'var(--accent)',color:'#fff',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',opacity:isSaving?.6:1,transition:'opacity .15s'}
@@ -2954,7 +3101,7 @@ function AccessControlMatrix({users,setUsers}){
         }))
       )
     ),
-    el('div',{style:{marginTop:12,fontSize:11,color:'var(--text3)'}},'Amber highlight = unsaved change. Press Save to commit. Blue ring = saved override. Admin always has full access.'),
+    el('div',{style:{marginTop:12,fontSize:11,color:'var(--text3)'}},'Amber = unsaved change. Blue ring = saved override. "Default" = whatever the person\'s role gives (sub-sections follow their parent section). Admin always has full access.'),
   );
 }
 
@@ -5707,7 +5854,7 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive}){
       el('div',{style:{fontSize:13,opacity:.85,lineHeight:1.6}},'All logs are timestamped, signed, and exportable as PDF for DCR inspections and ISO 9001 audits. Retain all records for minimum 5 years per Missouri DCR.'),
     ),
     el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:14}},
-      Object.values(LOG_TYPES).filter(log=>log.category!=='batch').map(log=>el('div',{key:log.id,onClick:()=>setActiveLog(log.id),
+      Object.values(LOG_TYPES).filter(log=>log.category!=='batch'&&subModuleOk(cu,LOG_MODULE_ID[log.id]||'logs',true)).map(log=>el('div',{key:log.id,onClick:()=>setActiveLog(log.id),
         style:{background:log.bg,border:'2px solid',borderColor:log.color+'30',borderRadius:14,padding:'20px',cursor:'pointer',transition:'all .2s'},
         onMouseEnter:ev=>{ev.currentTarget.style.borderColor=log.color;ev.currentTarget.style.transform='translateY(-2px)';},
         onMouseLeave:ev=>{ev.currentTarget.style.borderColor=log.color+'30';ev.currentTarget.style.transform='translateY(0)';},
@@ -5728,7 +5875,7 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive}){
       el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}},
         el('div',null,el('div',{style:{fontSize:20,fontWeight:800}},lt.icon+' '+lt.label),el('div',{style:{fontSize:12,opacity:.8,marginTop:2}},lt.dcr+' \u00B7 '+lt.freq)),
         el('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
-          el('button',{onClick:()=>{if(activeLog==='security_inspection'){setShowSecInsp(true);setEditSecInsp(null);}else setShowForm(true);},style:{background:'#fff',color:lt.color,border:'none',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'+ New Entry'),
+          logCanCreate(cu,activeLog)&&el('button',{onClick:()=>{if(activeLog==='security_inspection'){setShowSecInsp(true);setEditSecInsp(null);}else setShowForm(true);},style:{background:'#fff',color:lt.color,border:'none',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'+ New Entry'),
           activeLog==='visitor'&&el('button',{onClick:()=>setShowQR(p=>!p),style:{background:'rgba(255,255,255,.15)',color:'#fff',border:'1px solid rgba(255,255,255,.4)',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'\uD83D\uDCF1 QR Code / Kiosk'),
           activeLog==='scale_calibration'&&el('button',{onClick:()=>{const dd=window.prompt('Date for the daily sheet (YYYY-MM-DD):',dateTo||dateFrom||(entries[0]&&entries[0].date)||new Date().toISOString().slice(0,10));if(dd)exportScaleDaySheet(entries,dd.trim());},style:{background:'rgba(255,255,255,.2)',color:'#fff',border:'1px solid rgba(255,255,255,.4)',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'\uD83D\uDCCB Daily Sheet (all scales)'),
           el('button',{onClick:()=>exportLogPdf(activeLog,filtered,dateFrom,dateTo),style:{background:'rgba(255,255,255,.2)',color:'#fff',border:'1px solid rgba(255,255,255,.4)',borderRadius:8,padding:'8px 18px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer'}},'\uD83D\uDCC4 Export PDF'),
@@ -5770,7 +5917,7 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive}){
     :filtered.length===0?el('div',{style:{textAlign:'center',padding:'48px 24px',background:'var(--surface)',borderRadius:12,border:'1px solid var(--border)'}},
         el('div',{style:{fontSize:36,marginBottom:12}},lt.icon),
         el('div',{style:{fontSize:15,fontWeight:700,color:'var(--text)',marginBottom:6}},'No entries yet'),
-        el('button',{onClick:()=>{if(activeLog==='security_inspection'){setShowSecInsp(true);setEditSecInsp(null);}else setShowForm(true);},style:{background:lt.color,color:'#fff',border:'none',borderRadius:8,padding:'10px 24px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',marginTop:8}},'+ New Entry'),
+        logCanCreate(cu,activeLog)&&el('button',{onClick:()=>{if(activeLog==='security_inspection'){setShowSecInsp(true);setEditSecInsp(null);}else setShowForm(true);},style:{background:lt.color,color:'#fff',border:'none',borderRadius:8,padding:'10px 24px',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer',marginTop:8}},'+ New Entry'),
       )
     :el('div',{style:{display:'flex',flexDirection:'column',gap:8}},
         filtered.map((entry,i)=>el('div',{key:entry.id||i,style:{background:'#ffffff',border:'1px solid var(--border)',borderRadius:12,padding:'14px 16px',boxShadow:'0 1px 3px rgba(15,23,42,.04)'}},
@@ -6494,7 +6641,7 @@ function TestingModule({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive,mpFn
   const[busy,setBusy]=React.useState({});
   const[msg,setMsg]=React.useState('');
   const[stickerRec,setStickerRec]=React.useState(null);
-  const batchPerm=mpFn?mpFn('batch'):modulePerm(cu,'batch');
+  const batchPerm=mpFn?mpFn('testing'):modulePerm(cu,'testing');
   const canEdit=batchPerm==='admin'||batchPerm==='editor'||(batchPerm===null&&(isElevated||isAdmin||hasRole(cu,'production_manager')));
   const canDelete=batchPerm==='admin'||(batchPerm===null&&(isElevated||isAdmin));
   function load(){
@@ -6605,7 +6752,7 @@ function TestingModule({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive,mpFn
           el('div',{style:{display:'flex',gap:6,flexWrap:'wrap',alignItems:'flex-start'}},
             r.coa_url&&el('a',{href:r.coa_url,target:'_blank',rel:'noopener',className:'btn b-ghost btn-sm',style:{textDecoration:'none'}},'\uD83D\uDCC4 COA'),
             r.coa_analysis&&el('button',{className:'btn b-ghost btn-sm',onClick:()=>setOpen(p=>({...p,[r.id]:!p[r.id]}))},open[r.id]?'Hide analysis':'Show analysis'),
-            r.coa_analysis&&el('button',{className:'btn b-blue btn-sm',onClick:()=>setStickerRec(r),title:'Print compliance stickers on Avery label sheets'},'\uD83C\uDFF7\uFE0F Compliance Sticker'),
+            r.coa_analysis&&subModuleOk(cu,'stickers',true)&&el('button',{className:'btn b-blue btn-sm',onClick:()=>setStickerRec(r),title:'Print compliance stickers on Avery label sheets'},'\uD83C\uDFF7\uFE0F Compliance Sticker'),
             canEdit&&el('label',{className:'btn b-ghost btn-sm',style:{cursor:'pointer'}},busy[r.id]||(hasCoa?'Replace COA':'\u2B06 Upload COA'),
               el('input',{type:'file',accept:'application/pdf,image/*',style:{display:'none'},disabled:!!busy[r.id],onChange:ev=>{const f=ev.target.files&&ev.target.files[0];ev.target.value='';if(f) runAnalysis(r,f);}})),
             canEdit&&r.coa_url&&el('button',{className:'btn b-ghost btn-sm',disabled:!!busy[r.id],onClick:()=>runAnalysis(r,null)},'Re-analyze'),
@@ -9979,6 +10126,9 @@ function QMS({cu,users,tasks,sops,setSops,deviations,setDeviations,capas,setCapa
     el('div',{style:{display:'flex',gap:4,flexWrap:'wrap',marginBottom:20,background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--r)',padding:4}},
       QMS_TABS.filter(t=>{
         if(t.id==='corrective') return isAdmin; // Disciplinary records are admin-only \u2014 nobody else can see this tab
+        const tmod=QMS_TAB_MODULE[t.id], ovp=(cu&&cu.module_perms)||{};
+        if(!isAdmin&&tmod&&tmod in ovp) return !!ovp[tmod]; // explicit grant/block from Access Control wins
+        if(!isAdmin&&'qms' in ovp&&!ovp.qms&&['dashboard','sops'].includes(t.id)) return false;
         return isElevated||isManager||['dashboard','training'].includes(t.id);
       }).map(t=>el('button',{key:t.id,onClick:()=>{setTab(t.id);setNew(false);setSel(null);},style:{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:8,border:'none',background:tab===t.id?'var(--accent)':'transparent',color:tab===t.id?'#000000':'var(--text2)',fontFamily:'inherit',fontSize:12,fontWeight:tab===t.id?700:500,cursor:'pointer',transition:'all .15s'}},
         el('span',null,t.ico),t.label,
@@ -12615,6 +12765,95 @@ function LicenseAdminsPanel({users,setUsers}){
   );
 }
 
+function AccessTemplatesEditor({lic,cu,users}){
+  const rowId=lic.id+':access_templates';
+  const[loading,setLoading]=React.useState(true);
+  const[existing,setExisting]=React.useState(false);
+  const[list,setList]=React.useState([]);
+  const[selId,setSelId]=React.useState('');
+  const[msg,setMsg]=React.useState('');
+  const[saving,setSaving]=React.useState(false);
+  const[dirty,setDirty]=React.useState(false);
+  React.useEffect(()=>{
+    let dead=false;setLoading(true);setMsg('');setDirty(false);
+    db.get('pf_settings','id=eq.'+encodeURIComponent(rowId)+'&select=*').then(rows=>{
+      if(dead)return;
+      const r=Array.isArray(rows)&&rows[0];
+      setExisting(!!r);
+      const l=r&&r.value&&Array.isArray(r.value.templates)?r.value.templates:JSON.parse(JSON.stringify(ACCESS_STARTER_TEMPLATES));
+      setList(l);setSelId(l[0]?l[0].id:'');setLoading(false);
+    }).catch(e=>{if(dead)return;setMsg('Settings storage is not set up yet \u2014 run add_settings_and_license_admin.sql first. ('+String(e.message||e).slice(0,80)+')');const l=JSON.parse(JSON.stringify(ACCESS_STARTER_TEMPLATES));setList(l);setSelId(l[0]?l[0].id:'');setLoading(false);});
+    return()=>{dead=true;};
+  },[rowId]);
+  const idx=list.findIndex(t=>t.id===selId);
+  const t=idx>=0?list[idx]:null;
+  const upd=(patch)=>{setDirty(true);setList(p=>p.map((x,j)=>j===idx?{...x,...patch}:x));};
+  const setPerm=(mid,val)=>{
+    const perms={...(t.perms||{})};
+    if(val==='__default')delete perms[mid];
+    else if(val==='__none')perms[mid]=null;
+    else perms[mid]=val;
+    upd({perms});
+  };
+  const fill=(level)=>{
+    const perms={};
+    MODULE_DEFS.forEach(m=>{perms[m.id]=level;});
+    upd({perms});
+  };
+  async function save(){
+    setSaving(true);setMsg('');
+    try{
+      const value={templates:list};
+      const stamp={updated_by:cu.name,updated_at:new Date().toISOString()};
+      if(existing)await db.update('pf_settings',rowId,{value,...stamp});
+      else{await db.insert('pf_settings',{id:rowId,license_id:lic.id,section:'access_templates',value,...stamp});setExisting(true);}
+      setDirty(false);setMsg('\u2713 Saved \u2014 pick these in Team & Access \u2192 Access Control. To push edits to people already on a template, use "Re-apply to everyone on it" there.');
+    }catch(e){setMsg('\u274C '+String(e.message||e).slice(0,200));}
+    setSaving(false);
+  }
+  if(loading)return el('div',{style:SET_CARD},'Loading\u2026');
+  const memberCount=(id)=>(users||[]).filter(u=>u.module_perms&&u.module_perms._template===id).length;
+  const saveBtn=(top)=>el('button',{className:'btn b-blue btn-sm',onClick:save,disabled:saving,style:top?{}:{padding:'10px 22px',fontSize:13}},saving?'Saving\u2026':'\uD83D\uDCBE Save templates');
+  return el('div',null,
+    el('div',{style:{...SET_CARD,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',position:'sticky',top:0,zIndex:5}},
+      el('div',{style:{fontSize:13,fontWeight:800,flex:1}},'\uD83D\uDD12 Access templates \u00B7 '+lic.name+(dirty?'  \u2022 unsaved changes':'')),
+      el('button',{className:'btn b-ghost btn-sm',onClick:()=>{const id='tpl-'+Date.now();setDirty(true);setList(p=>[...p,{id,name:'New template',description:'',perms:allPerms(null)}]);setSelId(id);}},'+ New template'),
+      saveBtn(true)),
+    msg&&el('div',{style:{...SET_CARD,fontSize:12,fontWeight:600}},msg),
+    el('div',{style:{...SET_CARD,fontSize:12,color:'var(--text2)',lineHeight:1.6}},
+      'A template is a named set of access levels. Make it once, then give it to people in ',el('b',null,'Team & Access'),' instead of clicking 20\u201330 spots per person. ',
+      el('b',null,'Role default'),' = whatever the person\'s role already gives. ',el('b',null,'No access'),' = blocked. Sub-sections (QMS tabs, individual Facility Logs, Testing, Stickers) follow their parent unless you set them here.'),
+    el('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}},
+      list.map(x=>el('button',{key:x.id,onClick:()=>setSelId(x.id),style:{padding:'8px 14px',borderRadius:20,border:'2px solid '+(x.id===selId?'var(--accent)':'var(--border)'),background:x.id===selId?'var(--accent)':'var(--surface)',color:x.id===selId?'#fff':'var(--text2)',fontFamily:'inherit',fontSize:12,fontWeight:700,cursor:'pointer'}},x.name+' \u00B7 '+memberCount(x.id)))),
+    t&&el('div',{style:{...SET_CARD,borderLeft:'4px solid #7c3aed'}},
+      el('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10}},
+        el('div',{style:{flex:'1 1 220px'}},el('label',{style:SET_LBL},'Template name'),el('input',{style:SET_INP,value:t.name||'',onChange:ev=>upd({name:ev.target.value})})),
+        el('div',{style:{flex:'2 1 320px'}},el('label',{style:SET_LBL},'Description'),el('input',{style:SET_INP,value:t.description||'',placeholder:'Who this is for',onChange:ev=>upd({description:ev.target.value})}))),
+      el('div',{style:{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12,alignItems:'center'}},
+        el('span',{style:SET_LBL},'Quick fill all'),
+        [['Role default','__default'],['No access','__none'],['Read','read'],['Editor','editor'],['Admin','admin']].map(([lbl,v])=>el('button',{key:v,className:'btn b-ghost btn-sm',onClick:()=>{if(v==='__default')upd({perms:{}});else if(v==='__none')fill(null);else fill(v);}},lbl))),
+      MODULE_GROUPS.map(g=>el('div',{key:g,style:{marginBottom:12}},
+        el('div',{style:{fontSize:11,fontWeight:800,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:6,borderBottom:'1px solid var(--border)',paddingBottom:4}},g),
+        el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(230px,1fr))',gap:8}},
+          MODULE_DEFS.filter(m=>m.grp===g).map(m=>{
+            const has=t.perms&&m.id in t.perms;
+            const v=!has?'__default':(t.perms[m.id]===null?'__none':t.perms[m.id]);
+            return el('div',{key:m.id},
+              el('label',{style:SET_LBL},(m.parent?'\u21B3 ':'')+m.label),
+              el('select',{style:{...SET_INP,borderColor:v==='__default'?'var(--border)':v==='__none'?'#ef4444':'#3b82f6'},value:v,onChange:ev=>setPerm(m.id,ev.target.value)},
+                el('option',{value:'__default'},'Role default'),
+                el('option',{value:'__none'},'No access'),
+                el('option',{value:'read'},'Read'),
+                el('option',{value:'editor'},'Editor'),
+                el('option',{value:'admin'},'Admin')));
+          })))),
+      el('div',{style:{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginTop:8}},
+        saveBtn(false),
+        el('button',{className:'btn b-ghost btn-sm',onClick:()=>{const id='tpl-'+Date.now();setDirty(true);setList(p=>[...p,{...JSON.parse(JSON.stringify(t)),id,name:t.name+' (copy)'}]);setSelId(id);}},'Duplicate'),
+        el('button',{className:'btn b-ghost btn-sm',style:{color:'var(--red)'},onClick:()=>{if(window.confirm('Delete this template? People already on it keep the access they have.')){const rest=list.filter(x=>x.id!==t.id);setDirty(true);setList(rest);setSelId(rest[0]?rest[0].id:'');}}},'\u2715 Delete template'),
+        el('span',{style:{fontSize:11,color:'var(--text3)'}},memberCount(t.id)+' people on this template'))));
+}
+
 function SettingsModule({cu,licActive,users,setUsers}){
   const[tab,setTab]=useState('org');
   const lic=LICENSES.find(l=>l.license_number===licActive)||LICENSES[0];
@@ -12626,6 +12865,7 @@ function SettingsModule({cu,licActive,users,setUsers}){
     {id:'production',ico:'\uD83C\uDFED',label:'Production'},
     {id:'sales',ico:'\uD83D\uDCBC',label:'Sales'},
     {id:'general',ico:'\u2699\uFE0F',label:'General'},
+    {id:'access',ico:'\uD83D\uDD12',label:'Access Templates'},
   ];
   if(mainAdmin) tabs.push({id:'admins',ico:'\uD83D\uDC51',label:'License Admins'});
   const header=el('div',{className:'ph'},
@@ -12652,6 +12892,7 @@ function SettingsModule({cu,licActive,users,setUsers}){
     'Regulatory citations shown on the Org Chart and reports',
     'Training requirements and the Training Matrix',
   ]}));
+  else if(tab==='access') body=el(AccessTemplatesEditor,{key:lic.id,lic,cu,users});
   else if(tab==='production') body=el(SetPlanned,{title:'\uD83C\uDFED Production',intro:'Products, ingredients and the rules the batch checks use will be managed here.',items:[
     'Product lines, SKUs and flavors (Cartridges, Pre-Rolls, Infused Flower, Gummies\u2026)',
     'Which ingredient fields each SKU shows in the Batch Tracker',
@@ -15765,6 +16006,11 @@ function App(){
   const canAccessQms=isAdmin||isElevated||canRead(cu,'qms');
   const canAccessLogs=isAdmin||isElevated||canRead(cu,'logs');
   const canAccessBatch=isAdmin||isElevated||canRead(cu,'batch');
+  const canAccessTesting=subModuleOk(cu,'testing',canAccessBatch);
+  const canAccessReporter=subModuleOk(cu,'reporter',canAccessQms);
+  const canAccessCalendar=subModuleOk(cu,'calendar',true);
+  const qmsTabGrant=['deviations','capas','audits','changes','complaints','suppliers','training'].some(m=>{const o=(cu.module_perms||{});return m in o&&!!o[m];});
+  const canAccessQmsPage=canAccessQms||qmsTabGrant;
   const canAccessCogs=isAdmin||canRead(cu,'cogs');
   const canAccessPlanner=isAdmin||canRead(cu,'planner');
   const canAccessFormBank=isAdmin||canRead(cu,'formbank');
@@ -15782,7 +16028,7 @@ function App(){
     {id:'license',ico:'\uD83D\uDCDC',label:'License Chart'},
     {id:'sops',ico:'\uD83D\uDCCB',label:'SOPs'},
     {id:'mydocs',ico:'\uD83D\uDCC1',label:'My Documents'},
-    {id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
+    canAccessCalendar&&{id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
     {id:'board',ico:'\u2B1B',label:'Task Board'},
     (restricted==='lead'||restricted==='pm')&&{id:'batch',ico:'\uD83E\uDDEA',label:'Batch Tracker'},
     canSeeSettings(cu)&&{id:'settings',ico:'\u2699\uFE0F',label:'Settings'},
@@ -15796,8 +16042,8 @@ function App(){
   const navFlatTop=[
     {id:'license',ico:'\uD83D\uDCDC',label:'License Chart'},
     {id:'board',ico:'\u2B1B',label:'Task Board'},
-    {id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
-    canAccessQms&&{id:'reporter',ico:'\uD83E\uDDE0',label:'AI Reporter'},
+    canAccessCalendar&&{id:'calendar',ico:'\uD83D\uDCC5',label:'Calendar'},
+    canAccessReporter&&{id:'reporter',ico:'\uD83E\uDDE0',label:'AI Reporter'},
     {id:'mydocs',ico:'\uD83D\uDCC1',label:'My Documents'},
     canAccessSales&&{id:'sales',ico:'\uD83C\uDFEA',label:'Sales & Marketing'},
     isAdmin&&{id:'team',ico:'\uD83D\uDC65',label:'Team & Access',badge:pending||null},
@@ -15806,7 +16052,7 @@ function App(){
   const navProduction=[
     canAccessPlanner&&{id:'planner',ico:'\uD83C\uDFED',label:'Production Planner'},
     canAccessBatch&&{id:'batch',ico:'\uD83E\uDDEA',label:'Batch Tracker'},
-    canAccessBatch&&{id:'testing',ico:'\uD83D\uDD2C',label:'Testing'},
+    canAccessTesting&&{id:'testing',ico:'\uD83D\uDD2C',label:'Testing'},
     canAccessFormBank&&{id:'formbank',ico:'\uD83E\uDDEA',label:'Formulation Bank'},
     canAccessCogs&&{id:'cogs',ico:'\uD83D\uDCB0',label:'COGS Calculator'},
   ].filter(Boolean);
@@ -15820,12 +16066,12 @@ function App(){
   // each item here deep-links into QMS at that specific tab via tabTarget.
   // Risk Register IS its own page, so it keeps a plain id with no tabTarget.
   const navManagement=[
-    canAccessQms&&{id:'qms',ico:'\u26A0\uFE0F',label:'Deviations',tabTarget:'deviations'},
-    canAccessQms&&{id:'qms',ico:'\uD83D\uDD27',label:'CAPAs',tabTarget:'capas'},
+    subModuleOk(cu,'deviations',canAccessQms)&&{id:'qms',ico:'\u26A0\uFE0F',label:'Deviations',tabTarget:'deviations'},
+    subModuleOk(cu,'capas',canAccessQms)&&{id:'qms',ico:'\uD83D\uDD27',label:'CAPAs',tabTarget:'capas'},
     canAccessRisks&&{id:'risks',ico:'\u26A0\uFE0F',label:'Risk Register'},
-    canAccessQms&&{id:'qms',ico:'\uD83D\uDCDD',label:'Change Control',tabTarget:'changes'},
-    canAccessQms&&{id:'qms',ico:'\uD83D\uDCE3',label:'Complaints',tabTarget:'complaints'},
-    canAccessQms&&{id:'qms',ico:'\uD83C\uDFED',label:'Suppliers',tabTarget:'suppliers'},
+    subModuleOk(cu,'changes',canAccessQms)&&{id:'qms',ico:'\uD83D\uDCDD',label:'Change Control',tabTarget:'changes'},
+    subModuleOk(cu,'complaints',canAccessQms)&&{id:'qms',ico:'\uD83D\uDCE3',label:'Complaints',tabTarget:'complaints'},
+    subModuleOk(cu,'suppliers',canAccessQms)&&{id:'qms',ico:'\uD83C\uDFED',label:'Suppliers',tabTarget:'suppliers'},
     canAccessQms&&{id:'qms',ico:'\u2696\uFE0F',label:'Corrective Actions',tabTarget:'corrective'},
   ].filter(Boolean);
   // Flattened, in the exact same order as before \u2014 anything that still
@@ -16042,7 +16288,7 @@ function App(){
       !restricted&&el('button',{className:`mnav-btn${page==='board'?' on':''}`,onClick:()=>setPage('board')},el('span',{className:'mnav-ico'},'\u2B1B'),'Board'),
       (restricted==='lead'||restricted==='pm')&&el('button',{className:`mnav-btn${page==='board'?' on':''}`,onClick:()=>setPage('board')},el('span',{className:'mnav-ico'},'\u2B1B'),'Board'),
       !restricted&&el('button',{className:`mnav-btn${page==='sales'?' on':''}`,onClick:()=>setPage('sales')},el('span',{className:'mnav-ico'},'\uD83C\uDFEA'),'Sales'),
-      el('button',{className:`mnav-btn${page==='calendar'?' on':''}`,onClick:()=>setPage('calendar')},el('span',{className:'mnav-ico'},'\uD83D\uDCC5'),'Calendar'),
+      canAccessCalendar&&el('button',{className:`mnav-btn${page==='calendar'?' on':''}`,onClick:()=>setPage('calendar')},el('span',{className:'mnav-ico'},'\uD83D\uDCC5'),'Calendar'),
       cu.role==='admin'&&el('button',{className:`mnav-btn${page==='team'?' on':''}`,onClick:()=>setPage('team')},
         el('div',{style:{position:'relative',display:'inline-block'}},el('span',{className:'mnav-ico'},'\uD83D\uDC65'),pending>0&&el('span',{className:'mnav-dot'},pending)),'Team'
       ),
@@ -16056,14 +16302,14 @@ function App(){
         el('span',{className:'mnav-ico'},typeof Notification!=='undefined'&&Notification.permission==='granted'?'\uD83D\uDD14':'\uD83D\uDD15'),'Alerts'
       ),
       el('button',{className:`mnav-btn${page==='mydocs'?' on':''}`,onClick:()=>setPage('mydocs')},el('span',{className:'mnav-ico'},'\uD83D\uDCC1'),'My Docs'),
-      !restricted&&canAccessQms&&el('button',{className:`mnav-btn${page==='qms'?' on':''}`,onClick:()=>setPage('qms')},el('span',{className:'mnav-ico'},'\uD83D\uDEE1\uFE0F'),'QMS'),
+      !restricted&&canAccessQmsPage&&el('button',{className:`mnav-btn${page==='qms'?' on':''}`,onClick:()=>setPage('qms')},el('span',{className:'mnav-ico'},'\uD83D\uDEE1\uFE0F'),'QMS'),
       !restricted&&el('button',{className:`mnav-btn${page==='logs'?' on':''}`,onClick:()=>setPage('logs')},el('span',{className:'mnav-ico'},'\uD83D\uDCCB'),'Logs'),
       (restricted==='lead'||restricted==='pm')&&el('button',{className:`mnav-btn${page==='batch'?' on':''}`,onClick:()=>setPage('batch')},el('span',{className:'mnav-ico'},'\uD83E\uDDEA'),'Batch'),
       el('button',{className:'mnav-btn',onClick:()=>{if(window.confirm('Sign out?')){localStorage.removeItem('pf_session');localStorage.removeItem('pf_token');window.location.reload();}}},el('span',{className:'mnav-ico'},'\u23FB'),'Sign Out'),
     ),
     el('div',{className:'main'},
       page==='board'&&el(Board,{tasks,setTasks,cu,users,locFilter,setLocFilter,canAccessQms,setPage,SUPA_URL,SUPA_KEY,H,restricted,boardPerm:modulePerm(cu,'board')}),
-      page==='calendar'&&el(Calendar,{events,setEvents,tasks,cu,users,locFilter,meetingNotes,setMeetingNotes,onJoinCall:(room,title,meetLink)=>setActiveCall({room,title,meetLink})}),
+      page==='calendar'&&canAccessCalendar&&el(Calendar,{events,setEvents,tasks,cu,users,locFilter,meetingNotes,setMeetingNotes,onJoinCall:(room,title,meetLink)=>setActiveCall({room,title,meetLink})}),
       page==='sales'&&canAccessSales&&el(SalesMarketing,{salesTasks,setSalesTasks,cu,users,locFilter}),
       page==='license'&&el(LicenseChart,{licActive}),
       page==='sops'&&restricted&&el(SOPs,{sops,setSops,cu,users}),
@@ -16073,10 +16319,10 @@ function App(){
       page==='batch'&&canAccessBatch&&el(BatchTracker,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,restricted,mpFn:modulePerm.bind(null,cu),licActive}),
       page==='formbank'&&canAccessFormBank&&el(FormulationBank,{cu,SUPA_URL,SUPA_KEY,H}),
       page==='cogs'&&canAccessCogs&&el(CogsCalculator,{cu,SUPA_URL,SUPA_KEY,H}),
-      page==='reporter'&&canAccessQms&&el(AIReporter,{cu,SUPA_URL,SUPA_KEY,H}),
-      page==='testing'&&canAccessBatch&&el(TestingModule,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive,mpFn:modulePerm.bind(null,cu)}),
+      page==='reporter'&&canAccessReporter&&el(AIReporter,{cu,SUPA_URL,SUPA_KEY,H}),
+      page==='testing'&&canAccessTesting&&el(TestingModule,{cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive,mpFn:modulePerm.bind(null,cu)}),
       page==='planner'&&canAccessPlanner&&el(ProductionPlanner,{cu,SUPA_URL,SUPA_KEY,H}),
-      page==='qms'&&!restricted&&canAccessQms&&el(QMS,{cu,users,tasks,sops,setSops,
+      page==='qms'&&!restricted&&canAccessQmsPage&&el(QMS,{cu,users,tasks,sops,setSops,
         deviations:qmsDeviations,setDeviations:setQmsDeviations,
         capas:qmsCAPAs,setCapas:setQmsCAPAs,
         audits:qmsAudits,setAudits:setQmsAudits,
@@ -16087,7 +16333,7 @@ function App(){
         initialTab:qmsTab,
       }),
       page==='mydocs'&&el(MyDocuments,{cu,corrective:qmsCorrective,setCorrective:setQmsCorrective}),
-      page==='team'&&isAdmin&&el(Team,{users,setUsers,cu}),
+      page==='team'&&isAdmin&&el(Team,{users,setUsers,cu,licActive}),
       page==='settings'&&canSeeSettings(cu)&&el(SettingsModule,{cu,licActive,users,setUsers}),
     )
   );
