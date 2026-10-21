@@ -227,6 +227,13 @@ async function kioskWrite(table,op,id,data){
   if(!result||!result.ok) throw new Error((result&&result.error)||'Save failed');
   return result.data;
 }
+// License a kiosk page belongs to: ?lic=<id> in the QR link, else the first (primary) license.
+function kioskLicense(){
+  try{
+    const id=new URLSearchParams(window.location.search).get('lic');
+    return LICENSES.find(l=>l.id===id)||LICENSES[0];
+  }catch(e){return LICENSES[0];}
+}
 const db={
   get:(t,q='')=>fetch(`${SUPA_URL}/rest/v1/${t}${q?'?'+q:''}`,{headers:{...H.headers,'Accept':'application/json'}}).then(r=>r.ok?r.json():r.text().then(e=>{throw new Error(e);})),
   insert:(t,d)=>rpcWrite(t,'insert',null,d),
@@ -5661,14 +5668,19 @@ function FacilityLogs({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive}){
   const[dateTo,setDateTo]=React.useState('');
   const[search,setSearch]=React.useState('');
   const[showQR,setShowQR]=React.useState(false);
-  const kioskUrl=`${APP_URL}?kiosk=visitor`;
+  const kioskLic=LICENSES.find(l=>l.license_number===licActive);
+  const kioskUrl=`${APP_URL}?kiosk=visitor`+(kioskLic&&kioskLic!==LICENSES[0]?`&lic=${kioskLic.id}`:'');
   React.useEffect(()=>{
     if(!activeLog)return;
     setLoading(true);setEntries([]);
     const lt=LOG_TYPES[activeLog];
     if(!lt||!lt.table)return;
     let url=`${SUPA_URL}/rest/v1/${lt.table}?select=*&order=created_at.desc`;
-    if(licActive)url+=`&license_number=eq.${encodeURIComponent(licActive)}`;
+    if(licActive){
+      // The primary license also owns rows that were saved with no license (kiosk sign-ins before this fix)
+      if(LICENSES[0]&&licActive===LICENSES[0].license_number) url+=`&or=(license_number.eq.${encodeURIComponent(licActive)},license_number.is.null)`;
+      else url+=`&license_number=eq.${encodeURIComponent(licActive)}`;
+    }
     if(dateFrom)url+=`&created_at=gte.${dateFrom}`;
     if(dateTo)url+=`&created_at=lte.${dateTo}T23:59:59`;
     fetch(url,{headers:H.headers}).then(r=>r.ok?r.json():[]).then(rows=>{setEntries(Array.isArray(rows)?(activeLog==='sanitation'?rows.map(sanUnpack):rows):[]);setLoading(false);}).catch(()=>setLoading(false));
@@ -15086,7 +15098,7 @@ function LogKiosk({logKey}){
     if(!sig){setError('Please draw your signature.');return;}
     setSaving(true);setError('');
     const submittedBy=nameField?form[nameField.key]:'Kiosk User';
-    const rec={...form,id:'log-'+Date.now(),log_type:logKey,signature_image:sig,attachments:[],submitted_by:submittedBy,submitted_by_id:'kiosk',created_at:new Date().toISOString()};
+    const rec={...form,id:'log-'+Date.now(),log_type:logKey,license_number:kioskLicense().license_number,signature_image:sig,attachments:[],submitted_by:submittedBy,submitted_by_id:'kiosk',created_at:new Date().toISOString()};
     try{
       await kioskWrite(lt.table,'insert',null,rec);
       setDone(true);
@@ -15204,7 +15216,7 @@ function SecurityKiosk(){
     if(!form.inspected_by.trim()){setError('Please enter Inspected By.');return;}
     if(!sig){setError('Please draw your signature.');return;}
     setSaving(true);setError('');
-    const rec={...form,id:'sec-insp-'+Date.now(),log_type:'security_inspection',signature_image:sig,submitted_by:form.inspected_by.trim(),submitted_by_id:'kiosk',created_at:new Date().toISOString()};
+    const rec={...form,id:'sec-insp-'+Date.now(),log_type:'security_inspection',license_number:kioskLicense().license_number,signature_image:sig,submitted_by:form.inspected_by.trim(),submitted_by_id:'kiosk',created_at:new Date().toISOString()};
     try{
       await kioskWrite('pf_log_security_inspection','insert',null,rec);
       setDone(true);
@@ -15373,7 +15385,7 @@ function VisitorKiosk(){
     if(!sig){alert('Please draw your signature.');return;}
     setSaving(true);
     const rec={
-      id:'vis-'+Date.now(),log_type:'visitor',
+      id:'vis-'+Date.now(),log_type:'visitor',license_number:kioskLicense().license_number,
       date:new Date().toISOString().slice(0,10),
       time_in:new Date().toTimeString().slice(0,5),
       time_out:'',
