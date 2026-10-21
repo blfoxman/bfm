@@ -6170,6 +6170,8 @@ function CoaAnalysisPanel({rec}){return el(CoaErrorBoundary,null,el(CoaAnalysisP
 const LABEL_STOCKS={
   'avery-94202':{name:'Avery 94202 — 1" x 4", 20 per sheet',w:4,h:1,cols:2,rows:10,left:0.15625,top:0.5,pitchX:4.1875,pitchY:1},
 };
+// Inner safe margin (points) kept clear on all four sides of every label so text never touches the die-cut edge.
+const LABEL_PAD=6;
 const LABEL_DEFAULT_TEMPLATES=[
   {id:'tpl-2g-banana-pie',name:'2G Infused Pre Roll \u2014 Banana Pie',sku:'Muha Meds 2G Infused Pre Roll',flavor:'Banana Pie',stock:'avery-94202',
    metrc_approval:'M00002721406',servings:'200',weight:'2g',
@@ -6364,7 +6366,7 @@ function labelParagraphs(d){
 }
 // Three-column label (Bodega Boyz Shorties): ingredients | product info + test results | instructions, approval, warning.
 function drawLabelTri(doc,x,y,w,h,d,minK){
-  const pad=3,gap=4,ih=h-pad*2;
+  const pad=LABEL_PAD,gap=4,ih=h-pad*2;
   const B=(t)=>({t:t,b:true}),N=(t)=>({t:t});
   const flow=(runs,iw,sz)=>{
     const lines=[];let cur=[],cw=0;
@@ -6448,7 +6450,7 @@ function drawLabelTri(doc,x,y,w,h,d,minK){
 }
 function drawLabel(doc,x,y,w,h,d,minK){
   if(d.layout==='tri') return drawLabelTri(doc,x,y,w,h,d,minK);
-  const pad=3,iw=w-pad*2,ih=h-pad*2;
+  const pad=LABEL_PAD,iw=w-pad*2,ih=h-pad*2;
   const paras=labelParagraphs(d);
   const BASE=3.7;
   let layout=null,fs=BASE,ok=false;
@@ -6508,12 +6510,33 @@ function buildLabelSheet(d,stock,count,startPos,offX,offY,outline){
   }
   return {doc,fit};
 }
+function buildAlignmentSheet(stock,offX,offY){
+  const{jsPDF}=window.jspdf;
+  const doc=pdfSafeDoc(new jsPDF({unit:'pt',format:'letter'}));
+  const per=stock.cols*stock.rows;
+  for(let pos=0;pos<per;pos++){
+    const col=pos%stock.cols,row=Math.floor(pos/stock.cols);
+    const x=(stock.left+col*stock.pitchX+(offX||0))*72,y=(stock.top+row*stock.pitchY+(offY||0))*72,w=stock.w*72,h=stock.h*72;
+    doc.setDrawColor(0);doc.setLineWidth(.6);doc.rect(x,y,w,h);
+    doc.setDrawColor(120);doc.setLineWidth(.3);
+    if(doc.setLineDash)doc.setLineDash([2,2],0);
+    doc.rect(x+LABEL_PAD,y+LABEL_PAD,w-LABEL_PAD*2,h-LABEL_PAD*2);
+    if(doc.setLineDash)doc.setLineDash([],0);
+    doc.line(x+w/2-6,y+h/2,x+w/2+6,y+h/2);doc.line(x+w/2,y+h/2-6,x+w/2,y+h/2+6);
+    doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(0);
+    doc.text('#'+(pos+1)+'  4" x 1"  (dashed = print-safe area)',x+LABEL_PAD+2,y+LABEL_PAD+8);
+  }
+  return doc;
+}
 function LabelStickerModal({rec,lic,onClose}){
   const[templates,setTemplates]=React.useState(null);
   const[count,setCount]=React.useState(20);
   const[start,setStart]=React.useState(1);
-  const[offX,setOffX]=React.useState(0);
-  const[offY,setOffY]=React.useState(0);
+  const lsGet=(k)=>{try{const v=parseFloat(localStorage.getItem('lbl_'+k));return isNaN(v)?0:v;}catch(e){return 0;}};
+  const[offX,setOffXr]=React.useState(()=>lsGet('offX'));
+  const[offY,setOffYr]=React.useState(()=>lsGet('offY'));
+  const setOffX=(v)=>{setOffXr(v);try{localStorage.setItem('lbl_offX',String(v));}catch(e){}};
+  const setOffY=(v)=>{setOffYr(v);try{localStorage.setItem('lbl_offY',String(v));}catch(e){}};
   const[outline,setOutline]=React.useState(true);
   const[url,setUrl]=React.useState('');
   const[fit,setFit]=React.useState(true);
@@ -6562,8 +6585,9 @@ function LabelStickerModal({rec,lic,onClose}){
           el('div',null,el('label',{style:SET_LBL},'Shift right (in)'),el('input',{type:'number',step:0.01,style:inp,value:offX,onChange:ev=>setOffX(parseFloat(ev.target.value)||0)})),
           el('div',null,el('label',{style:SET_LBL},'Shift down (in)'),el('input',{type:'number',step:0.01,style:inp,value:offY,onChange:ev=>setOffY(parseFloat(ev.target.value)||0)})),
           el('label',{style:{fontSize:12,display:'flex',gap:6,alignItems:'center'}},el('input',{type:'checkbox',checked:outline,onChange:ev=>setOutline(ev.target.checked)}),'Show label outlines in preview'),
+          el('button',{className:'btn b-ghost',title:'Prints only outlines so you can test on plain paper, then hold it against a label sheet to the light',onClick:()=>{buildAlignmentSheet(stock,offX,offY).save('Label_Alignment_Test.pdf');}},'\uD83D\uDCCF Alignment test sheet'),
           el('button',{className:'btn b-blue',onClick:download},'\u2B07 Download PDF')),
-        el('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:6}},stock.name+' · print at 100% / "Actual size", not "Fit to page". Start position lets you reuse a partly used sheet.'),
+        el('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:6}},stock.name+' · print at 100% / "Actual size" on US Letter, not "Fit to page" and no printer margins/scaling. First print the Alignment test sheet on plain paper and hold it over a label sheet to the light; use Shift right/down until the boxes sit inside the labels (your shifts are remembered on this computer). Start position lets you reuse a partly used sheet.'),
         missing.length>0&&el('div',{style:{background:'rgba(217,119,6,.1)',border:'1px solid rgba(217,119,6,.4)',borderRadius:8,padding:'8px 10px',fontSize:12,color:'#b45309',marginBottom:8}},'Missing on this label: '+missing.join(', ')+'.'),
         !fit&&el('div',{style:{background:'rgba(220,38,38,.08)',border:'1px solid rgba(220,38,38,.4)',borderRadius:8,padding:'8px 10px',fontSize:12,color:'#b91c1c',marginBottom:8}},'The text is too long to fit a 1" label even at the smallest size — shorten the ingredients or warning text in the template.'),
         url?el('iframe',{src:url,style:{width:'100%',height:'62vh',border:'1px solid var(--border)',borderRadius:8}}):el('div',null,'Preview unavailable.'))));
