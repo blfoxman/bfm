@@ -895,13 +895,8 @@ function SidebarChangePw({cu,SUPA_URL,SUPA_KEY}){
     if(np!==cp){setMsg('\u26A0\uFE0F Passwords do not match');return;}
     setSaving(true);setMsg('Saving...');
     try{
-      const r=await fetch(`${SUPA_URL}/rest/v1/pf_users?id=eq.${cu.id}`,{
-        method:'PATCH',
-        headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
-        body:JSON.stringify({pw:np}),
-      });
-      if(!r.ok)throw new Error(await r.text());
-      const updated={...cu,pw:np};
+      await db.update('pf_users',cu.id,{pw:np}); // saved through secure_write; throws if refused
+      const updated={...cu};delete updated.pw;
       localStorage.setItem('pf_session',JSON.stringify(updated));
       setMsg('\u2713 Password updated!');
       setNp('');setCp('');
