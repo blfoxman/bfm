@@ -970,7 +970,7 @@ function Auth({onLogin}){
       const res=await fetch(`${SUPA_URL}/rest/v1/rpc/verify_login`,{
         method:'POST',
         headers:{...H.headers,'Content-Type':'application/json'},
-        body:JSON.stringify({p_email:f.email,p_password:f.pw}),
+        body:JSON.stringify({p_email:f.email.trim(),p_password:f.pw}),
       });
       const result=await res.json();
       if(!result||!result.ok){setMsg('Invalid email or password.');setLoading(false);return;}
@@ -2654,11 +2654,7 @@ function Team({users,setUsers,cu,licActive}){
                   if(newPw.length<6){setPwMsg('\u26A0\uFE0F Min 6 characters');return;}
                   setPwMsg('Saving...');
                   try{
-                    await fetch(`${SUPA_URL}/rest/v1/pf_users?id=eq.${editU.id}`,{
-                      method:'PATCH',
-                      headers:{...H.headers,'Prefer':'return=representation'},
-                      body:JSON.stringify({pw:newPw}),
-                    });
+                    await db.update('pf_users',editU.id,{pw:newPw}); // goes through secure_write; throws if the save is refused
                     setNewPw('');
                     setPwMsg('\u2713 Password updated!');
                     setTimeout(()=>setPwMsg(''),3000);
