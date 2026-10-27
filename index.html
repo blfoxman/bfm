@@ -6155,7 +6155,90 @@ function CoaAnalysisPanelInner({rec}){
       el(InlineChart,{data:an.terpenes.slice(0,12).map(t=>({label:t.name,value:t.value})),color:'#0f766e'})),
     an.notes&&el('div',{style:{fontSize:11,color:'var(--text2)'}},an.notes));
 }
-function CoaAnalysisPanel({rec}){return el(CoaErrorBoundary,null,el(CoaAnalysisPanelInner,{rec}));}
+function CoaEditor({rec,onSave,onCancel}){
+  const an0=rec.coa_analysis||{};
+  const[an,setAn]=React.useState(()=>JSON.parse(JSON.stringify(an0)));
+  const[saving,setSaving]=React.useState(false);
+  const[err,setErr]=React.useState('');
+  const inp={background:'var(--bg)',border:'1px solid var(--border)',borderRadius:6,padding:'5px 7px',color:'var(--text)',fontFamily:'inherit',fontSize:12,boxSizing:'border-box',width:'100%'};
+  const lbl={fontSize:10,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',marginBottom:2,display:'block'};
+  const set=(k,v)=>setAn(p=>({...p,[k]:v}));
+  const pot=an.potency||{};
+  const setPot=(k,v)=>setAn(p=>({...p,potency:{...(p.potency||{}),[k]:v}}));
+  const cats=an.categories||{};
+  const setCat=(k,f,v)=>setAn(p=>({...p,categories:{...(p.categories||{}),[k]:{...((p.categories||{})[k]||{}),[f]:v}}}));
+  const setAnalyte=(k,i,f,v)=>setAn(p=>{const c=(p.categories||{})[k]||{};const a=(c.analytes||[]).map((x,j)=>j===i?{...x,[f]:v}:x);return{...p,categories:{...(p.categories||{}),[k]:{...c,analytes:a}}};});
+  const addAnalyte=k=>setAn(p=>{const c=(p.categories||{})[k]||{};return{...p,categories:{...(p.categories||{}),[k]:{...c,analytes:[...(c.analytes||[]),{name:'',result:'',limit:'',unit:'',status:'Pass'}]}}};});
+  const delAnalyte=(k,i)=>setAn(p=>{const c=(p.categories||{})[k]||{};return{...p,categories:{...(p.categories||{}),[k]:{...c,analytes:(c.analytes||[]).filter((x,j)=>j!==i)}}};});
+  const terps=Array.isArray(an.terpenes)?an.terpenes:[];
+  const setTerp=(i,f,v)=>set('terpenes',terps.map((t,j)=>j===i?{...t,[f]:v}:t));
+  const catKeys=Object.keys(COA_CATEGORY_LABELS);
+  const cell=(label,node,w)=>el('div',{style:{flex:w||'1 1 130px'}},el('label',{style:lbl},label),node);
+  const txt=(v,fn,type)=>el('input',{style:inp,type:type||'text',value:v==null?'':v,onChange:ev=>fn(ev.target.value)});
+  const stSel=(v,fn,opts)=>el('select',{style:inp,value:v||'',onChange:ev=>fn(ev.target.value)},[''].concat(opts).map(o=>el('option',{key:o,value:o},o||'—')));
+  const box={border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px'};
+  const potKeys=[['total_thc','Total THC'],['total_cbd','Total CBD'],['thca','THCA'],['d9_thc','\u03949-THC'],['cbda','CBDA'],['cbd','CBD'],['cbn','CBN'],['cbg','CBG'],['thcv','THCV'],['cbdv','CBDV'],['d8_thc','\u03948-THC'],['total_cannabinoids','Total cannabinoids']];
+  async function save(){
+    setSaving(true);setErr('');
+    try{
+      const out=JSON.parse(JSON.stringify(an));
+      const p2={};Object.keys(out.potency||{}).forEach(k=>{const v=out.potency[k];if(v===''||v==null){p2[k]=null;return;}const n=Number(String(v).replace(/,/g,''));p2[k]=isNaN(n)?v:n;});
+      out.potency=p2;
+      if(Array.isArray(out.terpenes)) out.terpenes=out.terpenes.filter(t=>String(t.name||'').trim()).map(t=>{const n=Number(String(t.value).replace(/,/g,''));return{...t,value:isNaN(n)?0:n};});
+      if(out.total_terpenes===''||out.total_terpenes==null) out.total_terpenes=null; else {const n=Number(out.total_terpenes);out.total_terpenes=isNaN(n)?out.total_terpenes:n;}
+      Object.keys(out.categories||{}).forEach(k=>{const c=out.categories[k];if(c&&Array.isArray(c.analytes)) c.analytes=c.analytes.filter(a=>String(a.name||'').trim());});
+      if(out.lab_license_number) out.lab_license_number=String(out.lab_license_number).trim().toUpperCase();
+      out.manually_edited=true;out.edited_at=new Date().toISOString();
+      await onSave(out);
+    }catch(e){setErr(String(e.message||e).slice(0,160));}
+    setSaving(false);
+  }
+  return el('div',{style:{display:'flex',flexDirection:'column',gap:10,marginTop:10,border:'2px solid #4f46e5',borderRadius:10,padding:12}},
+    el('div',{style:{fontSize:13,fontWeight:800,color:'#4f46e5'}},'\u270F\uFE0F Editing COA results'),
+    el('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
+      cell('Lab',txt(an.lab_name,v=>set('lab_name',v))),
+      cell('Lab license # (TES…)',txt(an.lab_license_number,v=>set('lab_license_number',v))),
+      cell('Report date',txt(an.report_date,v=>set('report_date',v))),
+      cell('Sample name',txt(an.sample_name,v=>set('sample_name',v))),
+      cell('COA METRC tag',txt(an.sample_metrc_tag,v=>set('sample_metrc_tag',v))),
+      cell('Overall',stSel(an.overall_status,v=>set('overall_status',v),['Pass','Fail','Unknown']))),
+    el('div',{style:box},el('div',{style:{...lbl,marginBottom:6}},'Potency'),
+      el('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
+        cell('Unit',txt(pot.unit,v=>setPot('unit',v)),'1 1 80px'),
+        potKeys.map(pk=>el('div',{key:pk[0],style:{flex:'1 1 100px'}},el('label',{style:lbl},pk[1]),txt(pot[pk[0]],v=>setPot(pk[0],v)))))),
+    catKeys.map(k=>{const c=cats[k]||{};const al=Array.isArray(c.analytes)?c.analytes:[];
+      return el('div',{key:k,style:box},
+        el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginBottom:6}},
+          el('span',{style:{fontSize:12,fontWeight:800}},COA_CATEGORY_LABELS[k]),
+          el('div',{style:{width:150}},stSel(c.status,v=>setCat(k,'status',v),['Pass','Fail','Not tested']))),
+        al.map((a,i)=>el('div',{key:i,style:{display:'flex',gap:6,flexWrap:'wrap',alignItems:'flex-end',marginBottom:6}},
+          cell('Analyte',txt(a.name,v=>setAnalyte(k,i,'name',v)),'2 1 140px'),
+          cell('Result',txt(a.result,v=>setAnalyte(k,i,'result',v)),'1 1 80px'),
+          cell('Limit',txt(a.limit,v=>setAnalyte(k,i,'limit',v)),'1 1 80px'),
+          cell('Unit',txt(a.unit,v=>setAnalyte(k,i,'unit',v)),'1 1 60px'),
+          cell('Status',stSel(a.status,v=>setAnalyte(k,i,'status',v),['Pass','Fail','ND']),'1 1 90px'),
+          el('button',{className:'btn b-red btn-sm',type:'button',onClick:()=>delAnalyte(k,i)},'✕'))),
+        el('button',{className:'btn b-ghost btn-sm',type:'button',onClick:()=>addAnalyte(k)},'+ Add analyte'));
+    }),
+    el('div',{style:box},el('div',{style:{...lbl,marginBottom:6}},'Terpenes'),
+      el('div',{style:{marginBottom:6,maxWidth:200}},cell('Total terpenes',txt(an.total_terpenes,v=>set('total_terpenes',v)))),
+      terps.map((t,i)=>el('div',{key:i,style:{display:'flex',gap:6,alignItems:'flex-end',marginBottom:6}},
+        cell('Name',txt(t.name,v=>setTerp(i,'name',v)),'2 1 140px'),
+        cell('Value',txt(t.value,v=>setTerp(i,'value',v)),'1 1 80px'),
+        el('button',{className:'btn b-red btn-sm',type:'button',onClick:()=>set('terpenes',terps.filter((x,j)=>j!==i))},'✕'))),
+      el('button',{className:'btn b-ghost btn-sm',type:'button',onClick:()=>set('terpenes',[...terps,{name:'',value:''}])},'+ Add terpene')),
+    cell('Notes',el('textarea',{style:{...inp,minHeight:50},value:an.notes||'',onChange:ev=>set('notes',ev.target.value)}),'1 1 100%'),
+    err&&el('div',{style:{color:'#dc2626',fontSize:12}},'❌ '+err),
+    el('div',{style:{display:'flex',gap:8}},
+      el('button',{className:'btn b-blue btn-sm',disabled:saving,onClick:save},saving?'Saving…':'Save COA results'),
+      el('button',{className:'btn b-ghost btn-sm',disabled:saving,onClick:onCancel},'Cancel')));
+}
+function CoaAnalysisPanel({rec,canEdit,editing,setEditing,onSave}){
+  if(editing&&canEdit) return el(CoaErrorBoundary,null,el(CoaEditor,{rec,onSave,onCancel:()=>setEditing(false)}));
+  return el(CoaErrorBoundary,null,
+    canEdit&&el('div',{style:{marginTop:10}},el('button',{className:'btn b-blue btn-sm',onClick:()=>setEditing(true)},'\u270F\uFE0F Edit COA results'),rec.coa_analysis&&rec.coa_analysis.manually_edited&&el('span',{style:{fontSize:11,color:'#b45309',marginLeft:8}},'Manually edited '+(rec.coa_analysis.edited_at?new Date(rec.coa_analysis.edited_at).toLocaleDateString():''))),
+    el(CoaAnalysisPanelInner,{rec}));
+}
 
 // ── COMPLIANCE STICKERS (Avery label sheets) ─────────────────────────────────
 // Label stock = physical sheet geometry. Templates = per-product content
@@ -6660,6 +6743,7 @@ function TestingModule({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive,mpFn
   const[editing,setEditing]=React.useState(null);
   const[draft,setDraft]=React.useState({});
   const[open,setOpen]=React.useState({});
+  const[coaEdit,setCoaEdit]=React.useState({});
   const[busy,setBusy]=React.useState({});
   const[msg,setMsg]=React.useState('');
   const[stickerRec,setStickerRec]=React.useState(null);
@@ -6774,10 +6858,11 @@ function TestingModule({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive,mpFn
           el('div',{style:{display:'flex',gap:6,flexWrap:'wrap',alignItems:'flex-start'}},
             r.coa_url&&el('a',{href:r.coa_url,target:'_blank',rel:'noopener',className:'btn b-ghost btn-sm',style:{textDecoration:'none'}},'\uD83D\uDCC4 COA'),
             r.coa_analysis&&el('button',{className:'btn b-ghost btn-sm',onClick:()=>setOpen(p=>({...p,[r.id]:!p[r.id]}))},open[r.id]?'Hide analysis':'Show analysis'),
+            r.coa_analysis&&canEdit&&el('button',{className:'btn b-ghost btn-sm',onClick:()=>{setOpen(p=>({...p,[r.id]:true}));setCoaEdit(p=>({...p,[r.id]:true}));}},'\u270F\uFE0F Edit results'),
             r.coa_analysis&&subModuleOk(cu,'stickers',true)&&el('button',{className:'btn b-blue btn-sm',onClick:()=>setStickerRec(r),title:'Print compliance stickers on Avery label sheets'},'\uD83C\uDFF7\uFE0F Compliance Sticker'),
             canEdit&&el('label',{className:'btn b-ghost btn-sm',style:{cursor:'pointer'}},busy[r.id]||(hasCoa?'Replace COA':'\u2B06 Upload COA'),
               el('input',{type:'file',accept:'application/pdf,image/*',style:{display:'none'},disabled:!!busy[r.id],onChange:ev=>{const f=ev.target.files&&ev.target.files[0];ev.target.value='';if(f) runAnalysis(r,f);}})),
-            canEdit&&r.coa_url&&el('button',{className:'btn b-ghost btn-sm',disabled:!!busy[r.id],onClick:()=>runAnalysis(r,null)},'Re-analyze'),
+            canEdit&&r.coa_url&&el('button',{className:'btn b-ghost btn-sm',disabled:!!busy[r.id],onClick:()=>{if(r.coa_analysis&&r.coa_analysis.manually_edited&&!window.confirm('This COA has manual edits. Re-analyzing will overwrite them. Continue?'))return;runAnalysis(r,null);}},'Re-analyze'),
             canEdit&&el('button',{className:'btn b-ghost btn-sm',onClick:()=>{setEditing(isE?null:r.id);setDraft({...r,_lic:(r.coa_analysis&&r.coa_analysis.lab_license_number)||''});}},isE?'Close':'Edit'),
             canDelete&&el('button',{className:'btn b-red btn-sm',onClick:async()=>{if(!window.confirm('Delete this testing record?'))return;try{await db.remove('pf_testing',r.id);setRows(p=>p.filter(x=>x.id!==r.id));notify();}catch(e){setMsg('❌ '+String(e.message||e).slice(0,160));}}},'Delete'))),
         isE&&el('div',{style:{marginTop:10,paddingTop:10,borderTop:'1px solid var(--border)'}},
@@ -6793,7 +6878,19 @@ function TestingModule({cu,isElevated,isAdmin,SUPA_URL,SUPA_KEY,H,licActive,mpFn
               await saveRec(r,p);setEditing(null);
             }catch(e){setMsg('❌ '+String(e.message||e).slice(0,160));}
           }},'Save changes')),
-        open[r.id]&&el(CoaAnalysisPanel,{rec:r}));
+        open[r.id]&&el(CoaAnalysisPanel,{rec:r,canEdit,editing:!!coaEdit[r.id],setEditing:v=>setCoaEdit(p=>({...p,[r.id]:v})),onSave:async an=>{
+          const pt=an.potency||{};const p={coa_analysis:an};
+          if(pt.total_thc!=null) p.result_thc=String(pt.total_thc);
+          if(pt.total_cbd!=null) p.result_cbd=String(pt.total_cbd);
+          if(an.lab_name) p.lab_name=an.lab_name;
+          if(an.sample_metrc_tag) p.sample_metrc_tag=an.sample_metrc_tag;
+          const was=r.coa_analysis&&r.coa_analysis.overall_status;
+          if(an.overall_status!==was&&!coaMetrcMismatch({...r,...p},an)){
+            if(an.overall_status==='Pass'){p.status='Passed';p.result_at=new Date().toISOString();}
+            else if(an.overall_status==='Fail'){p.status='Failed';p.result_at=new Date().toISOString();}
+          }
+          await saveRec(r,p);setCoaEdit(x=>({...x,[r.id]:false}));setMsg('\u2713 COA results updated.');
+        }}));
     }));
 }
 
