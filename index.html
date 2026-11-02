@@ -6207,7 +6207,8 @@ function CoaEditor({rec,onSave,onCancel}){
       el('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
         cell('Unit',txt(pot.unit,v=>setPot('unit',v)),'1 1 80px'),
         potKeys.map(pk=>el('div',{key:pk[0],style:{flex:'1 1 100px'}},el('label',{style:lbl},pk[1]),txt(pot[pk[0]],v=>setPot(pk[0],v))))),
-      el('div',{style:{...lbl,margin:'10px 0 6px'}},'Printed result on COA (exact text used on labels, e.g. <LOQ or ND)'),
+      el('div',{style:{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',margin:'10px 0 6px'}},el('span',{style:{...lbl,margin:0}},'Printed result on COA (exact text used on labels, e.g. <LOQ or ND)'),
+        el('button',{className:'btn b-ghost btn-sm',type:'button',onClick:()=>setAn(p=>{const t={...(p.potency_text||{})};potKeys.forEach(pk=>{const v=(p.potency||{})[pk[0]];if(pk[0]!=='total_cannabinoids'&&!t[pk[0]]&&(v===''||v==null||Number(v)===0)) t[pk[0]]='<LOQ';});return{...p,potency_text:t};})},'Fill empty ones with <LOQ')),
       el('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
         potKeys.filter(pk=>pk[0]!=='total_cannabinoids').map(pk=>el('div',{key:'t'+pk[0],style:{flex:'1 1 100px'}},el('label',{style:lbl},pk[1]),txt((an.potency_text||{})[pk[0]],v=>setAn(p=>({...p,potency_text:{...(p.potency_text||{}),[pk[0]]:v}}))))))),
     catKeys.map(k=>{const c=cats[k]||{};const al=Array.isArray(c.analytes)?c.analytes:[];
