@@ -6044,6 +6044,7 @@ const COA_ANALYSIS_PROMPT=`You are reading a cannabis laboratory Certificate of 
 {
  "lab_name":"","lab_license_number":"","report_date":"","sample_name":"","sample_metrc_tag":"",
  "overall_status":"Pass|Fail|Unknown",
+ "potency_text":{"total_thc":"","thca":"","d9_thc":"","cbda":"","cbd":"","cbn":"","cbg":"","thcv":"","cbdv":"","d8_thc":""},
  "potency":{"unit":"%","total_thc":null,"total_cbd":null,"thca":null,"d9_thc":null,"cbda":null,"cbd":null,"cbn":null,"cbg":null,"thcv":null,"cbdv":null,"d8_thc":null,"total_cannabinoids":null},
  "categories":{
   "pesticides":{"status":"Pass|Fail|Not tested","analytes":[{"name":"","result":"","limit":"","unit":"","status":"Pass|Fail|ND"}]},
@@ -6053,7 +6054,7 @@ const COA_ANALYSIS_PROMPT=`You are reading a cannabis laboratory Certificate of 
  },
  "terpenes":[{"name":"","value":0}],"total_terpenes":null,"notes":""
 }
-Rules: lab_license_number is the testing facility's Missouri license number, which always begins with TES followed by digits (for example TES000123) \u2014 search the whole document, especially the header, footer, accreditation and signature areas, and copy it exactly as printed; numbers as numbers where possible; use the lab's own pass/fail and limits; "ND" means not detected; omit categories the COA does not contain; sample_metrc_tag is the METRC package/sample tag printed on the COA (digits and letters exactly as printed); overall_status is Fail if any category failed.`;
+Rules: potency_text holds each cannabinoid result EXACTLY as printed on the COA, character for character (for example "<LOQ", "ND", "0.35", "<0.01"); never convert or round it; for potency numbers use null when the printed result is <LOQ, ND or not a number. lab_license_number is the testing facility's Missouri license number, which always begins with TES followed by digits (for example TES000123) \u2014 search the whole document, especially the header, footer, accreditation and signature areas, and copy it exactly as printed; numbers as numbers where possible; use the lab's own pass/fail and limits; "ND" means not detected; omit categories the COA does not contain; sample_metrc_tag is the METRC package/sample tag printed on the COA (digits and letters exactly as printed); overall_status is Fail if any category failed.`;
 function parseJsonLoose(t){
   const s=String(t||'');const a=s.indexOf('{'),b=s.lastIndexOf('}');
   if(a<0||b<=a) throw new Error('No JSON in response');
@@ -6205,7 +6206,10 @@ function CoaEditor({rec,onSave,onCancel}){
     el('div',{style:box},el('div',{style:{...lbl,marginBottom:6}},'Potency'),
       el('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
         cell('Unit',txt(pot.unit,v=>setPot('unit',v)),'1 1 80px'),
-        potKeys.map(pk=>el('div',{key:pk[0],style:{flex:'1 1 100px'}},el('label',{style:lbl},pk[1]),txt(pot[pk[0]],v=>setPot(pk[0],v)))))),
+        potKeys.map(pk=>el('div',{key:pk[0],style:{flex:'1 1 100px'}},el('label',{style:lbl},pk[1]),txt(pot[pk[0]],v=>setPot(pk[0],v))))),
+      el('div',{style:{...lbl,margin:'10px 0 6px'}},'Printed result on COA (exact text used on labels, e.g. <LOQ or ND)'),
+      el('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
+        potKeys.filter(pk=>pk[0]!=='total_cannabinoids').map(pk=>el('div',{key:'t'+pk[0],style:{flex:'1 1 100px'}},el('label',{style:lbl},pk[1]),txt((an.potency_text||{})[pk[0]],v=>setAn(p=>({...p,potency_text:{...(p.potency_text||{}),[pk[0]]:v}}))))))),
     catKeys.map(k=>{const c=cats[k]||{};const al=Array.isArray(c.analytes)?c.analytes:[];
       return el('div',{key:k,style:box},
         el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginBottom:6}},
@@ -6409,7 +6413,9 @@ function labelData(rec,tpl,licNumber){
   const wt=parseFloat(String(tpl.weight||'').replace(/[^0-9.]/g,''))||0;
   const canna=LABEL_CANNABINOIDS.map(([k,n])=>{
     const p=parseFloat(pot[k]);
-    // % of the package weight -> mg per serving/dose
+    const txt=String((an.potency_text&&an.potency_text[k])||'').trim();
+    // Exact printed result containing letters (<LOQ, ND, ...) is carried over as-is; numbers become mg per serving/dose
+    if(/[A-Za-z]/.test(txt)) return {name:n,mg:txt,raw:true};
     const mg=(isFinite(p)&&p>0&&servings>0&&wt>0)?(p/100*wt*1000/servings).toFixed(2):'ND';
     return {name:n,mg};
   });
@@ -6430,7 +6436,7 @@ function labelParagraphs(d){
   const SEP=V('     ');
   const info=[];pairs.forEach((p,i)=>{if(i)info.push(SEP);info.push({chunk:[L(p[0]),V(String(p[1]||''))]});});
   const prof=[L('CANNABINOID PROFILE: ')];
-  d.canna.forEach((c,i)=>{if(i)prof.push(V('   '));prof.push({chunk:[L(c.name+': '),V(c.mg+' mg/serving-dose')]});});
+  d.canna.forEach((c,i)=>{if(i)prof.push(V('   '));prof.push({chunk:[L(c.name+': '),V(c.mg+(c.raw?'':' mg/serving-dose'))]});});
   return [
     [L('Active and Other Ingredients: '),V(d.ingredients)],
     [L('MARIJUANA PRODUCT INFORMATION:')],
