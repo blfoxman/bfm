@@ -6414,9 +6414,10 @@ function labelData(rec,tpl,licNumber){
   const wt=parseFloat(String(tpl.weight||'').replace(/[^0-9.]/g,''))||0;
   const canna=LABEL_CANNABINOIDS.map(([k,n])=>{
     const p=parseFloat(pot[k]);
-    const txt=String((an.potency_text&&an.potency_text[k])||'').trim();
-    // Exact printed result containing letters (<LOQ, ND, ...) is carried over as-is; numbers become mg per serving/dose
-    if(/[A-Za-z]/.test(txt)) return {name:n,mg:txt,raw:true};
+    // the printed result: potency_text, or text the AI left in the potency field itself (older reads)
+    const txt=String((an.potency_text&&an.potency_text[k])||(typeof pot[k]==='string'&&!/^\s*[\d.,]+\s*%?\s*$/.test(pot[k])?pot[k]:'')||'').trim();
+    // Exact printed result that is not a plain number (<LOQ, ND, <LOD, <0.05 ...) is carried over as-is; numbers become mg per serving/dose
+    if(/[A-Za-z<>]/.test(txt)) return {name:n,mg:txt,raw:true};
     const mg=(isFinite(p)&&p>0&&servings>0&&wt>0)?(p/100*wt*1000/servings).toFixed(2):'ND';
     return {name:n,mg};
   });
