@@ -6438,7 +6438,7 @@ function labelParagraphs(d){
   const SEP=V('     ');
   const info=[];pairs.forEach((p,i)=>{if(i)info.push(SEP);info.push({chunk:[L(p[0]),V(String(p[1]||''))]});});
   const prof=[L('CANNABINOID PROFILE: ')];
-  d.canna.forEach((c,i)=>{if(i)prof.push(V('   '));prof.push({chunk:[L(c.name+': '),V(c.mg+(c.raw?'':' mg/serving-dose'))]});});
+  d.canna.forEach((c,i)=>{if(i)prof.push(V('   '));prof.push({chunk:[L(c.name+': '),V(c.mg+' mg/serving-dose')]});});
   return [
     [L('Active and Other Ingredients: '),V(d.ingredients)],
     [L('MARIJUANA PRODUCT INFORMATION:')],
